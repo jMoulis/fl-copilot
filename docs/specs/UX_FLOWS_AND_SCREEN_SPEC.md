@@ -4521,3 +4521,15 @@ The existing save action persists the complete settings revision locally and syn
 ## Owner-approved visual TG journey — 9 November 2026
 
 Show proposed TG surfaces as colored labeled zones and percentages in the chat, with reasons and source/change details on demand. Percentages are proposed presentation-surface shares, totaling 100% per TG; counter-promotions are outside that total. Native editing redistributes other shares and preserves the products. Explicit retention adopts an entirely qualitative visual plan through the existing reviewed canonical writers; priced offers and physical allocations keep their complete review. Open one retained TG at a time for installation. Only explicit user declaration records execution; retention does not imply installation or a known exposure date. Existing plans without visual allocations remain usable without fabricated percentages. [Qualification and limits](../qa/M8_VISUAL_TG_PREPARATION_2026_11_09.md).
+
+### Stockout observation controls — owner arbitration, 13 November 2026
+
+For a new user stockout report, offer optional single-choice buttons “Après
+arrivage”, “Avant rush du soir” and “Autre moment”. Preserve the editable observed
+date/time; a moment selection never assigns 16:00 or an inferred onset. Store the
+selected wording with the existing synchronized observation note, preserving the
+user's free text and the 1,200-character limit. No new entity, schema migration,
+mandatory question, AI call or native build is required. Hide these buttons for
+other report types and existing reports. Label user stockout timestamps as
+observations in history and Copilot evidence; non-closure is not proof of continuous
+unavailability. Existing timestamps and history are not rewritten.

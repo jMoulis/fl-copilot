@@ -3,8 +3,33 @@ import {
   storeEventTimeLabel,
   type StoreProductEvent,
 } from "@fl-copilot/domain";
+export const stockoutObservationMoments = {
+  AFTER_DELIVERY: "Après arrivage",
+  BEFORE_EVENING_RUSH: "Avant rush du soir",
+  OTHER: "Autre moment",
+} as const;
+export type StockoutObservationMoment = keyof typeof stockoutObservationMoments;
+
+export function storeEventObservationNote(
+  type: StoreProductEvent["type"] | undefined,
+  moment: StockoutObservationMoment | undefined,
+  comment: string,
+) {
+  return (
+    [
+      type === "OUT_OF_STOCK" && moment
+        ? `Moment du constat : ${stockoutObservationMoments[moment]}.`
+        : "",
+      comment.trim(),
+    ]
+      .filter(Boolean)
+      .join("\n") || null
+  );
+}
+
 export function storeEventSummary(e: StoreProductEvent) {
-  return `${storeEventLabels[e.type]} · ${e.status === "CLOSED" ? "Terminé" : e.status === "TO_REVIEW" ? "À examiner" : "En cours"} · début ${storeEventTimeLabel(e.startedAt)}${e.endedAt ? ` · fin ${storeEventTimeLabel(e.endedAt)}` : ""} · gravité ${e.severity === null ? "non précisée" : { LOW: "faible", MEDIUM: "moyenne", HIGH: "élevée" }[e.severity]} · ${e.source === "USER" ? "Observation magasin" : "Source documentaire"}${e.comment ? ` · ${e.comment}` : ""}`;
+  const observation = e.type === "OUT_OF_STOCK" && e.source === "USER";
+  return `${storeEventLabels[e.type]} · ${e.status === "CLOSED" ? "Terminé" : e.status === "TO_REVIEW" ? "À examiner" : observation ? "Sans clôture enregistrée" : "En cours"} · ${observation ? "constat" : "début"} ${storeEventTimeLabel(e.startedAt)}${e.endedAt ? ` · fin ${storeEventTimeLabel(e.endedAt)}` : ""} · gravité ${e.severity === null ? "non précisée" : { LOW: "faible", MEDIUM: "moyenne", HIGH: "élevée" }[e.severity]} · ${e.source === "USER" ? "Observation magasin" : "Source documentaire"}${e.comment ? ` · ${e.comment}` : ""}`;
 }
 export function storeEventError(code?: string) {
   return (

@@ -121,7 +121,7 @@ export async function readFieldEvents(db: Db, storeId: string, raw: unknown) {
       sourceId: e.id,
       sourceVersion: e.version,
       label: `${labels[e.type]} — ${productLabel}`,
-      value: `${marker} (pas un historique de gamme à la date du signalement). ${statuses[e.status]} ; début ${date(e.startedAt)} ; ${e.endedAt ? "fin " + date(e.endedAt) : "sans date de fin connue"} ; capture ${date(e.clientCapturedAt)} (Europe/Paris). Gravité : ${e.severity ? severities[e.severity] : "non précisée"}. ${e.source === "USER" ? "Signalement magasin" : "Information issue d’un PDF, pas une observation magasin"}${e.status === "TO_REVIEW" ? ", à examiner" : ""}.${e.comment ? " Note : " + e.comment : ""} Aucun stock chiffré ni lien de causalité n’est établi.`,
+      value: `${marker} (pas un historique de gamme à la date du signalement). ${statuses[e.status]} ; ${e.type === "OUT_OF_STOCK" && e.source === "USER" ? "constat" : "début"} ${date(e.startedAt)} ; ${e.endedAt ? "fin " + date(e.endedAt) : "sans date de fin connue"} ; capture ${date(e.clientCapturedAt)} (Europe/Paris). Gravité : ${e.severity ? severities[e.severity] : "non précisée"}. ${e.source === "USER" ? "Signalement magasin" : "Information issue d’un PDF, pas une observation magasin"}${e.status === "TO_REVIEW" ? ", à examiner" : ""}.${e.comment ? " Note : " + e.comment : ""} Aucun stock chiffré ni lien de causalité n’est établi.${e.type === "OUT_OF_STOCK" && e.source === "USER" ? " Le constat ne donne pas le début exact ni la durée continue de la rupture." : ""}`,
       factKind:
         e.source !== "USER"
           ? "SOURCE_INSTRUCTION"

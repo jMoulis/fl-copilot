@@ -37,6 +37,9 @@ import {
 import {
   storeEventError,
   storeEventSummary,
+  stockoutObservationMoments,
+  storeEventObservationNote,
+  type StockoutObservationMoment,
 } from "@/needs/store-event-presentation";
 import { substitutionIdentifierLabels } from "@/needs/substitution-details";
 import {
@@ -91,6 +94,8 @@ export default function StoreEventEditor() {
     [type, setType] = useState<StoreProductEvent["type"]>(),
     [severity, setSeverity] = useState<StoreProductEvent["severity"]>(null),
     [comment, setComment] = useState(""),
+    [observationMoment, setObservationMoment] =
+      useState<StockoutObservationMoment>(),
     [start, setStart] = useState<StoreEventTimeInput>(nowInput),
     [end, setEnd] = useState<StoreEventTimeInput>(nowInput),
     [finished, setFinished] = useState(false),
@@ -101,6 +106,7 @@ export default function StoreEventEditor() {
       type?: string;
       start?: string;
       end?: string;
+      comment?: string;
     }>({});
   const read = useCallback(async () => {
     if (!storeId) return;
@@ -146,6 +152,7 @@ export default function StoreEventEditor() {
     setType(undefined);
     setSeverity(null);
     setComment("");
+    setObservationMoment(undefined);
     setStart(
       captureDate && captureDate !== tradingToday()
         ? { date: captureDate, time: "" }
@@ -163,6 +170,14 @@ export default function StoreEventEditor() {
   async function save() {
     if (busyRef.current || !storeId || !current || formScope !== scope) return;
     const problems: typeof issues = {};
+    const observationNote = storeEventObservationNote(
+      type,
+      observationMoment,
+      comment,
+    );
+    if (!params.id && observationNote && observationNote.length > 1200)
+      problems.comment =
+        "Raccourcissez la note : 1 200 caractères maximum, moment du constat compris.";
     if (!params.id && !source)
       problems.product = "Choisissez le produit concerné.";
     if (!params.id && !type)
@@ -173,7 +188,8 @@ export default function StoreEventEditor() {
         ? record?.entity.startedAt
         : selectStoreEventTime(start.date, start.time, start.occurrence);
     } catch (e) {
-      problems.start = e instanceof Error ? e.message : "Vérifiez le début.";
+      problems.start =
+        e instanceof Error ? e.message : "Vérifiez la date du constat.";
     }
     if (params.id || finished)
       try {
@@ -183,8 +199,7 @@ export default function StoreEventEditor() {
       }
     const at = new Date().toISOString();
     if (startedAt && Date.parse(startedAt) > Date.parse(at))
-      problems.start =
-        "Le début doit correspondre à une observation déjà faite.";
+      problems.start = "La date doit correspondre à un constat déjà fait.";
     if (
       endedAt &&
       startedAt &&
@@ -216,7 +231,7 @@ export default function StoreEventEditor() {
             startedAt,
             endedAt: endedAt ?? null,
             severity,
-            comment: comment.trim() || null,
+            comment: observationNote,
             clientCapturedAt: at,
           },
         });
@@ -499,6 +514,58 @@ export default function StoreEventEditor() {
                   </Text>
                 ) : null}
               </View>
+              {type === "OUT_OF_STOCK" ? (
+                <View style={{ gap: 10 }}>
+                  <Text style={styles.label}>
+                    Moment du constat · facultatif
+                  </Text>
+                  <View style={styles.types}>
+                    {(
+                      Object.entries(stockoutObservationMoments) as [
+                        StockoutObservationMoment,
+                        string,
+                      ][]
+                    ).map(([value, label]) => (
+                      <Pressable
+                        key={value}
+                        accessibilityRole="button"
+                        accessibilityLabel={label}
+                        accessibilityState={{
+                          selected: observationMoment === value,
+                          disabled: busy,
+                        }}
+                        disabled={busy}
+                        onPress={() => {
+                          setObservationMoment(
+                            observationMoment === value ? undefined : value,
+                          );
+                          clear();
+                        }}
+                        style={[
+                          styles.type,
+                          {
+                            borderColor:
+                              observationMoment === value ? c.mint : c.line,
+                            backgroundColor:
+                              observationMoment === value
+                                ? "#233B2C"
+                                : "transparent",
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.typeLabel,
+                            observationMoment === value && { color: c.mint },
+                          ]}
+                        >
+                          {label}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              ) : null}
               <EventSeverity
                 value={severity}
                 disabled={busy}
@@ -509,7 +576,7 @@ export default function StoreEventEditor() {
               />
               <StoreEventTimeField
                 compact
-                label="Début"
+                label={type === "OUT_OF_STOCK" ? "Rupture constatée" : "Début"}
                 value={start}
                 onChange={(v) => {
                   setStart(v);
@@ -572,6 +639,11 @@ export default function StoreEventEditor() {
                   editable={!busy}
                   style={styles.note}
                 />
+                {issues.comment ? (
+                  <Text accessibilityRole="alert" className="text-critical">
+                    {issues.comment}
+                  </Text>
+                ) : null}
               </View>
               <Pressable
                 accessibilityRole="button"
