@@ -6,6 +6,8 @@ import {
   parisDate,
   storeContextFingerprint,
   storeContextSettingsSchema,
+  storeTransportLocationChanged,
+  type TransportContext,
   weeklyContextSchema,
   type DailyJournalContext,
   type StoreContextSettings,
@@ -14,8 +16,11 @@ import {
 import type { DatabaseService } from "../database/types.js";
 import type { WeekContextService } from "./week-context.js";
 
-/** Geography/selection, not an unrelated settings version, binds the archive. */
-export function dailyJournalScope(s: StoreContextSettings) {
+/** Retain the original no-transports key for already collected pilot entries. */
+function contextScope(
+  s: StoreContextSettings,
+  transports: StoreContextSettings["transports"],
+) {
   return createHash("sha256")
     .update(
       JSON.stringify([
@@ -25,10 +30,61 @@ export function dailyJournalScope(s: StoreContextSettings) {
         s.schoolZone,
         s.locationMode,
         s.position,
-        s.transports ?? null,
+        transports ?? null,
       ]),
     )
     .digest("hex");
+}
+/** Weather/calendars/local sources depend on shop geography, not the watchlist. */
+export function dailyJournalScope(s: StoreContextSettings) {
+  return contextScope(s, null);
+}
+function selectedTransportContext(
+  settings: StoreContextSettings,
+  saved: TransportContext | "NOT_CONFIGURED" | undefined,
+): TransportContext | "NOT_CONFIGURED" {
+  const profile = settings.transports;
+  if (!profile) return "NOT_CONFIGURED";
+  const base: TransportContext = {
+    status: "NOT_CONFIGURED",
+    issue: null,
+    radiusMetres: profile.radiusMetres,
+    lines: [],
+  };
+  if (storeTransportLocationChanged(settings))
+    return { ...base, issue: "LOCATION_CHANGED" };
+  const selected = profile.lines.filter((l) => l.enabled);
+  if (!selected.length) return { ...base, issue: "NO_SELECTED_LINES" };
+  const archived = saved && typeof saved !== "string" ? saved : undefined;
+  let missing = false;
+  const lines = selected.map((config): TransportContext["lines"][number] => {
+    const prior = archived?.lines.find((line) => line.id === config.id);
+    missing ||= !prior;
+    return {
+      ...(prior ?? {
+        status: "UNAVAILABLE",
+        retrievedAt: null,
+        validUntil: null,
+        capturedAt: null,
+        disruptions: [],
+        partial: false,
+      }),
+      id: config.id,
+      name: `${config.mode} ${config.name}`.slice(0, 100),
+      stopName: config.stopName,
+      distanceMetres: config.distanceMetres,
+    };
+  });
+  return {
+    ...base,
+    lines,
+    status: lines.every((l) => l.status === "AVAILABLE")
+      ? "AVAILABLE"
+      : lines.some((l) => l.status !== "UNAVAILABLE")
+        ? "STALE"
+        : "UNAVAILABLE",
+    issue: missing ? "HISTORY_UNAVAILABLE" : (archived?.issue ?? null),
+  };
 }
 export function contextMonday(date: string) {
   const weekday = new Date(`${date}T12:00:00Z`).getUTCDay();
@@ -185,7 +241,7 @@ export function projectContext(
   return result;
 }
 
-/** At most 23 daily entries: previous/current/next week captures, indexed by
+/** At most 46 daily entries including the previous watchlist-key namespace: previous/current/next week captures, indexed by
  * the existing source/date index. Never invokes a network/provider/AI client. */
 export async function readDailyJournalWeek(
   db: Db,
@@ -194,32 +250,44 @@ export async function readDailyJournalWeek(
   at = new Date(),
 ): Promise<WeeklyContext | null> {
   const scope = dailyJournalScope(settings);
-  const source = namespace(settings.storeId, scope);
+  const scopes = new Set([scope, contextScope(settings, settings.transports)]);
+  const sources = [...scopes].map((value) =>
+    namespace(settings.storeId, value),
+  );
   const rows = await db
     .collection("contextProviderCache")
     .find({
-      snapshotOf: source,
+      snapshotOf: { $in: sources },
       firstCapturedAt: {
         $gte: `${addContextDays(weekStart, -8)}T00:00:00.000Z`,
         $lt: `${addContextDays(weekStart, 15)}T00:00:00.000Z`,
       },
     })
     .sort({ firstCapturedAt: -1 })
-    .limit(23)
+    .limit(46)
     .toArray();
   let result: WeeklyContext | undefined;
-  for (const row of rows.reverse()) {
+  for (const row of rows.sort((a, b) =>
+    String(a.entry?.lastCollectedAt).localeCompare(
+      String(b.entry?.lastCollectedAt),
+    ),
+  )) {
     const parsed = dailyJournalContextSchema.safeParse(row.entry);
     if (
       !parsed.success ||
       parsed.data.storeId !== settings.storeId ||
-      parsed.data.scope !== scope
+      !scopes.has(parsed.data.scope)
     )
       continue;
     const context = parsed.data.contexts.find((c) => c.weekStart === weekStart);
     if (context) result = mergeDailyWeek(result, context);
   }
   if (!result) return null;
+  if (result.journal)
+    result.journal.transport = selectedTransportContext(
+      settings,
+      result.journal.transport,
+    );
   // Scheduler downtime must not leave an old capture labelled as fresh.
   const age = (value: { status: string; validUntil: string | null }) => {
     if (

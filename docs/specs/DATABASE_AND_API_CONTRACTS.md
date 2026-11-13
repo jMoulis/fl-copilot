@@ -5578,3 +5578,13 @@ Monthly series remain monthly/current-revised, not independent daily samples;
 late Météo-France publications update the recent-week projection without
 inventing past capture dates. Collection begins when released/registered; no
 historical local knowledge or complete news coverage is fabricated.
+
+Daily Journal watchlists do not invalidate geographical context. The retained
+geographical key keeps the original no-transports hash, preserving existing pilot
+captures when the first watchlist is saved. Reads also accept the matching legacy
+watchlist key, with at most 46 indexed rows across both namespaces. Captures merge
+by their real last-collection time. Current enabled line IDs project the stored
+line-level feed; disabled lines are removed and newly selected lines without a
+capture remain unavailable, never normal traffic. Fixed shop-location validation
+is shared by live and archived transit readers. No business record, migration,
+provider request during an AI turn or new public contract is added.

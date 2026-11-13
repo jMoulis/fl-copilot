@@ -1,4 +1,5 @@
-import { randomUUID } from "node:crypto";
+import { storeTransportsFixture } from "../../../scripts/test-store-transports-fixtures";
+import { randomUUID, createHash } from "node:crypto";
 import {
   beforeAll,
   beforeEach,
@@ -180,6 +181,171 @@ describe.skipIf(!uri)("durable daily shop context", () => {
       (await later.readStored!(settings.storeId, "2026-10-05")).weather.status,
     ).toBe("STALE");
     expect(network).not.toHaveBeenCalled();
+  });
+  it("preserves recorded weather when transports are first configured or their selection changes", async () => {
+    const { settings, db, read } = await setup();
+    const at = new Date("2026-10-09T08:00:00Z");
+    await collectDailyJournal(database, { read }, settings.storeId, at);
+    const withTransport = { ...settings, transports: storeTransportsFixture() };
+    const first = await readDailyJournalWeek(
+      db,
+      withTransport,
+      "2026-10-05",
+      at,
+    );
+    expect(first?.weather.days[0]?.validDate).toBe("2026-10-10");
+    expect(first?.journal?.transport).toMatchObject({
+      status: "UNAVAILABLE",
+      issue: "HISTORY_UNAVAILABLE",
+      lines: [{ id: "IDFM:C01383", status: "UNAVAILABLE" }],
+    });
+    const disabled = {
+      ...withTransport,
+      transports: {
+        ...withTransport.transports,
+        lines: withTransport.transports.lines.map((l) => ({
+          ...l,
+          enabled: false,
+        })),
+      },
+    };
+    const second = await readDailyJournalWeek(db, disabled, "2026-10-05", at);
+    expect(second?.weather.days[0]?.validDate).toBe("2026-10-10");
+    expect(second?.journal?.transport).toMatchObject({
+      status: "NOT_CONFIGURED",
+      issue: "NO_SELECTED_LINES",
+      lines: [],
+    });
+  });
+  it("filters saved transit to the current selection, leaves new lines unknown and retains eligible legacy entries", async () => {
+    const { settings, db, read } = await setup();
+    const at = new Date("2026-10-09T08:00:00Z");
+    const configured = { ...settings, transports: storeTransportsFixture() };
+    await db
+      .collection("storeContextSettings")
+      .updateOne(
+        { storeId: settings.storeId },
+        { $set: { transports: configured.transports } },
+      );
+    const live = async (storeId: string, weekStart: string) => {
+      const context = await read(storeId, weekStart);
+      const line = configured.transports.lines[0]!;
+      context.journal!.transport = {
+        status: "AVAILABLE",
+        issue: null,
+        radiusMetres: 800,
+        lines: [
+          {
+            id: line.id,
+            name: "Metro 13",
+            stopName: line.stopName,
+            distanceMetres: line.distanceMetres,
+            status: "AVAILABLE",
+            retrievedAt: at.toISOString(),
+            validUntil: "2026-10-09T09:00:00.000Z",
+            capturedAt: at.toISOString(),
+            disruptions: [],
+            partial: false,
+          },
+        ],
+      };
+      return context;
+    };
+    await collectDailyJournal(database, { read: live }, settings.storeId, at);
+    // Qualify the already-published key format, not just newly written entries.
+    const oldScope = createHash("sha256")
+      .update(
+        JSON.stringify([
+          settings.storeId,
+          settings.city,
+          settings.postalCode,
+          settings.schoolZone,
+          settings.locationMode,
+          settings.position,
+          configured.transports,
+        ]),
+      )
+      .digest("hex");
+    const row = await db
+      .collection("contextProviderCache")
+      .findOne({ snapshotOf: /^journal-daily:/ });
+    const legacySource = `journal-daily:${settings.storeId}:${oldScope}`;
+    await db.collection("contextProviderCache").updateOne(
+      { _id: row!._id },
+      {
+        $set: {
+          url: `${legacySource}:2026-10-09`,
+          snapshotOf: legacySource,
+          "entry.scope": oldScope,
+        },
+      },
+    );
+    const legacy = await readDailyJournalWeek(db, configured, "2026-10-05", at);
+    expect(legacy?.weather.days).toHaveLength(1);
+    expect(legacy?.journal?.transport).toMatchObject({
+      status: "AVAILABLE",
+      lines: [{ id: "IDFM:C01383", capturedAt: at.toISOString() }],
+    });
+    // A new collection uses the stable geographical key; a subsequent switch
+    // cannot remove weather or let a disabled line appear as still followed.
+    await collectDailyJournal(
+      database,
+      { read: live },
+      settings.storeId,
+      new Date("2026-10-09T08:01:00Z"),
+    );
+    const changed = {
+      ...configured,
+      transports: {
+        ...configured.transports,
+        lines: [
+          { ...configured.transports.lines[0]!, enabled: false },
+          {
+            ...configured.transports.lines[0]!,
+            id: "IDFM:C00001",
+            name: "New",
+            enabled: true,
+          },
+        ],
+      },
+    };
+    const result = await readDailyJournalWeek(db, changed, "2026-10-05", at);
+    expect(result?.weather.days).toHaveLength(1);
+    expect(result?.journal?.transport).toMatchObject({
+      status: "UNAVAILABLE",
+      issue: "HISTORY_UNAVAILABLE",
+      lines: [
+        {
+          id: "IDFM:C00001",
+          status: "UNAVAILABLE",
+          capturedAt: null,
+          disruptions: [],
+        },
+      ],
+    });
+    const invalidLocation = {
+      ...configured,
+      transports: {
+        ...configured.transports,
+        address: null,
+        location: {
+          ...configured.transports.location,
+          source: "STORE_GPS" as const,
+        },
+      },
+    };
+    expect(
+      (await readDailyJournalWeek(db, invalidLocation, "2026-10-05", at))
+        ?.journal?.transport,
+    ).toMatchObject({ issue: "LOCATION_CHANGED", lines: [] });
+    const cleared = await readDailyJournalWeek(
+      db,
+      { ...settings, transports: null },
+      "2026-10-05",
+      at,
+    );
+    expect(cleared?.weather.days).toHaveLength(1);
+    expect(cleared?.journal?.transport).toBe("NOT_CONFIGURED");
   });
   it("uses the Paris capture day and creates no fabricated entry for past observation days", async () => {
     const { settings, db, read } = await setup();
