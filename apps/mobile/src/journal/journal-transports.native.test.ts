@@ -75,6 +75,9 @@ it("uses the captured past day instead of today's feed and preserves unknown bef
       ?.disruptions[0]?.id,
   ).toBe("past");
   expect(
+    transportLinesForDate(traffic, "2026-11-13", "2026-11-14")[0]?.disruptions,
+  ).toEqual([]);
+  expect(
     transportLinesForDate(traffic, "2026-11-11", "2026-11-13")[0],
   ).toMatchObject({ status: "UNAVAILABLE", capturedAt: null, disruptions: [] });
 });

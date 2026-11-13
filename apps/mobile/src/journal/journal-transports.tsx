@@ -24,8 +24,16 @@ export function transportLinesForDate(
     const historical = line.history?.find(
       (h) => parisDate(h.capturedAt) <= date,
     );
+    if (
+      line.capturedAt &&
+      parisDate(line.capturedAt) <= date &&
+      (!historical || line.capturedAt >= historical.capturedAt)
+    )
+      return {
+        ...line,
+        status: line.status === "AVAILABLE" ? ("STALE" as const) : line.status,
+      };
     if (historical) return { ...line, ...historical, status: "STALE" as const };
-    if (line.capturedAt && parisDate(line.capturedAt) <= date) return line;
     return {
       ...line,
       status: "UNAVAILABLE" as const,
