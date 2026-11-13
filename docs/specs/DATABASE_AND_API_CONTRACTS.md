@@ -5547,3 +5547,34 @@ samples are bounded/qualified; no message is not a traffic guarantee. Existing
 store_week includes a compact, explicitly partial transit summary, with no new
 agent/tool or model request for collection. Private address/GPS settings are
 excluded from the existing Copilot settings response.
+
+## Scheduled daily Journal archive — 13 November 2026
+
+Use the existing contextProviderCache collection, unique URL index and source/date
+index 61. `dailyJournalContextSchema` validates one `journal-daily:` entry per
+store/geographic-selection scope/Paris capture day; it records first/last real
+collection times and the previous, current and next ISO-week source projections.
+Capture day is distinct from event/application/forecast/observed-weather producer
+date and monthly statistical reference period. This does not create operational
+entities, a new collection, migration, sync command, agent or AI tool.
+
+The existing signed Inngest endpoint registers a 07:15/13:15/20:15 Europe/Paris
+scheduler, paginated store dispatch, per-store serialization and bounded retry.
+Provider caches and independent failure states remain authoritative. The worker
+keeps good prior values as stale on failures; compare-and-set and unique URLs
+prevent concurrent/duplicate jobs from replacing a newer daily entry. Original
+normalized public-source revisions remain separate and immutable. Collection
+never invokes a model or changes business observations. The archive is retained
+without a TTL; no claim of backup/restore qualification is added.
+
+The existing authorized context route prefers saved projections, with legacy
+opt-in fields preserved; a store not yet collected retains the existing live
+screen fallback. Production store_week reads the database archive exclusively,
+with unavailable context if no entry exists. Its four bounded evidence facts
+remain unchanged in shape. It never refreshes a provider during an AI turn.
+Store scope is checked before reads, and geographic changes do not reuse old
+location data. Unrelated settings version changes retain archive access.
+Monthly series remain monthly/current-revised, not independent daily samples;
+late Météo-France publications update the recent-week projection without
+inventing past capture dates. Collection begins when released/registered; no
+historical local knowledge or complete news coverage is fabricated.

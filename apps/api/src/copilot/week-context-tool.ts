@@ -5,6 +5,7 @@ import {
   type EconomicContext,
   type JournalContext,
   journalItemsForPeriod,
+  parisDate,
   type ObservedWeatherContext,
 } from "@fl-copilot/domain";
 import { createHash } from "node:crypto";
@@ -18,7 +19,7 @@ import {
 import { AuthError } from "../auth/service.js";
 import type { WeekContextService } from "../context/week-context.js";
 
-/** Reuses the authorized store-context service and its independent public-provider cache. */
+/** Reuses the authorized store-context service; production AI turns read the daily archive only. */
 export async function readCopilotWeek(
   service: WeekContextService,
   storeId: string,
@@ -33,7 +34,9 @@ export async function readCopilotWeek(
   let observed: ObservedWeatherContext | undefined;
   try {
     const source = weeklyContextSchema.parse(
-      await service.read(storeId, input.weekStart, false, true, true, true),
+      await (service.readStored
+        ? service.readStored(storeId, input.weekStart)
+        : service.read(storeId, input.weekStart, false, true, true, true)),
     );
     if (
       source.storeId !== storeId ||
@@ -185,15 +188,37 @@ export async function readCopilotWeek(
   const rawTrafficText =
     traffic && typeof traffic !== "string"
       ? ` Transports IDFM : ${states[traffic.status]}, ${traffic.lines.length} lignes suivies, rayon ${traffic.radiusMetres} m. ${traffic.lines
-          .filter((l) => l.disruptions.length)
+          .filter(
+            (l) =>
+              l.disruptions.length ||
+              l.history?.some(
+                (h) =>
+                  parisDate(h.capturedAt) >= input.weekStart &&
+                  parisDate(h.capturedAt) <=
+                    (context?.weekEnd ?? input.weekStart) &&
+                  h.disruptions.length,
+              ),
+          )
           .slice(0, 6)
           .map(
             (l) =>
-              `${l.name}, arrêt ${l.stopName} à ${l.distanceMetres} m, collecte ${l.capturedAt ?? "inconnue"}, statut ${l.status} : ${l.disruptions
+              `${l.name}, arrêt ${l.stopName} à ${l.distanceMetres} m, collecte ${l.capturedAt ?? "inconnue"}, statut ${l.status} : ${[
+                ...l.disruptions.map((d) => ({ ...d, capture: l.capturedAt })),
+                ...(l.history ?? [])
+                  .filter(
+                    (h) =>
+                      parisDate(h.capturedAt) >= input.weekStart &&
+                      parisDate(h.capturedAt) <=
+                        (context?.weekEnd ?? input.weekStart),
+                  )
+                  .flatMap((h) =>
+                    h.disruptions.map((d) => ({ ...d, capture: h.capturedAt })),
+                  ),
+              ]
                 .slice(0, 2)
                 .map(
                   (d) =>
-                    `${d.message.slice(0, 160)} ; application ${d.applicationPeriods
+                    `relevé ${d.capture ?? "inconnu"} : ${d.message.slice(0, 160)} ; application ${d.applicationPeriods
                       .slice(0, 2)
                       .map((p) => `${p.begin}–${p.end}`)
                       .join(
@@ -257,7 +282,7 @@ export async function readCopilotWeek(
       "coverage",
       `Contexte externe — semaine du ${input.weekStart}`,
       (context
-        ? "Semaine du lundi au dimanche, magasin et sources configurés. Les prévisions peuvent couvrir seulement une partie de la semaine ; conserver la fraîcheur et les données manquantes de chaque fournisseur. Contexte externe distinct des chiffres Mercalys, des observations magasin et des horaires d'ouverture. Aucun impact causal, stock, fréquentation ou chiffre de vente n'est calculé."
+        ? `Semaine du lundi au dimanche, magasin et sources configurés.${service.readStored ? " Journal quotidien consulté en base ; les dates de collecte figurent dans chaque source. Aucun rafraîchissement fournisseur lancé par cette lecture." : ""} Les prévisions peuvent couvrir seulement une partie de la semaine ; conserver la fraîcheur et les données manquantes de chaque fournisseur. Contexte externe distinct des chiffres Mercalys, des observations magasin et des horaires d'ouverture. Aucun impact causal, stock, fréquentation ou chiffre de vente n'est calculé.`
         : "Réglages du magasin absents ou non synchronisés. Demander la commune, le code postal et la zone scolaire si nécessaires ; aucun contexte local n'a été inventé. Les analyses déjà disponibles restent utilisables.") +
         economicText +
         journalText,

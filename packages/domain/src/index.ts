@@ -187,3 +187,5 @@ export * from "./store-journal-note";
 export * from "./journal-context";
 
 export * from "./store-transports";
+
+export * from "./daily-journal-context";

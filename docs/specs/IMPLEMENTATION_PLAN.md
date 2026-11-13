@@ -3243,3 +3243,16 @@ A permanent push rejection must not leave the unchanged catalogue row labelled P
 ## 24 October — physical-plan comparison from Copilot (M7 1/6/7)
 
 Capability 6 extends the existing conflict tool with an authenticated-store plan target and compact canonical metadata/full-plan fingerprint, preserving all earlier input/artifact versions. Native comparison uses the canonical current group, exact review anchor, active command selection and layout writer; local retention is a new draft, never reference adoption or measurement confirmation. Explicit choices and private replay retain histories and source values. Verify HTTP/SDK negotiation, role/current context, both choices after SQLite reopen, newer pulls/group drift, superseded history and actual Mongo/third-SQLite synchronization. The shared card rejects old callbacks on committed-context replacement/unmount. See `../qa/M7_COPILOT_LAYOUT_CONFLICT_2026_10_24.md`. Grouped API-before-native delivery is required; no paid call/build or physical acceptance is implied.
+
+## Owner increment — automatic daily context, 13 November 2026
+
+Complete Journal retention with an existing-Inngest scheduled collector and one
+retained entry per Paris capture day/store/location scope. Reuse provider readers,
+immutable source revisions and source cache indexes; no AI collection, new tool
+or database model. Three daily passes consolidate delayed previous-week weather,
+current sources and next-week forecasts. The Copilot reads these records rather
+than making the model wait for provider requests. Validate real Mongo restart,
+idempotency/concurrent retry, independent provider failures, store/location
+isolation, source dates and old-client opt-ins. API release, Inngest registration
+and observing the first real scheduled entry are delivery gates, not test claims.
+No paid native build is part of this increment.

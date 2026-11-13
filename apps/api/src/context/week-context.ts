@@ -1,3 +1,4 @@
+import { readDailyJournalWeek, projectContext } from "./daily-journal.js";
 import { readTransportContext } from "./transport-traffic.js";
 import { z } from "zod";
 import {
@@ -7,6 +8,7 @@ import {
   addContextDays,
   parisDate,
   type WeeklyContext,
+  type StoreContextSettings,
 } from "@fl-copilot/domain";
 import type { DatabaseService } from "../database/types.js";
 import { AuthError } from "../auth/service.js";
@@ -69,6 +71,9 @@ const metadata = <T>(r: ProviderResult<T>) =>
     issue: r.failed ? "PROVIDER_UNAVAILABLE" : null,
   }) as const;
 export type WeekContextService = {
+  /** Database-only access for the Copilot. No provider refresh in an AI turn. */
+  readStored?: (storeId: string, weekStart: string) => Promise<WeeklyContext>;
+
   read(
     storeId: string,
     weekStart: string,
@@ -82,9 +87,33 @@ export function createWeekContextService(
   database: DatabaseService,
   fetcher: typeof fetch = fetch,
   now: () => Date = () => new Date(),
-  options: { primApiKey?: string } = {},
+  options: { primApiKey?: string; preferStored?: boolean } = {},
 ): WeekContextService {
   return {
+    async readStored(storeId, weekStart) {
+      const db = await database.getDb();
+      const raw = await db
+        .collection("storeContextSettings")
+        .findOne({ storeId });
+      if (!raw)
+        throw new AuthError(
+          409,
+          "STORE_SETTINGS_NOT_SYNCED",
+          "Synchronisez les réglages du magasin.",
+        );
+      const { _id, ...payload } = raw;
+      void _id;
+      const settings = storeContextSettingsSchema.parse(payload);
+      const saved = await readDailyJournalWeek(db, settings, weekStart);
+      if (saved) return projectContext(saved, false, true, true, true);
+      const empty = emptyWeekContext(settings, weekStart, now(), true);
+      // No collection is not evidence that a provider failed.
+      empty.weather.issue = null;
+      empty.publicHolidays.issue = null;
+      empty.schoolHolidays.issue = settings.schoolZone ? null : "ZONE_REQUIRED";
+      empty.observedWeather = emptyObservedWeather("NO_ARCHIVE");
+      return empty;
+    },
     async read(
       storeId,
       weekStart,
@@ -106,45 +135,23 @@ export function createWeekContextService(
       const settings = storeContextSettingsSchema.parse(payload),
         cache = new ContextProviderCache(db, fetcher, now),
         weekEnd = addContextDays(weekStart, 6);
-      const empty = {
-        status: "UNAVAILABLE",
-        retrievedAt: null,
-        validUntil: null,
-        issue: "PROVIDER_UNAVAILABLE",
-      } as const;
-      const result: WeeklyContext = {
-        ...(includeObservedWeather
-          ? { observedWeather: emptyObservedWeather("LOCATION_UNAVAILABLE") }
-          : {}),
-        storeId,
-        settingsFingerprint: storeContextFingerprint(settings),
+      if (options.preferStored) {
+        const saved = await readDailyJournalWeek(db, settings, weekStart);
+        if (saved)
+          return projectContext(
+            saved,
+            includeWeatherSymbols,
+            includeEconomicContext,
+            includeObservedWeather,
+            includeJournal,
+          );
+      }
+      const result = emptyWeekContext(
+        settings,
         weekStart,
-        weekEnd,
-        retrievedAt: now().toISOString(),
-        locationLabel: `${settings.city} (${settings.postalCode})`,
-        weather: {
-          ...empty,
-          provider: "MET Norway",
-          sourceUrl:
-            "https://api.met.no/weatherapi/locationforecast/2.0/documentation",
-          issuedAt: null,
-          days: [],
-        },
-        publicHolidays: {
-          ...empty,
-          provider: "calendrier.api.gouv.fr",
-          sourceUrl: "https://calendrier.api.gouv.fr/jours-feries/",
-          days: [],
-        },
-        schoolHolidays: {
-          ...empty,
-          provider: "Ministère de l’Éducation nationale",
-          sourceUrl:
-            "https://data.education.gouv.fr/explore/dataset/fr-en-calendrier-scolaire/",
-          zone: settings.schoolZone,
-          periods: [],
-        },
-      };
+        now(),
+        includeObservedWeather,
+      );
       // Independent failures: none can block commercial plans or erase other providers.
       await Promise.allSettled([
         ...(includeJournal
@@ -325,6 +332,53 @@ export function createWeekContextService(
         })(),
       ]);
       return weeklyContextSchema.parse(result);
+    },
+  };
+}
+
+export function emptyWeekContext(
+  settings: StoreContextSettings,
+  weekStart: string,
+  at: Date,
+  includeObservedWeather = true,
+): WeeklyContext {
+  const empty = {
+    status: "UNAVAILABLE",
+    retrievedAt: null,
+    validUntil: null,
+    issue: "PROVIDER_UNAVAILABLE",
+  } as const;
+  return {
+    ...(includeObservedWeather
+      ? { observedWeather: emptyObservedWeather("LOCATION_UNAVAILABLE") }
+      : {}),
+    storeId: settings.storeId,
+    settingsFingerprint: storeContextFingerprint(settings),
+    weekStart,
+    weekEnd: addContextDays(weekStart, 6),
+    retrievedAt: at.toISOString(),
+    locationLabel: `${settings.city} (${settings.postalCode})`,
+    weather: {
+      ...empty,
+      provider: "MET Norway",
+      sourceUrl:
+        "https://api.met.no/weatherapi/locationforecast/2.0/documentation",
+      issuedAt: null,
+      days: [],
+    },
+    publicHolidays: {
+      ...empty,
+      provider: "calendrier.api.gouv.fr",
+      sourceUrl: "https://calendrier.api.gouv.fr/jours-feries/",
+      days: [],
+    },
+    schoolHolidays: {
+      ...empty,
+      provider: "Ministère de l’Éducation nationale",
+      sourceUrl:
+        "https://data.education.gouv.fr/explore/dataset/fr-en-calendrier-scolaire/",
+      zone: settings.schoolZone,
+      periods: [],
     },
   };
 }

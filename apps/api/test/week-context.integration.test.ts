@@ -1,3 +1,4 @@
+import { collectDailyJournal } from "../src/context/daily-journal";
 import { readTransportContext } from "../src/context/transport-traffic";
 import { storeTransportsFixture } from "../../../scripts/test-store-transports-fixtures";
 import { readJournalContext } from "../src/context/journal";
@@ -92,6 +93,8 @@ describe.skipIf(!uri)("remote context cache", () => {
       "2026-10-05",
     );
     expect(calls).toHaveLength(4);
+    await collectDailyJournal(database, service, settings.storeId, at);
+    const collectedCalls = calls.length;
     const copilot = await readCopilotWeek(
       service,
       settings.storeId,
@@ -101,7 +104,7 @@ describe.skipIf(!uri)("remote context cache", () => {
     expect(copilot.context?.weather.status).toBe("AVAILABLE");
     expect(copilot.context).not.toHaveProperty("settingsFingerprint");
     expect(copilot.evidence).toHaveLength(4);
-    expect(calls).toHaveLength(9);
+    expect(calls).toHaveLength(collectedCalls);
     at = new Date("2026-10-09T10:00:00Z");
     fail = true;
     const stale = await service.read(settings.storeId, "2026-10-05");

@@ -425,6 +425,9 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               );
             }
           },
+          createWeekContextService(dependencies.database, fetch, undefined, {
+            primApiKey: config.PRIM_API_KEY,
+          }),
         )
       : undefined;
   const commercialRecovery =
@@ -2151,6 +2154,7 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         dependencies.weekContext ??
         createWeekContextService(dependencies.database, fetch, undefined, {
           primApiKey: config.PRIM_API_KEY,
+          preferStored: true,
         })
       ).read(
         storeId,
