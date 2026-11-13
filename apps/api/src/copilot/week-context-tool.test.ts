@@ -204,3 +204,47 @@ it("keeps bounded journal summaries in existing evidence, never repeats revision
   expect(String(result.evidence[3]!.value).length).toBeLessThan(7000);
   expect(JSON.stringify(result)).not.toContain('"history"');
 });
+
+it("bounds transit context for many long messages without leaking coordinates or transport histories", async () => {
+  const c = weeklyContextFixture();
+  c.weekStart = "2026-11-09";
+  c.weekEnd = "2026-11-15";
+  c.weather.days = [];
+  c.journal = journalContextFixture();
+  c.journal.transport = {
+    status: "AVAILABLE",
+    issue: null,
+    radiusMetres: 800,
+    lines: Array.from({ length: 16 }, (_, i) => ({
+      id: `IDFM:C${String(i).padStart(5, "0")}`,
+      name: "Metro 13",
+      stopName: "Arrêt proche",
+      distanceMetres: 300,
+      status: "AVAILABLE" as const,
+      retrievedAt: "2026-11-13T10:00:00.000Z",
+      validUntil: "2026-11-13T11:00:00.000Z",
+      capturedAt: "2026-11-13T10:00:00.000Z",
+      partial: true,
+      disruptions: Array.from({ length: 8 }, (_, j) => ({
+        id: String(j),
+        message: "Message publié ".repeat(46).slice(0, 700),
+        effect: null,
+        applicationPeriods: [
+          { begin: "20261114T220000", end: "20261115T020000" },
+        ],
+        schedule: "Horaires récurrents ".repeat(30).slice(0, 600),
+        updatedAt: null,
+      })),
+    })),
+  };
+  const result = await readCopilotWeek(
+    { read: async () => c },
+    c.storeId,
+    { weekStart: c.weekStart },
+    new Date("2026-11-13T10:01:00Z"),
+  );
+  expect(result.evidence).toHaveLength(4);
+  expect(String(result.evidence[3]!.value).length).toBeLessThan(10000);
+  expect(result.evidence[3]!.value).toContain("Extrait partiel");
+  expect(result.context).not.toHaveProperty("journal");
+});

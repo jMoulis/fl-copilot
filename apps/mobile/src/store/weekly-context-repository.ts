@@ -27,6 +27,24 @@ export class WeeklyContextRepository {
     if (previous && previous.retrievedAt > next.retrievedAt) return previous;
     if (!next.journal && previous?.journal) next.journal = previous.journal;
     if (next.journal && previous?.journal) {
+      const incoming = next.journal.transport,
+        priorTraffic = previous.journal.transport;
+      if (
+        typeof incoming !== "string" &&
+        typeof priorTraffic !== "string" &&
+        incoming.status === "UNAVAILABLE" &&
+        priorTraffic.lines.some((l) => l.capturedAt)
+      ) {
+        next.journal.transport = {
+          ...priorTraffic,
+          status: "STALE",
+          issue: incoming.issue,
+          lines: priorTraffic.lines.map((l) => ({
+            ...l,
+            status: l.capturedAt ? "STALE" : "UNAVAILABLE",
+          })),
+        };
+      }
       next.journal.sources = next.journal.sources.map((source) => {
         const prior = previous.journal!.sources.find(
           (p) => p.kind === source.kind,

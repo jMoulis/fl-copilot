@@ -100,7 +100,7 @@ it("keeps unknown history distinct from no events and disables refresh without s
       .props.onPress(),
   );
   expect(text()).toContain("Aucune version n’a été collectée");
-  expect(text()).toContain("transport n’est pas configuré");
+  expect(text()).not.toContain("transport n’est pas configuré");
   expect(
     tree!.root.find(
       (n) =>

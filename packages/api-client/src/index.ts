@@ -1,3 +1,8 @@
+import {
+  nearbyTransportInputSchema,
+  nearbyTransportResultSchema,
+  type NearbyTransportInput,
+} from "@fl-copilot/sync-contracts";
 import { copilotTurnTransportRequestSchema } from "@fl-copilot/sync-contracts";
 import {
   productImageOptionsSchema,
@@ -402,6 +407,21 @@ export class ApiClient {
       });
     return result;
   }
+  nearbyTransports(
+    accessToken: string,
+    storeId: string,
+    input: NearbyTransportInput,
+  ) {
+    return this.request(
+      "/api/v1/store/transports/nearby",
+      {
+        method: "POST",
+        headers: syncHeaders(accessToken, storeId),
+        body: JSON.stringify(nearbyTransportInputSchema.parse(input)),
+      },
+      nearbyTransportResultSchema,
+    );
+  }
   weeklyContext(
     accessToken: string,
     storeId: string,
@@ -549,6 +569,7 @@ export class ApiClient {
     layoutIllustrationGenerations = false,
     documentArchives = false,
     journalNotes = false,
+    storeTransports = false,
   ) {
     const query = new URLSearchParams();
     if (commercialReview) query.set("commercialReview", "true");
@@ -579,6 +600,7 @@ export class ApiClient {
     if (productSubstitutions) query.set("productSubstitutions", "true");
     if (storeProductEvents) query.set("storeProductEvents", "true");
     if (journalNotes) query.set("journalNotes", "true");
+    if (storeTransports) query.set("storeTransports", "true");
     if (substitutionEvidence) query.set("substitutionEvidence", "true");
     if (substitutionScores) query.set("substitutionScores", "true");
     if (copilotHistory) query.set("copilotHistory", "true");
@@ -659,6 +681,7 @@ export class ApiClient {
     layoutIllustrations = false,
     layoutIllustrationGenerations = false,
     journalNotes = false,
+    storeTransports = false,
   ) {
     const query = new URLSearchParams();
     if (rawObservationDays !== undefined)
@@ -691,6 +714,7 @@ export class ApiClient {
     if (productSubstitutions) query.set("productSubstitutions", "true");
     if (storeProductEvents) query.set("storeProductEvents", "true");
     if (journalNotes) query.set("journalNotes", "true");
+    if (storeTransports) query.set("storeTransports", "true");
     if (substitutionEvidence) query.set("substitutionEvidence", "true");
     if (substitutionScores) query.set("substitutionScores", "true");
     if (copilotHistory) query.set("copilotHistory", "true");

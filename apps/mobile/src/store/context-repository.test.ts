@@ -1,3 +1,4 @@
+import { storeTransportsFixture } from "../../../../scripts/test-store-transports-fixtures";
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -273,4 +274,37 @@ it("does not invent remote merchandising when a legacy snapshot arrives while a 
   expect(current?.entity.merchandising).toEqual(merchandising);
   expect(current?.remote).not.toHaveProperty("merchandising");
   expect(current?.syncState).toBe("PENDING");
+});
+
+it("retains transports offline through restart, old-writer omission and explicit clearing with atomic outbox", async () => {
+  const x = await setup();
+  const first = { ...x.settings, transports: storeTransportsFixture() };
+  await x.repo.save(first, x.ctx);
+  x.db.close();
+  const reopened = new DatabaseSync(x.path);
+  dbs.push(reopened);
+  const tx = new Adapter(reopened),
+    repo = new StoreContextRepository(tx, receiptReviewDigest);
+  expect((await repo.get(first.storeId))?.entity.transports).toEqual(
+    first.transports,
+  );
+  const next = {
+    ...x.settings,
+    version: 2,
+    updatedAt: "2026-11-13T11:00:00.000Z",
+  };
+  await repo.save(next, { ...x.ctx, commandId: randomUUID() });
+  expect((await repo.get(first.storeId))?.entity.transports).toEqual(
+    first.transports,
+  );
+  const commands = await new OutboxRepository(tx).listPending(first.storeId);
+  expect(commands).toHaveLength(1); // FIFO exposes the first pending revision per entity.
+  expect(
+    reopened.prepare("SELECT COUNT(*) AS n FROM sync_outbox").get()?.n,
+  ).toBe(2);
+  await repo.save(
+    { ...next, version: 3, transports: null },
+    { ...x.ctx, commandId: randomUUID() },
+  );
+  expect((await repo.get(first.storeId))?.entity.transports).toBeNull();
 });

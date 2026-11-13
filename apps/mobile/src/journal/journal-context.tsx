@@ -262,13 +262,7 @@ export function JournalExternalContext({
             ) : null}
           </>
         ) : null}
-        {selected !== "CONSUMPTION" ? (
-          <Text className="text-muted">
-            Le suivi automatique des perturbations de transport n’est pas
-            configuré. Tu peux noter une perturbation réellement constatée dans
-            « Notes du magasin ».
-          </Text>
-        ) : null}
+
         {linkError ? (
           <Text className="text-critical">Impossible d’ouvrir la source.</Text>
         ) : null}

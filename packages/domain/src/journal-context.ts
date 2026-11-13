@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { transportContextSchema } from "./store-transports";
 const date = z.iso.date();
 export const journalConsumptionSchema = z
   .object({
@@ -85,7 +86,7 @@ export const journalSourceSchema = z
 export const journalContextSchema = z
   .object({
     sources: z.array(journalSourceSchema).length(3),
-    transport: z.literal("NOT_CONFIGURED"),
+    transport: z.union([z.literal("NOT_CONFIGURED"), transportContextSchema]),
   })
   .strict()
   .refine((s) => new Set(s.sources.map((p) => p.kind)).size === 3);

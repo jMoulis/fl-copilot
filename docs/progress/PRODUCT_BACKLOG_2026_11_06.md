@@ -181,3 +181,16 @@ reste explicitement ouverte ; pas d'alerte fictive ni de trafic régional prése
 comme un impact local. Détails et recette :
 `docs/qa/JOURNAL_EXTERNAL_CONTEXT_2026_11_13.md`. Livraison API, binaire et
 acceptation sur iPhone restent distincts. Aucun build ni déploiement dans ce lot.
+
+### Configuration des transports proches — 13 novembre
+
+L’arbitrage propriétaire remplace la saisie manuelle des lignes par une détection
+depuis l’adresse ou le GPS fixe du magasin. Le lot ajoute l’entrée dans Mon
+magasin, le rayon proposé de 800 m et les interrupteurs, puis réutilise la
+synchronisation canonique et le cache des sources pour le Journal/store_week.
+La clé PRIM est un secret Production déjà enregistré, jamais une donnée mobile.
+Aucune ligne n’est enregistrée dans le magasin avant sa confirmation explicite.
+Les messages publiés, leurs périodes d’application et leurs dates de collecte
+restent distincts des effets constatés. Recette/limites :
+`docs/qa/STORE_NEARBY_TRANSPORTS_2026_11_13.md`. Activation serveur, authentification
+PRIM réelle et recette iPhone restent séparées du code. Aucun build demandé.

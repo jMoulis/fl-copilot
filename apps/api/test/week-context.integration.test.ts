@@ -1,3 +1,5 @@
+import { readTransportContext } from "../src/context/transport-traffic";
+import { storeTransportsFixture } from "../../../scripts/test-store-transports-fixtures";
 import { readJournalContext } from "../src/context/journal";
 import { gzipSync } from "node:zlib";
 import { readObservedWeather } from "../src/context/observed-weather";
@@ -122,6 +124,74 @@ describe.skipIf(!uri)("remote context cache", () => {
       service.read(randomUUID(), "2026-10-05"),
     ).rejects.toMatchObject({ publicCode: "STORE_SETTINGS_NOT_SYNCED" });
     expect(await db.collection("commercialWeekPlans").countDocuments()).toBe(0);
+  });
+  it("retains past daily transit captures even when a current line publishes more than forty updates", async () => {
+    const db = await database.getDb(),
+      settings = {
+        ...storeContextFixture(),
+        transports: storeTransportsFixture(),
+      };
+    let at = new Date("2026-11-12T10:00:00Z");
+    const fetcher: typeof fetch = async () =>
+      Response.json({
+        line_reports: [
+          {
+            line: {
+              id: "line:IDFM:C01383",
+              links: [{ type: "disruption", id: "work" }],
+            },
+          },
+        ],
+        disruptions: [
+          {
+            id: "work",
+            messages: [{ text: "Annonce de travaux" }],
+            application_periods: [
+              { begin: "20261112T220000", end: "20261113T020000" },
+            ],
+          },
+        ],
+      });
+    const first = await readTransportContext(
+      db,
+      settings,
+      "2026-11-15",
+      "controlled-test-key",
+      fetcher,
+      () => at,
+    );
+    expect(first).toMatchObject({ status: "AVAILABLE" });
+    const snapshot = await db
+      .collection("contextProviderCache")
+      .findOne({ snapshotOf: { $regex: "^https://prim" } });
+    expect(snapshot).toBeTruthy();
+    await db.collection("contextProviderCache").insertMany(
+      Array.from({ length: 60 }, (_, i) => ({
+        url: `transit-test-capture-${i}`,
+        snapshotOf: snapshot!.snapshotOf,
+        firstCapturedAt: new Date(
+          Date.parse("2026-11-13T00:00:00Z") + i * 600000,
+        ).toISOString(),
+        revision: "a".repeat(64),
+        payload: snapshot!.payload,
+      })),
+    );
+    at = new Date("2026-11-13T20:00:00Z");
+    const next = await readTransportContext(
+      db,
+      settings,
+      "2026-11-15",
+      "controlled-test-key",
+      fetcher,
+      () => at,
+    );
+    expect(next).not.toBe("NOT_CONFIGURED");
+    if (typeof next !== "string")
+      expect(
+        next.lines[0]?.history?.some(
+          (h) => h.capturedAt === "2026-11-12T10:00:00.000Z",
+        ),
+      ).toBe(true);
   });
   it("archives the real Journal sources with shared TTL, 304, history, store scope and outage recovery", async () => {
     const db = await database.getDb();

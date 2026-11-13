@@ -1,3 +1,8 @@
+import {
+  nearbyTransportInputSchema,
+  nearbyTransportResultSchema,
+} from "@fl-copilot/domain";
+import { discoverNearbyTransports } from "./context/transports.js";
 import { notifyDocumentReady } from "./notifications/document-ready.js";
 import type { IncomingHttpHeaders } from "node:http";
 import { notifyEmailReady } from "./notifications/email-ready.js";
@@ -1520,7 +1525,12 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                 await authorize();
                 const result = await readCopilotWeek(
                   dependencies.weekContext ??
-                    createWeekContextService(dependencies.database),
+                    createWeekContextService(
+                      dependencies.database,
+                      fetch,
+                      undefined,
+                      { primApiKey: config.PRIM_API_KEY },
+                    ),
                   storeId,
                   input,
                 );
@@ -2087,6 +2097,33 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       );
     },
   );
+  app.post(
+    "/api/v1/store/transports/nearby",
+    {
+      schema: {
+        body: nearbyTransportInputSchema,
+        response: { 200: nearbyTransportResultSchema },
+      },
+    },
+    async (request) => {
+      const token = request.headers.authorization,
+        storeId = request.headers["x-store-id"];
+      if (!token?.startsWith("Bearer "))
+        throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
+      if (typeof storeId !== "string" || !z.uuid().safeParse(storeId).success)
+        throw new AuthError(
+          400,
+          "STORE_CONTEXT_REQUIRED",
+          "Le magasin doit être indiqué.",
+        );
+      await auth.authorizeStore(token.slice(7), storeId);
+      return discoverNearbyTransports(
+        await dependencies.database.getDb(),
+        storeId,
+        request.body,
+      );
+    },
+  );
   app.get(
     "/api/v1/store/context",
     {
@@ -2112,7 +2149,9 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       await auth.authorizeStore(token.slice(7), storeId);
       const result = await (
         dependencies.weekContext ??
-        createWeekContextService(dependencies.database)
+        createWeekContextService(dependencies.database, fetch, undefined, {
+          primApiKey: config.PRIM_API_KEY,
+        })
       ).read(
         storeId,
         request.query.weekStart,

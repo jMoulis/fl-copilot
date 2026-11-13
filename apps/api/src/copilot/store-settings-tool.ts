@@ -32,7 +32,8 @@ export async function readCopilotStoreSettings(
       row._id !== entity.id
     )
       throw Error("COPILOT_STORE_SETTINGS_SCOPE_INVALID");
-    const { position, ...visible } = entity;
+    const { position, transports, ...visible } = entity;
+    void transports;
     void position;
     settings = copilotVisibleStoreSettingsSchema.parse(visible);
   }

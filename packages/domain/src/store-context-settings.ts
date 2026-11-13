@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { storeTransportsSchema } from "./store-transports";
 /** Manager-declared commercial context; neither measured geometry nor inferred sales heat. */
 export const storeMerchandisingZoneSchema = z
   .strictObject({
@@ -71,6 +72,7 @@ export const storeContextSettingsSchema = z
       .strict()
       .nullable(),
     merchandising: storeMerchandisingSchema.nullable().optional(),
+    transports: storeTransportsSchema.nullable().optional(),
     version: z.number().int().positive(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
@@ -94,22 +96,35 @@ export const storeContextSettingsSchema = z
 export type StoreContextSettings = z.infer<typeof storeContextSettingsSchema>;
 
 /** Omission by an older writer preserves context; an explicit null clears it. */
-export function preserveStoreMerchandising(
+export function preserveStoreContextExtensions(
   next: StoreContextSettings,
   previous?: StoreContextSettings | null,
 ): StoreContextSettings {
-  return next.merchandising === undefined &&
+  return {
+    ...next,
+    ...(next.merchandising === undefined &&
     previous?.merchandising !== undefined
-    ? { ...next, merchandising: previous.merchandising }
-    : next;
+      ? { merchandising: previous.merchandising }
+      : {}),
+    ...(next.transports === undefined && previous?.transports !== undefined
+      ? { transports: previous.transports }
+      : {}),
+  };
 }
 /** Older strict readers cannot parse the optional new field. Never change the stored entity. */
 export function legacyStoreContext(
   settings: StoreContextSettings,
+  merchandisingSupported = false,
+  transportsSupported = false,
 ): StoreContextSettings {
-  const { merchandising, ...legacy } = settings;
-  void merchandising;
-  return legacy;
+  const { merchandising, transports, ...legacy } = settings;
+  return {
+    ...legacy,
+    ...(merchandisingSupported && merchandising !== undefined
+      ? { merchandising }
+      : {}),
+    ...(transportsSupported && transports !== undefined ? { transports } : {}),
+  };
 }
 
 export const merchandisingHeatLabels: Record<

@@ -181,6 +181,53 @@ export async function readCopilotWeek(
   const economicText = economy
     ? ` Conjoncture INSEE nationale mensuelle, édition actuelle révisable, relevée le ${stamp(economy.retrievedAt)} ; statut ${states[economy.status]}. ${economicSummary.map((s) => `${economicSeriesLabels[s.id]} : ${s.period ?? "mois indisponible"}, indice ${s.value ?? "indisponible"}${s.id === "011813720" ? ` (base 2025=100), évolution sur un an ${s.annualChangePercent ?? "indisponible"} %` : ` (moyenne de long terme 100), écart au mois précédent ${s.monthlyDifferencePoints ?? "indisponible"} points`}.`).join(" ")} Ces périodes peuvent différer du mois demandé ; ce ne sont ni des statistiques quotidiennes du magasin, ni une explication causale de ses ventes. Les dates de publication de chaque valeur historique sont inconnues : ne pas prétendre reconstituer ce qui était connu ce jour-là.`
     : "";
+  const traffic = journal?.transport;
+  const rawTrafficText =
+    traffic && typeof traffic !== "string"
+      ? ` Transports IDFM : ${states[traffic.status]}, ${traffic.lines.length} lignes suivies, rayon ${traffic.radiusMetres} m. ${traffic.lines
+          .filter((l) => l.disruptions.length)
+          .slice(0, 6)
+          .map(
+            (l) =>
+              `${l.name}, arrêt ${l.stopName} à ${l.distanceMetres} m, collecte ${l.capturedAt ?? "inconnue"}, statut ${l.status} : ${l.disruptions
+                .slice(0, 2)
+                .map(
+                  (d) =>
+                    `${d.message.slice(0, 160)} ; application ${d.applicationPeriods
+                      .slice(0, 2)
+                      .map((p) => `${p.begin}–${p.end}`)
+                      .join(
+                        ", ",
+                      )}${d.schedule ? `; horaires/jours ${d.schedule.slice(0, 160)}` : ""}`,
+                )
+                .join(" | ")}`,
+          )
+          .join(
+            " ; ",
+          )}. Messages et périodes locales Europe/Paris publiés par le transporteur, pas des observations au magasin. Sélection résumée (au plus 6 lignes perturbées, 2 messages chacune), état vide ne prouve pas un trafic normal. Captures historiques : ${traffic.lines
+          .flatMap((l) =>
+            (l.history ?? [])
+              .filter(
+                (h) =>
+                  h.capturedAt.slice(0, 10) >= input.weekStart &&
+                  h.capturedAt.slice(0, 10) <=
+                    (context?.weekEnd ?? input.weekStart),
+              )
+              .slice(0, 1)
+              .map(
+                (h) =>
+                  `${l.name} relevé ${h.capturedAt}, ${h.disruptions.length} messages${h.partial ? " (partiel)" : ""}`,
+              ),
+          )
+          .slice(0, 16)
+          .join(
+            " ; ",
+          )}. Source https://me-deplacer.iledefrance-mobilites.fr/infos-trafic. Proximité ≠ effet causal sur les ventes.`
+      : " Transport non configuré.";
+  const trafficText =
+    rawTrafficText.length > 1800
+      ? `${rawTrafficText.slice(0, 1800)}… Extrait partiel ; consulte le Journal pour la liste. Messages annoncés, pas constats magasin ni preuve causale. Source https://me-deplacer.iledefrance-mobilites.fr/infos-trafic.`
+      : rawTrafficText;
   const journalText = journal
     ? ` Journal externe : ${journal.sources
         .map(
@@ -203,7 +250,7 @@ export async function readCopilotWeek(
         )
         .join(
           " ",
-        )} Annonces municipales partielles et non confirmées au magasin, pas absence prouvée si vides. Transport non configuré. Ne pas attribuer causalement les écarts ni répéter les valeurs mensuelles comme observations quotidiennes indépendantes.`
+        )} Annonces municipales partielles et non confirmées au magasin, pas absence prouvée si vides. ${trafficText} Ne pas attribuer causalement les écarts ni répéter les valeurs mensuelles comme observations quotidiennes indépendantes.`
     : "";
   evidence.push(
     fact(

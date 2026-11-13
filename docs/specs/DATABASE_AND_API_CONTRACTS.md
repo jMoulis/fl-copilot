@@ -5519,3 +5519,31 @@ from last provider validation and original publication (unknown). Up to twelve r
 content confirmed on different days so historical day selection remains valid. No historical
 vintage is fabricated. Transport remains explicitly NOT_CONFIGURED pending
 scoped line selection and official PRIM credentials.
+
+## Nearby transports configuration — 13 November 2026
+
+StoreContextSettings optionally includes nullable `transports`: confirmed fixed
+shop location (address resolved by IGN or recorded store GPS), radius 200–2000 m,
+detected reference lines and per-line enablement. Default radius is 800 m; at most
+32 candidates/16 enabled lines. This reuses the existing SQLite payload/history,
+atomic Outbox and Mongo settings/history; no table, collection or migration is
+added. Omission by an older writer preserves both merchandising and transports;
+explicit null clears the selection. ACK/conflict/bootstrap/pull project this field
+only with independent `storeTransports` capability. Native initial adoption forces
+one canonical bootstrap and records the existing app_metadata marker. No generic
+last-write-wins policy is introduced.
+
+Authenticated POST `/api/v1/store/transports/nearby` performs bounded read-only
+IGN/address and IDFM arrets-lignes lookups. It does not save the result. Ambiguous
+addresses are returned for explicit selection; city-centre fallbacks are refused.
+PRIM_API_KEY stays exclusively in server config, is sent only as the PRIM header
+with redirects refused, and never enters mobile configuration/cache/evidence.
+
+The opt-in Journal context reads only enabled line IDs, shared 30-minute provider
+cache, and actual immutable daily/content captures in contextProviderCache (index
+61). Per-line failures retain last-known snapshots; current published messages
+and application windows remain distinct from capture dates. Historical daily
+samples are bounded/qualified; no message is not a traffic guarantee. Existing
+store_week includes a compact, explicitly partial transit summary, with no new
+agent/tool or model request for collection. Private address/GPS settings are
+excluded from the existing Copilot settings response.

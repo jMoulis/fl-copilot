@@ -220,7 +220,8 @@ export async function previewStoreConflict(
   if (!layout && JSON.stringify(entity).length > 96000)
     throw Error("STORE_CONFLICT_REVIEW_LIMIT");
   const visible = settings
-    ? (({ position, ...rest }) => {
+    ? (({ position, transports, ...rest }) => {
+        void transports;
         void position;
         return copilotVisibleStoreSettingsSchema.parse(rest);
       })(settings)

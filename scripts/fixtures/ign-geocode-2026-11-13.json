@@ -1,0 +1,29 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [2.293091, 48.910648] },
+      "properties": {
+        "label": "6 Rue de l’Eglise 92600 Asnières-sur-Seine",
+        "score": 0.966610909090909,
+        "housenumber": "6",
+        "id": "92004_3125_00006",
+        "banId": "2e80ec4f-04b6-40d6-b8fb-9f8ee28cfeac",
+        "name": "6 Rue de l’Eglise",
+        "postcode": "92600",
+        "citycode": "92004",
+        "x": 648185.94,
+        "y": 6868082.24,
+        "city": "Asnières-sur-Seine",
+        "context": "92, Hauts-de-Seine, Île-de-France",
+        "type": "housenumber",
+        "importance": 0.63272,
+        "depcode": "92",
+        "street": "Rue de l’Eglise",
+        "_type": "address"
+      }
+    }
+  ],
+  "query": "6 rue de l'eglise"
+}

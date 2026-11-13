@@ -1,4 +1,4 @@
-import { preserveStoreMerchandising } from "@fl-copilot/domain";
+import { preserveStoreContextExtensions } from "@fl-copilot/domain";
 import {
   storeContextSettingsSchema,
   type StoreContextSettings,
@@ -79,7 +79,7 @@ export async function applyStoreContext(
     return;
   }
   if (local && (local.remoteVersion ?? 0) > choice.version) return;
-  choice = preserveStoreMerchandising(choice, local?.entity);
+  choice = preserveStoreContextExtensions(choice, local?.entity);
   await db.runAsync(
     `INSERT INTO store_context_settings(id,store_id,payload_json,remote_payload_json,remote_version,sync_state,dirty) VALUES(?,?,?,?,?,'SYNCED',0) ON CONFLICT(id) DO UPDATE SET payload_json=excluded.payload_json,remote_payload_json=excluded.remote_payload_json,remote_version=excluded.remote_version,sync_state='SYNCED',dirty=0`,
     choice.id,
@@ -193,7 +193,7 @@ export class StoreContextRepository {
           choice.storeId,
         ),
         previous = row ? mapped(row) : null;
-      choice = preserveStoreMerchandising(choice, previous?.entity);
+      choice = preserveStoreContextExtensions(choice, previous?.entity);
       if (row?.sync_state === "CONFLICT")
         throw Error("STORE_CONTEXT_RESOLVE_REQUIRED");
       if (
