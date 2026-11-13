@@ -45,6 +45,7 @@ it("keeps exact linked messages and planned local periods without inventing stor
     applicationPeriods: [{ begin: "20261114T220000", end: "20261115T020000" }],
   });
   expect(r.disruptions[0]?.schedule).toContain("22:00–02:00");
+  expect(r.disruptions[0]?.schedule).toContain("samedi, dimanche");
   expect(r.disruptions[0]?.schedule).not.toContain("monday");
   expect(() => normalizeTraffic(response(), "IDFM:C00000")).toThrow();
   const nested = {

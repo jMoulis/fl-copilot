@@ -13,6 +13,15 @@ import { boundedJson } from "./transports.js";
 import { plainText } from "./journal-sources.js";
 export const primTrafficBase =
   "https://prim.iledefrance-mobilites.fr/marketplace/v2/navitia/line_reports/lines/";
+const weekdayLabels: Record<string, string> = {
+  monday: "lundi",
+  tuesday: "mardi",
+  wednesday: "mercredi",
+  thursday: "jeudi",
+  friday: "vendredi",
+  saturday: "samedi",
+  sunday: "dimanche",
+};
 const localTime = z
   .string()
   .regex(/^\d{8}T(?:[01]\d|2[0-3])[0-5]\d[0-5]\d$/)
@@ -157,7 +166,7 @@ export function normalizeTraffic(raw: unknown, lineId: string) {
                   p.week_pattern,
                 )
                   .filter(([, v]) => v)
-                  .map(([k]) => k)
+                  .map(([k]) => weekdayLabels[k] ?? "jour non précisé")
                   .join(
                     ", ",
                   )} ; ${(p.time_slots ?? []).map((t) => `${format(t.begin)}–${format(t.end)}`).join(", ") || "journée entière selon la source"}`,
