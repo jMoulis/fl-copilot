@@ -1,3 +1,4 @@
+import { storeTransportLocationChanged } from "@fl-copilot/domain";
 import { createHash } from "node:crypto";
 import type { Db } from "mongodb";
 import { z } from "zod";
@@ -201,15 +202,8 @@ export async function readTransportContext(
     radiusMetres: profile.radiusMetres,
     lines: [],
   };
-  const locationChanged =
-    profile.city !== settings.city ||
-    profile.postalCode !== settings.postalCode ||
-    (profile.location.source === "STORE_GPS" &&
-      (!settings.position ||
-        settings.locationMode !== "POINT" ||
-        settings.position.latitude !== profile.location.latitude ||
-        settings.position.longitude !== profile.location.longitude));
-  if (locationChanged) return { ...base, issue: "LOCATION_CHANGED" };
+  if (storeTransportLocationChanged(settings))
+    return { ...base, issue: "LOCATION_CHANGED" };
   const selected = profile.lines.filter((l) => l.enabled);
   if (!selected.length) return { ...base, issue: "NO_SELECTED_LINES" };
   if (!apiKey) return { ...base, issue: "MISSING_API_KEY" };

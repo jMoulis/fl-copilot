@@ -1,3 +1,4 @@
+import type { StoreContextSettings } from "./store-context-settings";
 import { z } from "zod";
 export const transportPointSchema = z
   .object({
@@ -144,3 +145,18 @@ export const transportContextSchema = z
   .strict();
 export type TransportContext = z.infer<typeof transportContextSchema>;
 export type TransportDisruption = z.infer<typeof transportDisruptionSchema>;
+
+/** A stale selection must not attach transport data to a changed shop location. */
+export function storeTransportLocationChanged(settings: StoreContextSettings) {
+  const profile = settings.transports;
+  return (
+    !!profile &&
+    (profile.city !== settings.city ||
+      profile.postalCode !== settings.postalCode ||
+      (profile.location.source === "STORE_GPS" &&
+        (!settings.position ||
+          settings.locationMode !== "POINT" ||
+          settings.position.latitude !== profile.location.latitude ||
+          settings.position.longitude !== profile.location.longitude)))
+  );
+}

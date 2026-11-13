@@ -1,3 +1,4 @@
+import { storeTransportsFixture } from "../../../../scripts/test-store-transports-fixtures";
 import { expect, it, vi } from "vitest";
 import { Inngest } from "inngest";
 import { weeklyContextFixture } from "../../../../scripts/test-weekly-context-fixtures";
@@ -80,6 +81,9 @@ it("binds geographic archive scope without invalidating history for unrelated st
       version: 42,
       updatedAt: "2026-11-13T12:00:00.000Z",
     }),
+  ).toBe(dailyJournalScope(store));
+  expect(
+    dailyJournalScope({ ...store, transports: storeTransportsFixture() }),
   ).toBe(dailyJournalScope(store));
   expect(dailyJournalScope({ ...store, postalCode: "75001" })).not.toBe(
     dailyJournalScope(store),
