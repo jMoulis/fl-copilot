@@ -1,3 +1,4 @@
+vi.mock("../journal/journal-notes", () => ({ JournalNotes: "JournalNotes" }));
 import {
   createElement,
   Fragment,

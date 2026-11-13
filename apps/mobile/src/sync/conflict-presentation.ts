@@ -19,6 +19,7 @@ export function conflictEntityLabel(conflict: SyncConflict) {
     need_membership: "Association produit/besoin",
     product_substitution: "Relation de substitution",
     store_product_event: "Signalement magasin",
+    store_journal_note: "Note du magasin",
     need_unit: "Unité de besoin",
     copilot_decision: "Décision du copilote",
     copilot_layout_illustration: "Préparation d’illustration",

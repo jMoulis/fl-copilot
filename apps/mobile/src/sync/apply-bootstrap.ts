@@ -1,3 +1,4 @@
+import { applyJournalNote } from "../journal/journal-note-repository";
 import { applyIllustrationGenerationRecord } from "../copilot/layout-illustration-generation-repository";
 import { applyLayoutIllustrationRecord } from "../copilot/layout-illustration-repository";
 import { applyEmailDecisionRecord } from "../intake/email-decision-repository";
@@ -372,6 +373,15 @@ export async function applyBootstrap(
         "1",
         bootstrap.serverTime,
       );
+    for (const note of bootstrap.entities.journalNotes ?? [])
+      await applyJournalNote(transaction, storeId, note);
+    if (bootstrap.entities.journalNotes)
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+        `journal-notes:${storeId}`,
+        "1",
+        bootstrap.serverTime,
+      );
     for (const prep of bootstrap.entities.productStoreEvents ?? [])
       await applyStoreProductEvent(transaction, storeId, prep);
     if (bootstrap.entities.productStoreEvents)
@@ -575,6 +585,7 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
     "productNeedMemberships",
     "directedProductSubstitutions",
     "productStoreEvents",
+    "journalNotes",
     "substitutionScoreHistory",
     "dailySubstitutionEvidence",
     "dailySubstitutionEvidenceStates",

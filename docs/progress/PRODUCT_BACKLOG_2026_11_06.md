@@ -153,3 +153,13 @@ Après validation de la direction visuelle météo le 12 novembre, le premier in
 ## V2 explicitement demandée
 
 - [ ] **Génération d’images de TG** : illustrer une proposition de tête de gondole. Le périmètre sera défini après le cadrage du contexte d’implantation ; une illustration ne prouve pas la faisabilité physique ni une installation réalisée.
+
+### Notes générales de magasin — 13 novembre
+
+Le prochain incrément ajoute une capture courte depuis le Journal : texte,
+journée sélectionnée et période facultative, avec saisie hors connexion,
+synchronisation canonique, historique et retrait explicite. Le copilote les lit
+via ses observations existantes ; aucun nouvel agent ou outil d'écriture IA.
+Qualification : `docs/qa/JOURNAL_STORE_NOTES_2026_11_13.md`. Ce code ne clôture ni les
+sources locales/transports ni les études d'utilité ; disponibilité API, binaire et
+recette iPhone restent séparées. Aucun nouveau build demandé pour ce lot.

@@ -546,6 +546,7 @@ export class ApiClient {
     layoutIllustrations = false,
     layoutIllustrationGenerations = false,
     documentArchives = false,
+    journalNotes = false,
   ) {
     const query = new URLSearchParams();
     if (commercialReview) query.set("commercialReview", "true");
@@ -575,6 +576,7 @@ export class ApiClient {
     if (needMemberships) query.set("needMemberships", "true");
     if (productSubstitutions) query.set("productSubstitutions", "true");
     if (storeProductEvents) query.set("storeProductEvents", "true");
+    if (journalNotes) query.set("journalNotes", "true");
     if (substitutionEvidence) query.set("substitutionEvidence", "true");
     if (substitutionScores) query.set("substitutionScores", "true");
     if (copilotHistory) query.set("copilotHistory", "true");
@@ -654,6 +656,7 @@ export class ApiClient {
     emailIntake = false,
     layoutIllustrations = false,
     layoutIllustrationGenerations = false,
+    journalNotes = false,
   ) {
     const query = new URLSearchParams();
     if (rawObservationDays !== undefined)
@@ -685,6 +688,7 @@ export class ApiClient {
     if (needMemberships) query.set("needMemberships", "true");
     if (productSubstitutions) query.set("productSubstitutions", "true");
     if (storeProductEvents) query.set("storeProductEvents", "true");
+    if (journalNotes) query.set("journalNotes", "true");
     if (substitutionEvidence) query.set("substitutionEvidence", "true");
     if (substitutionScores) query.set("substitutionScores", "true");
     if (copilotHistory) query.set("copilotHistory", "true");

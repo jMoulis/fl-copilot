@@ -1,3 +1,7 @@
+import {
+  serializeJournalNote,
+  type JournalNoteDocument,
+} from "../journal-note-sync";
 import { legacyStoreContext } from "@fl-copilot/domain";
 import {
   serializeIllustrationGeneration,
@@ -446,6 +450,13 @@ export function createMongoSyncBootstrapService(
                     .find({ storeId: store.storeId }, { session })
                     .toArray()
                 : [];
+            const journalNotes =
+              query.journalNotes === "true"
+                ? await mongoDatabase
+                    .collection<JournalNoteDocument>("storeJournalNotes")
+                    .find({ storeId: store.storeId }, { session })
+                    .toArray()
+                : [];
             const storeEventRows =
               query.storeProductEvents === "true"
                 ? await mongoDatabase
@@ -707,6 +718,9 @@ export function createMongoSyncBootstrapService(
                         serializeProductSubstitution,
                       ),
                     }
+                  : {}),
+                ...(query.journalNotes === "true"
+                  ? { journalNotes: journalNotes.map(serializeJournalNote) }
                   : {}),
                 ...(query.storeProductEvents === "true"
                   ? {

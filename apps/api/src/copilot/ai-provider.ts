@@ -2953,7 +2953,7 @@ export function createCopilotAiProvider(
                 ? {
                     store_events: tool({
                       description:
-                        "Read recorded store/product observations overlapping [startAt,endAt), including ended and open episodes. Use Europe/Paris local-time offsets for calendar days (DST matters), productId null for department, afterId for pagination. Source/status distinguish human observations, PDF instructions and information to review. No event is not proof of no rupture; open is not current stock; no causal or lost-sales calculation. No writes.",
+                        "Read recorded store/product observations overlapping [startAt,endAt), including ended and open episodes. Use Europe/Paris local-time offsets for calendar days (DST matters), productId null includes store-wide Journal notes as well as product episodes; afterId pages both. Store notes are dated manager declarations in evidence, not product incidents or verified causes. Source/status distinguish human observations, PDF instructions and information to review. No event is not proof of no rupture; open is not current stock; no causal or lost-sales calculation. No writes.",
                       inputSchema: copilotEventsReadInputSchema,
                       execute: (input) =>
                         executeRead(
