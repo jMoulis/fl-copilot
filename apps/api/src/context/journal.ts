@@ -176,12 +176,7 @@ export async function readJournalContext(
           firstCapturedAt: selected?.firstCapturedAt ?? null,
           revision: selected?.revision ?? null,
           payload: selected?.payload ?? null,
-          history: valid
-            .filter(
-              (row, index) =>
-                valid.findIndex((v) => v.revision === row.revision) === index,
-            )
-            .slice(0, 6),
+          history: valid.slice(0, 12),
         };
       } catch {
         return base;

@@ -177,7 +177,7 @@ describe.skipIf(!uri)("remote context cache", () => {
     expect(second.sources.map((s) => s.revision)).toEqual(
       first.sources.map((s) => s.revision),
     );
-    expect(second.sources.every((s) => s.history.length === 1)).toBe(true);
+    expect(second.sources.every((s) => s.history.length === 2)).toBe(true);
     mode = "fail";
     at = new Date("2026-11-15T12:00:00Z");
     const stale = await read();

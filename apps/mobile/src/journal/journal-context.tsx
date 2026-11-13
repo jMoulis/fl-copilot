@@ -41,7 +41,9 @@ export function JournalExternalContext({
     journalSourceForDate(s, date, parisDate(new Date().toISOString())),
   );
   const source = sources?.find((s) => s.kind === selected);
-  const archived = source?.history.find((h) => h.revision === revision);
+  const archived = source?.history.find(
+    (h) => `${h.revision}:${h.firstCapturedAt}` === revision,
+  );
   const payload = archived?.payload ?? source?.payload;
   const rows = source
     ? journalItemsForDate({ ...source, payload: payload ?? null }, date)
@@ -229,7 +231,7 @@ export function JournalExternalContext({
           <>
             <Text className="text-muted">
               {source.provider}
-              {"\n"}Première capture de cette version :{" "}
+              {"\n"}Collecte de cette version :{" "}
               {stamp(archived?.firstCapturedAt ?? source.firstCapturedAt)}
               {"\n"}Dernière vérification : {stamp(source.retrievedAt)}
               {"\n"}Actualisation prévue après : {stamp(source.validUntil)}
@@ -241,7 +243,7 @@ export function JournalExternalContext({
             {source.history.length > 1 ? (
               <View className="gap-2">
                 <Text className="font-semibold text-ink">
-                  Versions collectées
+                  Historique des collectes
                 </Text>
                 <SecondaryButton
                   label="Dernière version disponible"
@@ -250,8 +252,10 @@ export function JournalExternalContext({
                 {source.history.map((h) => (
                   <SecondaryButton
                     key={`${h.revision}:${h.firstCapturedAt}`}
-                    label={`${stamp(h.firstCapturedAt)}${h.revision === (revision ?? source.revision) ? " · affichée" : ""}`}
-                    onPress={() => setRevision(h.revision)}
+                    label={`${stamp(h.firstCapturedAt)}${`${h.revision}:${h.firstCapturedAt}` === (revision ?? `${source.revision}:${source.firstCapturedAt}`) ? " · affichée" : ""}`}
+                    onPress={() =>
+                      setRevision(`${h.revision}:${h.firstCapturedAt}`)
+                    }
                   />
                 ))}
               </View>

@@ -125,3 +125,35 @@ it("scopes municipal sources to the supported city/postcode, leaving transport e
   expect(r.sources[0]?.status).toBe("NOT_CONFIGURED");
   expect(r.transport).toBe("NOT_CONFIGURED");
 });
+
+it("preserves equal-content captures on different days for within-week historical selection", async () => {
+  const { db } = database(),
+    read = provider(),
+    settings = storeContextFixture();
+  await readJournalContext(
+    db,
+    new ContextProviderCache(db),
+    settings,
+    "2026-11-15",
+    new Date("2026-11-13T10:00:00Z"),
+  );
+  read.mockImplementation(async (url) => ({
+    data: fixture.sources[
+      url.includes("franceagrimer") ? 2 : url.includes("travaux") ? 0 : 1
+    ]!.payload,
+    retrievedAt: "2026-11-14T09:00:00.000Z",
+    validUntil: "2026-11-15T09:00:00.000Z",
+    failed: false,
+  }));
+  const result = await readJournalContext(
+    db,
+    new ContextProviderCache(db),
+    settings,
+    "2026-11-15",
+    new Date("2026-11-14T10:00:00Z"),
+  );
+  expect(result.sources[0]?.history.map((h) => h.firstCapturedAt)).toEqual([
+    "2026-11-14T09:00:00.000Z",
+    "2026-11-13T09:00:00.000Z",
+  ]);
+});

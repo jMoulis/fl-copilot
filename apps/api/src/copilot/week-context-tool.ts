@@ -185,7 +185,7 @@ export async function readCopilotWeek(
     ? ` Journal externe : ${journal.sources
         .map(
           (s) =>
-            `${s.provider} / ${s.kind} : ${states[s.status]}, première capture ${stamp(s.firstCapturedAt)}, dernière vérification ${stamp(s.retrievedAt)}. ${
+            `${s.provider} / ${s.kind} : ${states[s.status]}, collecte ${stamp(s.firstCapturedAt)}, dernière vérification ${stamp(s.retrievedAt)}. ${
               s.payload?.consumption
                 ? `Consommation ${s.payload.consumption.period} : ${s.payload.consumption.groups.map((g) => `${g.group}, ${g.quantityKgPerHousehold} kg/ménage (${g.quantityAnnualPercent}% / an), prix moyen ${g.averagePriceEurPerKg} €/kg (${g.priceAnnualPercent}% / an)`).join(" ; ")}. Prix moyen de mélange, pas indice inflation ; dépenses inconnues, publication historique inconnue. ${s.payload.consumption.reportUrl ?? s.sourceUrl}`
                 : journalItemsForPeriod(

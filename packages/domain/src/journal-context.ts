@@ -79,7 +79,7 @@ export const journalSourceSchema = z
           })
           .strict(),
       )
-      .max(6),
+      .max(12),
   })
   .strict();
 export const journalContextSchema = z
