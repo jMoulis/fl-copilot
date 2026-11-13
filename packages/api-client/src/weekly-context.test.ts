@@ -52,6 +52,7 @@ it.each([false, true])(
       enabled,
       enabled,
       enabled,
+      enabled,
     );
     expect(
       new Headers(
@@ -63,6 +64,7 @@ it.each([false, true])(
     const headers = new Headers(init.headers);
     expect(headers.get("x-context-weather-symbols")).toBe(enabled ? "1" : null);
     expect(headers.get("x-context-economy")).toBe(enabled ? "1" : null);
+    expect(headers.get("x-context-journal")).toBe(enabled ? "1" : null);
     expect(headers.get("x-store-id")).toBe(context.storeId);
   },
 );

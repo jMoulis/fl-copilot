@@ -1,3 +1,4 @@
+import { readJournalContext } from "../src/context/journal";
 import { gzipSync } from "node:zlib";
 import { readObservedWeather } from "../src/context/observed-weather";
 import { readFileSync } from "node:fs";
@@ -98,7 +99,7 @@ describe.skipIf(!uri)("remote context cache", () => {
     expect(copilot.context?.weather.status).toBe("AVAILABLE");
     expect(copilot.context).not.toHaveProperty("settingsFingerprint");
     expect(copilot.evidence).toHaveLength(4);
-    expect(calls).toHaveLength(6);
+    expect(calls).toHaveLength(9);
     at = new Date("2026-10-09T10:00:00Z");
     fail = true;
     const stale = await service.read(settings.storeId, "2026-10-05");
@@ -121,6 +122,87 @@ describe.skipIf(!uri)("remote context cache", () => {
       service.read(randomUUID(), "2026-10-05"),
     ).rejects.toMatchObject({ publicCode: "STORE_SETTINGS_NOT_SYNCED" });
     expect(await db.collection("commercialWeekPlans").countDocuments()).toBe(0);
+  });
+  it("archives the real Journal sources with shared TTL, 304, history, store scope and outage recovery", async () => {
+    const db = await database.getDb();
+    const settings = storeContextFixture();
+    const fixture = (name: string) =>
+      readFileSync(
+        new URL(
+          `../../../scripts/fixtures/journal/${name}.html`,
+          import.meta.url,
+        ),
+        "utf8",
+      );
+    let at = new Date("2026-11-13T09:00:00Z"),
+      calls = 0,
+      mode = "ok";
+    const fetcher: typeof fetch = async (input) => {
+      calls++;
+      if (mode === "fail") throw Error("offline");
+      if (mode === "304") return new Response(null, { status: 304 });
+      const url = String(input);
+      const name = url.includes("franceagrimer")
+        ? "franceagrimer-consumption-2026-11-13"
+        : url.includes("travaux")
+          ? "asnieres-works-2026-11-12"
+          : "asnieres-agenda-2026-11-13";
+      return new Response(fixture(name), {
+        headers: {
+          "content-type": "text/html",
+          "last-modified": "Fri, 13 Nov 2026 08:00:00 GMT",
+        },
+      });
+    };
+    const read = () =>
+      readJournalContext(
+        db,
+        new ContextProviderCache(db, fetcher, () => at),
+        settings,
+        "2026-11-15",
+        at,
+      );
+    const first = await read();
+    expect(first.sources.every((s) => s.status === "AVAILABLE")).toBe(true);
+    await read();
+    expect(calls).toBe(3);
+    expect(
+      await db
+        .collection("contextProviderCache")
+        .countDocuments({ snapshotOf: { $exists: true } }),
+    ).toBe(3);
+    mode = "304";
+    at = new Date("2026-11-14T10:00:00Z");
+    const second = await read();
+    expect(second.sources.map((s) => s.revision)).toEqual(
+      first.sources.map((s) => s.revision),
+    );
+    expect(second.sources.every((s) => s.history.length === 1)).toBe(true);
+    mode = "fail";
+    at = new Date("2026-11-15T12:00:00Z");
+    const stale = await read();
+    expect(stale.sources.every((s) => s.status === "STALE" && s.payload)).toBe(
+      true,
+    );
+    const old = await readJournalContext(
+      db,
+      new ContextProviderCache(db, fetcher, () => at),
+      settings,
+      "2026-11-08",
+      at,
+    );
+    expect(old.sources[0]).toMatchObject({
+      payload: null,
+      issue: "HISTORY_UNAVAILABLE",
+    });
+    const other = await readJournalContext(
+      db,
+      new ContextProviderCache(db, fetcher, () => at),
+      { ...settings, city: "Paris", postalCode: "75001" },
+      "2026-11-15",
+      at,
+    );
+    expect(other.sources[0]?.status).toBe("NOT_CONFIGURED");
   });
   it("shares the normalized INSEE cache across devices and retains its real values after timeout/304", async () => {
     const db = await database.getDb();

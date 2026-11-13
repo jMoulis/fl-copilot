@@ -1,3 +1,4 @@
+import { journalContextFixture } from "../../../../scripts/test-journal-context-fixtures";
 import { observedWeatherContextFixture } from "../../../../scripts/test-observed-weather-fixtures";
 import { economicContextFixture } from "../../../../scripts/test-economic-fixtures";
 import { DatabaseSync } from "node:sqlite";
@@ -193,5 +194,45 @@ it("keeps an archived forecast explicitly stale beside observed data when the re
     expect(saved.weather.days[0]!.type).toBe("FORECAST");
   } finally {
     db.close();
+  }
+});
+
+it("persists Journal sources and revisions through SQLite reopen, old responses and provider failure", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "flc_journal_context_")),
+    file = join(dir, "local.db");
+  let db = new DatabaseSync(file);
+  try {
+    await runLocalMigrations(adapter(db));
+    const settings = storeContextFixture();
+    const initial = weeklyContextFixture(settings);
+    initial.journal = journalContextFixture();
+    await new WeeklyContextRepository(adapter(db)).save(initial, settings);
+    db.close();
+    db = new DatabaseSync(file);
+    const repo = new WeeklyContextRepository(adapter(db));
+    expect((await repo.get(settings, initial.weekStart))?.journal).toEqual(
+      initial.journal,
+    );
+    const legacy = weeklyContextFixture(settings);
+    legacy.retrievedAt = "2026-11-14T10:00:00.000Z";
+    expect((await repo.save(legacy, settings)).journal).toEqual(
+      initial.journal,
+    );
+    legacy.retrievedAt = "2026-11-14T11:00:00.000Z";
+    legacy.journal = journalContextFixture();
+    legacy.journal.sources = legacy.journal.sources.map((s) => ({
+      ...s,
+      status: "UNAVAILABLE",
+      payload: null,
+      history: [],
+      issue: "PROVIDER_UNAVAILABLE",
+    }));
+    const saved = await repo.save(legacy, settings);
+    expect(
+      saved.journal?.sources.every((s) => s.status === "STALE" && s.payload),
+    ).toBe(true);
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
   }
 });

@@ -14,6 +14,7 @@ import {
   readObservedWeather,
   emptyObservedWeather,
 } from "./observed-weather.js";
+import { readJournalContext } from "./journal.js";
 import { readEconomicContext } from "./economy.js";
 import { metForecastSchema, forecastDays } from "./weather.js";
 const communes = z
@@ -73,6 +74,7 @@ export type WeekContextService = {
     includeWeatherSymbols?: boolean,
     includeEconomicContext?: boolean,
     includeObservedWeather?: boolean,
+    includeJournal?: boolean,
   ): Promise<WeeklyContext>;
 };
 export function createWeekContextService(
@@ -87,6 +89,7 @@ export function createWeekContextService(
       includeWeatherSymbols = false,
       includeEconomicContext = false,
       includeObservedWeather = false,
+      includeJournal = false,
     ) {
       const db = await database.getDb(),
         raw = await db.collection("storeContextSettings").findOne({ storeId });
@@ -142,6 +145,19 @@ export function createWeekContextService(
       };
       // Independent failures: none can block commercial plans or erase other providers.
       await Promise.allSettled([
+        ...(includeJournal
+          ? [
+              (async () => {
+                result.journal = await readJournalContext(
+                  db,
+                  cache,
+                  settings,
+                  weekEnd,
+                  now(),
+                );
+              })(),
+            ]
+          : []),
         ...(includeEconomicContext
           ? [
               (async () => {

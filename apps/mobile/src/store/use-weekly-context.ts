@@ -78,6 +78,7 @@ export function useWeeklyContext(
           true,
           autoRefresh,
           autoRefresh,
+          autoRefresh,
         ),
       );
       if (!valid()) return;
@@ -161,6 +162,12 @@ export function useWeeklyContext(
           settings?.syncState === "SYNCED" &&
           (!context ||
             !context.economy ||
+            !context.journal ||
+            context.journal.sources.some(
+              (p) =>
+                p.status !== "NOT_CONFIGURED" &&
+                (!p.validUntil || p.validUntil <= new Date().toISOString()),
+            ) ||
             (weekStart < parisDate(new Date().toISOString()) &&
               (!context.observedWeather ||
                 context.observedWeather.issue === "PROVIDER_UNAVAILABLE" ||
