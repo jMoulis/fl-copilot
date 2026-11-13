@@ -15,7 +15,12 @@ import {
   StoreProductEventRepository,
   applyStoreProductEvent,
 } from "./store-event-repository";
-import { storeEventSummary } from "./store-event-presentation";
+import {
+  storeEventSummary,
+  storeEventObservationNote,
+  stockoutObservationMoments,
+  type StockoutObservationMoment,
+} from "./store-event-presentation";
 import { runLocalMigrations } from "../db/migrations";
 import {
   OutboxRepository,
@@ -380,4 +385,59 @@ it("recovers a failed creation while retaining an offline closure and emits the 
     (await new OutboxRepository(f.tx).countActive(f.event.storeId))
       .failed_count,
   ).toBe(0);
+});
+
+it.each(Object.keys(stockoutObservationMoments) as StockoutObservationMoment[])(
+  "persists %s as observation context without changing timestamps or the sync contract",
+  async (moment) => {
+    const f = await setup();
+    const note = storeEventObservationNote(
+      "OUT_OF_STOCK",
+      moment,
+      "  Rayon vérifié, réserve vide.  ",
+    );
+    const payload = storeEventCapturePayload({ ...f.event, comment: note });
+    await f.repo.create(f.event.storeId, payload, f.ctx);
+    await f.repo.create(f.event.storeId, payload, {
+      ...f.ctx,
+      commandId: randomUUID(),
+    });
+    f.db.close();
+    const reopened = new DatabaseSync(f.path);
+    dbs.push(reopened);
+    const adapter = new Adapter(reopened);
+    const saved = (await new StoreProductEventRepository(adapter).get(
+      f.event.storeId,
+      f.event.id,
+    ))!.entity;
+    expect(saved).toEqual({
+      ...f.event,
+      comment: `Moment du constat : ${stockoutObservationMoments[moment]}.\nRayon vérifié, réserve vide.`,
+    });
+    const commands = await new OutboxRepository(adapter).listPending(
+      f.event.storeId,
+    );
+    expect(commands).toHaveLength(1);
+    expect(commands[0]!.payload).toEqual(payload);
+    expect(storeEventSummary(saved)).toContain("constat");
+    expect(storeEventSummary(saved)).toContain("Sans clôture enregistrée");
+    expect(storeEventSummary(saved)).not.toContain(" · début ");
+  },
+);
+it("does not carry a stockout control into another report type or truncate a long note", () => {
+  expect(
+    storeEventObservationNote("QUALITY_ISSUE", "AFTER_DELIVERY", " Fragile "),
+  ).toBe("Fragile");
+  expect(storeEventObservationNote("OUT_OF_STOCK", undefined, " ")).toBeNull();
+  const note = "a".repeat(1200);
+  expect(storeEventObservationNote("OUT_OF_STOCK", "OTHER", note)).toContain(
+    note,
+  );
+  const f = storeEventFixture();
+  expect(() =>
+    storeEventCapturePayload({
+      ...f.event,
+      comment: storeEventObservationNote("OUT_OF_STOCK", "OTHER", note),
+    }),
+  ).toThrow();
 });

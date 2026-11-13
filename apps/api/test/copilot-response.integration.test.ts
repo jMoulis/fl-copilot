@@ -335,6 +335,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         });
       const old = make("2026-10-24T21:00:00Z", "2026-10-24T23:00:00Z"),
         late = make("2026-10-25T22:30:00Z");
+      late.comment = "Moment du constat : Avant rush du soir.";
       const pdf = {
         ...make("2026-10-24T22:30:00Z"),
         source: "COMMERCIAL_PDF" as const,
@@ -439,6 +440,13 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         "Gamme Petit Prix marquée sur la fiche actuelle",
       );
       expect(markedEvidence.value).toContain("25/10/2026");
+      expect(markedEvidence.value).toContain("constat");
+      expect(markedEvidence.value).toContain(
+        "Moment du constat : Avant rush du soir.",
+      );
+      expect(markedEvidence.value).toContain(
+        "ne donne pas le début exact ni la durée continue",
+      );
       expect(markedEvidence.value).toContain("26/10/2026");
       expect(markedEvidence.id).not.toBe(oldEvidence.id);
       const before = markedEvidence.id;
