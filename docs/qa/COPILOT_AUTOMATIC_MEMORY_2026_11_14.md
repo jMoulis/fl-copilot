@@ -86,12 +86,12 @@ This is synthetic test data in a disposable local database, not production
 business mutation or physical iPhone acceptance. No paid model test is used.
 
 Exact-head checks, merge, API deployment, native identity, TestFlight processing
-and owner acceptance are recorded separately in the release receipt. Live memory
-selection/wording and token overhead remain to be checked with a real new habit
-on the delivered build; existing historical memory is not re-extracted.
+and owner acceptance are recorded separately in the release receipt. The owner tests build 60 with a new preference, reports automatic recording and
+correct recall in a new conversation, and accepts this functional case. Live
+provider token overhead remains unmeasured; historical memory is not re-extracted.
 
 Local final evidence: **382 tests pass across twelve suites**, with the Mongo
 suites enabled against an isolated local replica set; no suites skipped in this
 selected run. Ten workspace TypeScript projects, lint, structure, changed-file
-format and API bundle/import checks pass. Physical iPhone selection/wording,
-actual provider overhead and TestFlight delivery remain separate gates.
+format and API bundle/import checks pass. Build 60 is delivered in private TestFlight and the owner accepts the supplied
+iPhone recording/recall recipe. Actual provider overhead remains a separate measure.

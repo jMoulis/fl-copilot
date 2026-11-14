@@ -31,8 +31,8 @@ handling and the absence of a causal conclusion.
 
 The initial tool definitions cost more upfront when present. The intended gain
 is fewer repeated discovery steps and less prefix churn on mixed analytical
-questions. Actual savings require a real owner retest; controlled transports do
-not prove model selection, cache hits or billed savings.
+questions. The real owner retest below records selection and usage; controlled transports
+alone do not prove cache hits or billed savings.
 
 ## Memory verification
 
@@ -41,11 +41,11 @@ existing waste-date practice through the application: version 2 now specifies
 device unloading/synchronization rather than physical scanning. No direct
 database correction was performed. Historical answers remain historical.
 
-Automatic memory suggestions already exist for capable clients, in the existing
-model turn (`suggest_memory`); the proposal does not persist knowledge. The native
-review action saves confirmed knowledge through the canonical local transaction
-and Outbox. Active private knowledge is reused in subsequent requests. This
-increment does not introduce autonomous memory writes or change those boundaries.
+At this context-discovery increment, suggestions used `suggest_memory` and native
+confirmation. The later [explicit automatic-memory arbitration](COPILOT_AUTOMATIC_MEMORY_2026_11_14.md)
+supersedes that manual-only flow for capable clients, reusing source validation,
+the canonical transaction/Outbox and private scope. The discovery change itself
+does not introduce writes.
 
 ## Verification / delivery
 
@@ -64,5 +64,20 @@ Journal coverage identified by the benchmark are not fixed by tool visibility.
 Local checks pass: 281 tests across four suites (provider, stored weekly context,
 native memory review and confirmation), ten workspace TypeScript projects, lint,
 structure, changed-file formatting and API bundle/import checks. The two new
-regressions demonstrably failed before changing the runtime catalogue. Real-model
-token savings and owner acceptance remain unmeasured.
+regressions demonstrably failed before changing the runtime catalogue. The real-model retest is recorded below; general causal cost savings remain unqualified.
+
+## Owner retest and usage — 14 November
+
+A new conversation requests the last complete week versus the previous week,
+stored Journal and field signals, three practical priorities and no web search.
+The retained answer follows the newly memorized preference for margin losses in
+euros. Logs for reply `eff6d9e9-f320-453b-962f-e42f46c21b69` record three expert
+steps plus one light dispatch, zero discovery calls, no read failures, **62,235
+input tokens including 43,514 cached**, and **1,459 output tokens**. Usage is
+complete. The expert portion lasts 23,682 ms; dispatch lasts 1,562 ms.
+
+The earlier weekly observation used 200,780 input tokens and six expert steps.
+The observed input difference is about −69%, but the earlier request was inside
+a continuing conversation. This is a real descriptive usage comparison, not an
+experiment isolating code, caching or billed savings. The owner accepts the
+improvement; historical Journal gaps remain legitimate missing context.

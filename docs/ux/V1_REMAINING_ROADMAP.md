@@ -1,4 +1,16 @@
-## Demandes à arbitrer — 6 novembre 2026
+## Point courant — 14 novembre 2026
+
+Le [point pilote consolidé](../progress/PILOT_STATUS_2026_11_14.md) et le
+[backlog actif](../progress/PRODUCT_BACKLOG_2026_11_06.md) font foi pour les statuts.
+La navigation approuvée, le Journal et son moteur descriptif, les images produits
+et la mémoire automatique sont livrés dans leurs périmètres indiqués. Le prochain
+lot est le [pilotage quotidien avec pense-bêtes privés](DAILY_PILOTING_BRIEF_2026_11_14.md),
+cadré mais non implémenté. Les anciennes mentions « reste ouvert » ci-dessous
+conservent leur date et ne rouvrent pas les recettes validées.
+
+## Historique des arbitrages et des lots
+
+## Demandes initiales — 6 novembre 2026 (historique)
 
 Le [backlog produit du 6 novembre](../progress/PRODUCT_BACKLOG_2026_11_06.md) consigne les demandes de défilement du chat, titres éditables, maquettes/Actions/Ma semaine, graphiques produits, skeleton Analyses, images produits et optimisation du coût IA. Le **journal de bord quotidien** (météo, vacances, actualités, moral, dépenses fruits et légumes, inflation) est à définir ensemble avant développement. La génération d’images de TG est réservée à la **V2**. Cette inscription ne transforme pas toutes ces demandes en nouveaux prérequis de clôture V1/M8.
 

@@ -1,5 +1,7 @@
 # M8 — hardening and pilot release
 
+Current delivery and post-pilot increments are consolidated in [the 14 November status](PILOT_STATUS_2026_11_14.md). The iPhone pilot closure and owner-deferred Atlas reserve below remain unchanged. Older open-task entries are dated evidence, not new acceptance requests.
+
 ## Pilote iPhone accepté — 11 novembre
 
 Le propriétaire valide les recettes groupées notifications de résultat, interruption/reprise d’import, navigation produits et remontée Sentry sur build45 ; il confirme ensuite l’installation et la connexion du build47 via TestFlight, puis la gestion du conflit iPhone/simulateur sur la fiche Abricot. **M8 est clôturé pour le pilote iPhone avec la réserve sauvegarde/restauration Atlas explicitement reportée.** Ne pas présenter cette réserve comme qualifiée ou activée. Android et la qualification d’accessibilité dédiée restent M9. Les mesures hôte restent distinctes d’un benchmark instrumenté sur iPhone ; les détails non rapportés de la résolution ne sont pas inventés.

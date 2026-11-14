@@ -77,3 +77,20 @@ Local qualification: **302 tests pass in five suites, zero skipped**, including
 the new study and existing analytical-query tests on an isolated local Mongo
 replica set. Ten workspace typechecks, lint, formatting, structure and the API
 bundle/import pass. No production business mutation or paid AI call was used.
+
+## Delivery and functional owner acceptance — 14 November
+
+PR 519 is merged and the compatible API is published from
+`9429f2b42951e7ec1be8752e265d53254095939f`, deployment
+`dpl_KiWNdGX58nmntFRfntKDTpwtMX63`, in `cdg1`. Both exact-head checks and the
+master check pass (6,211 tests passed, six skipped). Public health/database,
+unauthenticated history/bootstrap refusal and Inngest registration are verified.
+The merged branch is removed. No new native build was needed; build 60 suffices.
+
+The owner supplies the real study reply: 42 requested dates, two usable pairs
+across one week; 38 calendar exclusions then two weather exclusions, with no
+additional business-data exclusions. All four coefficients and weekly sensitivity
+are unavailable. The owner considers this normal, agrees to closure and then
+confirms. Record **functional study invocation/reporting accepted**, not an
+independently reread production trace or evidence of a useful/stable association
+on a sufficient historical sample. That empirical assessment remains future work.
