@@ -5618,3 +5618,13 @@ filter applies to live screen projections, stored reads and line histories;
 Copilot stored reads inherit it without provider refresh. Filtered results stay
 qualified as partial and absence is not normal traffic. See
 `../qa/TRANSPORT_ALERT_FILTERS_2026_11_14.md`.
+
+
+PRIM equipment correction (14 November): explicit equipment-only outages project
+as INFORMATION even when the retained effect says SIGNIFICANT_DELAYS. Mixed
+circulation notices retain their effect group. The shared helper also places
+circulation ahead of equipment notices before the existing eight-item bound at
+collection. Original effects/messages and saved archives remain unchanged;
+provider TTL, strict schemas and sync contracts do not change. Older already
+bounded captures may not contain omitted circulation alerts. This is an API-only
+correction compatible with native build 58.

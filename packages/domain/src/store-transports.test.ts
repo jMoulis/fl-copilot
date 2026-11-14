@@ -3,6 +3,7 @@ import {
   storeTransportsSchema,
   nearbyTransportInputSchema,
   transportAlertType,
+  isStationEquipmentNotice,
   filterTransportAlerts,
   transportAlertSelectionSchema,
   type TransportContext,
@@ -189,4 +190,90 @@ it("maps provider effects without guessing causes, filters captured history and 
   expect(
     legacyStoreContext(current, true, true, true).transportAlertTypes,
   ).toEqual(["DELAYS"]);
+});
+
+// PRIM can label station equipment failures as SIGNIFICANT_DELAYS.
+it.each([
+  "Les Agnettes Panne de l'ascenseur situé Salle d'accès Quai 1, direction Les Courtilles · Panne d'un ascenseur",
+  "Panne d’un ascenseur · Niveau -1 : quai ligne 13 direction Châtillon, à côté des escaliers",
+  "Ascenseur indisponible à la gare",
+  "Escalator hors service",
+  "Maintenance des escaliers mécaniques",
+])("recognizes explicit equipment-only notices: %s", (message) => {
+  expect(isStationEquipmentNotice(message)).toBe(true);
+});
+it.each([
+  "Retards sur les trains en direction de Châtillon",
+  "L'ascenseur est à droite du quai",
+  "Ascenseur remis en service",
+  "Panne d'ascenseur. Le trafic est interrompu sur la ligne 13.",
+  "Ascenseur en panne ; les bus sont déviés.",
+  "Ascenseur hors service et station fermée.",
+  "Panne d'ascenseur ; arrêt non desservi.",
+  "Panne d'ascenseur et trains supprimés.",
+  "Ascenseur indisponible : retards sur la ligne.",
+  "Interruption du trafic et ascenseur en panne.",
+  "Suppression de trains. Panne de l’ascenseur.",
+])("preserves ambiguous or mixed circulation notices: %s", (message) => {
+  expect(isStationEquipmentNotice(message)).toBe(false);
+});
+it("projects equipment as information in current and historical captures, without rewriting source effects", () => {
+  const disruption = (id: string, message: string) => ({
+    id,
+    message,
+    effect: "SIGNIFICANT_DELAYS",
+    applicationPeriods: [],
+    schedule: null,
+    updatedAt: null,
+  });
+  const equipment = disruption(
+    "equipment",
+    "Les Agnettes Panne de l'ascenseur situé Salle d'accès Quai 2, direction Châtillon · Panne d'un ascenseur",
+  );
+  const traffic = disruption(
+    "traffic",
+    "Retards sur les trains de la ligne 13",
+  );
+  const disruptions = [equipment, traffic];
+  const context: TransportContext = {
+    status: "AVAILABLE",
+    issue: null,
+    radiusMetres: 800,
+    lines: [
+      {
+        id: "IDFM:C01383",
+        name: "Metro 13",
+        stopName: "Test",
+        distanceMetres: 50,
+        status: "AVAILABLE",
+        retrievedAt: null,
+        validUntil: null,
+        capturedAt: "2026-11-14T07:00:00.000Z",
+        disruptions,
+        partial: false,
+        history: [
+          {
+            capturedAt: "2026-11-13T07:00:00.000Z",
+            disruptions,
+            partial: false,
+          },
+        ],
+      },
+    ],
+  };
+  const before = JSON.stringify(context);
+  expect(filterTransportAlerts(context, ["DELAYS"])).toMatchObject({
+    lines: [
+      {
+        disruptions: [traffic],
+        partial: true,
+        history: [{ disruptions: [traffic], partial: true }],
+      },
+    ],
+  });
+  expect(filterTransportAlerts(context, ["INFORMATION"])).toMatchObject({
+    lines: [{ disruptions: [equipment] }],
+  });
+  expect(filterTransportAlerts(context, null)).toBe(context);
+  expect(JSON.stringify(context)).toBe(before);
 });

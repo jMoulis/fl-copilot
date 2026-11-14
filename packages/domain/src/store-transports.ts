@@ -201,6 +201,24 @@ export function transportAlertType(effect: string | null): TransportAlertType {
       return "INFORMATION";
   }
 }
+/** PRIM sometimes marks an equipment outage as a traffic delay. Keep mixed
+ * circulation notices under their original effect; never rewrite source data. */
+export function isStationEquipmentNotice(message: string): boolean {
+  const text = message
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  const equipment = /\b(?:ascenseurs?|escalators?|escaliers? mecaniques?)\b/;
+  if (!equipment.test(text)) return false;
+  // A location (quai/ligne/direction) alone is not a circulation disruption.
+  const circulation =
+    /\b(?:retards?|deviations?|(?:interruption|suspension|ralentissement|perturbation|suppression|annulation)[^.;·]{0,60}(?:trafic|circulation|bus|train|service|ligne)|trafic[^.;·]{0,80}(?:interromp|suspend|ralenti|perturb)|circulation[^.;·]{0,80}(?:interromp|suspend|ralenti|perturb)|(?:bus|trains?|rames?|services?|lignes?)[^.;·]{0,80}(?:supprim|annul|interromp|suspend|devie|ralenti|perturb)|(?:stations?|gares?)[^.;·]{0,80}(?:ferme|fermeture)|arrets?[^.;·]{0,60}non desserv|fermeture[^.;·]{0,60}(?:station|gare|ligne))/;
+  if (circulation.test(text)) return false;
+  const outage = /\b(?:pannes?|indisponibles?|hors[ -]service|maintenance)\b/;
+  return text
+    .split(/[.;·\n]/)
+    .some((clause) => equipment.test(clause) && outage.test(clause));
+}
 /** Filter only projections. Retained source messages and capture dates never change. */
 export function filterTransportAlerts(
   context: TransportContext | "NOT_CONFIGURED",
@@ -214,7 +232,11 @@ export function filterTransportAlerts(
     row: T,
   ): T => {
     const disruptions = row.disruptions.filter((d) =>
-      selected.has(transportAlertType(d.effect)),
+      selected.has(
+        isStationEquipmentNotice(d.message)
+          ? "INFORMATION"
+          : transportAlertType(d.effect),
+      ),
     );
     return {
       ...row,
