@@ -1,3 +1,4 @@
+import { addContextDays, parisDate } from "@fl-copilot/domain";
 import {
   personalTaskSchema,
   personalTaskFieldsSchema,
@@ -184,19 +185,29 @@ export class PersonalTaskRepository {
   }
   async list(date: string, today: string) {
     const rows = await this.db.getAllAsync<Row>(
-      "SELECT * FROM personal_tasks WHERE store_id=? AND owner_id=? AND (planned_date=? OR (?=? AND planned_date<? AND json_extract(payload_json,'$.status')='TODO')) ORDER BY planned_date,id",
+      "SELECT * FROM personal_tasks WHERE store_id=? AND owner_id=? AND (planned_date=? OR (?=? AND planned_date<? AND json_extract(payload_json,'$.status')='TODO') OR substr(COALESCE(json_extract(payload_json,'$.completedAt'),json_extract(payload_json,'$.cancelledAt')),1,10) IN (?,?)) ORDER BY planned_date,id",
       this.scope.storeId,
       this.scope.ownerId,
       date,
       date,
       today,
       date,
+      date,
+      addContextDays(date, -1),
     );
-    return rows.map((r) => {
-      const t = mapped(r);
-      scoped(t.entity, this.scope);
-      return t;
-    });
+    return rows
+      .map((r) => {
+        const t = mapped(r);
+        scoped(t.entity, this.scope);
+        return t;
+      })
+      .filter(
+        ({ entity: t }) =>
+          t.date === date ||
+          (date === today && t.date < date && t.status === "TODO") ||
+          ((t.completedAt ?? t.cancelledAt) !== null &&
+            parisDate((t.completedAt ?? t.cancelledAt)!) === date),
+      );
   }
   async save(
     id: string,

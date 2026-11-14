@@ -1,3 +1,5 @@
+import { formatFrenchCalendarDate } from "../dates/calendar";
+import { storeEventTimeLabel } from "@fl-copilot/domain";
 import { DateSelector } from "../components/date-selector";
 import {
   useCallback,
@@ -495,9 +497,9 @@ export function DailyTaskList({
             {t ? (
               <>
                 {t.status !== "TODO"
-                  ? `${taskStatus[t.status]} · ${t.date}`
+                  ? `${taskStatus[t.status]} · prévu le ${formatFrenchCalendarDate(t.date)}`
                   : t.date < date
-                    ? `À reprendre · ${t.date}`
+                    ? `À reprendre · ${formatFrenchCalendarDate(t.date)}`
                     : (t.time ?? "Dans la journée")}{" "}
                 · Personnel{conflict ? " · À vérifier" : ""}
               </>
@@ -692,11 +694,20 @@ export function DailyTaskList({
             <>
               <Text style={s.detailTitle}>{selected.text}</Text>
               <Text style={s.meta}>
-                {selected.date}
+                Prévu le {formatFrenchCalendarDate(selected.date)}
                 {selected.time
                   ? ` · ${selected.time} · heure de Paris`
                   : ""} · {taskStatus[selected.status]}
               </Text>
+              {selected.completedAt ? (
+                <Text style={s.meta}>
+                  Fait le {storeEventTimeLabel(selected.completedAt)}
+                </Text>
+              ) : selected.cancelledAt ? (
+                <Text style={s.meta}>
+                  Annulé le {storeEventTimeLabel(selected.cancelledAt)}
+                </Text>
+              ) : null}
               {sheet.record?.syncState === "CONFLICT" ||
               sheet.record?.syncState === "ERROR" ? (
                 <>

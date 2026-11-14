@@ -135,6 +135,9 @@ it("retains local status/date changes through a delayed acknowledgement and reco
   await applyPersonalTaskRecord(f.adapter, f.scope, v1, 1);
   expect((await f.repo.get(f.id))?.entity).toEqual(v2);
   expect(v2.completedAt).toBe("2026-11-14T10:00:00.000Z");
+  expect((await f.repo.list("2026-11-14", "2026-11-14"))[0]?.entity).toEqual(
+    v2,
+  );
   await applyPersonalTaskRecord(f.adapter, f.scope, v2, 2);
   expect((await f.repo.get(f.id))?.syncState).toBe("SYNCED");
   await f.repo.save(f.id, { ...f.fields, status: "TODO" }, 2, {
@@ -149,6 +152,24 @@ it("retains local status/date changes through a delayed acknowledgement and reco
       v2,
     ),
   ).rejects.toThrow("SCOPE");
+});
+
+it("retains a completed overdue task on its real Paris completion day, including UTC midnight boundaries", async () => {
+  const f = await fixture();
+  await f.repo.save(f.id, { ...f.fields, date: "2026-11-12" }, null, f.ctx());
+  const done = await f.repo.save(
+    f.id,
+    { ...f.fields, date: "2026-11-12", status: "DONE" },
+    1,
+    { ...f.ctx(), now: "2026-11-14T23:30:00.000Z" },
+  );
+  expect((await f.repo.list("2026-11-15", "2026-11-15"))[0]?.entity).toEqual(
+    done,
+  );
+  expect(await f.repo.list("2026-11-14", "2026-11-14")).toEqual([]);
+  expect((await f.repo.list("2026-11-12", "2026-11-15"))[0]?.entity.date).toBe(
+    "2026-11-12",
+  );
 });
 it("compares concurrent versions, rejects a changed review, and preserves both histories when adopting remote", async () => {
   const f = await fixture(),
