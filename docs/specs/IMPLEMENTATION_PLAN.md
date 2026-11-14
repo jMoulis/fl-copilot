@@ -1,3 +1,18 @@
+## Current checkpoint and next scoped increment — 14 November 2026
+
+Use `../progress/PILOT_STATUS_2026_11_14.md` and the active product backlog for
+current delivery/closure. The Journal descriptive engine and automatic memory
+are delivered and owner accepted in their stated functional scope; their dated
+implementation notes below are not pending release requests.
+
+The next increment is scoped, not implemented: Journal daily piloting combines
+existing commercial tasks and free owner/store-private reminders, with optional
+notification reminders. The owner confirms privacy and optional reminders.
+`../ux/DAILY_PILOTING_BRIEF_2026_11_14.md` records audited reuse, proposed UX and
+acceptance. A mockup precedes screen changes. M0–M8 accepted pilot cases and the
+PA/implantation/Atlas/M9 reserves remain unchanged. No runtime/build/deployment
+change accompanies this documentation consolidation.
+
 ## Owner arbitration — 14 November: descriptive Journal associations
 
 Implement the shared deterministic Spearman study now, using canonical daily

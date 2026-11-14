@@ -1,8 +1,21 @@
 # Product roadmap
 
-Initial roadmap: 9 October 2026. Current delivery checkpoint: 24 October 2026.
+Initial roadmap: 9 October 2026. Historical delivery log retained below.
 
-## Current delivery — 24 October 2026
+## Current checkpoint — 14 November 2026
+
+Use [the consolidated pilot status](progress/PILOT_STATUS_2026_11_14.md) and
+[active backlog](progress/PRODUCT_BACKLOG_2026_11_06.md) for current delivery and
+remaining work. M0–M6 and the agreed M7/M8 iPhone pilot scopes are accepted, with
+explicit PA/implantation/Atlas/M9 reserves. Journal v1, descriptive study and
+automatic memory are now accepted in their stated scope. The next daily-piloting
+increment is scoped, not implemented.
+
+The dated delivery/pending statuses below are historical. Product requirements
+remain subject to later owner arbitrations; these notes do not reopen accepted
+recipes or authorize reintroducing retired chat imports.
+
+## Historical delivery — 24 October 2026
 
 The compatible API is deployed from `4941513bc28de0a0f8494f88575c0e531dc7d0aa`, deployment `dpl_J8GundEHU4dF1yEg4Fv5XSwyhKzR`, at `https://fl-copilot.vercel.app`. JSON health/database connectivity and unauthenticated private-route refusal were verified. The server-side product-unit refresh and receiving-key code are included. A sending-only Resend credential still prevents real original reception; code deployment is not rights activation.
 
@@ -25,7 +38,7 @@ reliable local data
 → pilot hardening
 ```
 
-## Current position — authoritative update, 24 October 2026
+## Historical position — update of 24 October 2026
 
 M7 remains active across the seven agreed workstreams in [the current ledger](progress/M7_WORKSTREAM_STATUS.md), and M8 hardening/acceptance is in progress. The primary conversational Copilot and five-domain native navigation are implemented and in pilot use; historical statements about chat not yet being activated describe earlier stages. The complete UX is still being accepted against [the arbitrated audit](ux/AUDIT.md), not narrowed to a presentation demo.
 
