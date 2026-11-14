@@ -4,6 +4,8 @@ import { router } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import {
   parisDate,
+  transportAlertTypeLabels,
+  type TransportAlertType,
   type JournalContext,
   type TransportContext,
 } from "@fl-copilot/domain";
@@ -48,11 +50,13 @@ export function JournalTransports({
   date,
   busy,
   onRefresh,
+  alertTypes,
 }: {
   context?: JournalContext;
   date: string;
   busy: boolean;
   onRefresh(): void;
+  alertTypes?: TransportAlertType[] | null;
 }) {
   const [open, setOpen] = useState(false),
     [linkError, setLinkError] = useState(false);
@@ -117,6 +121,16 @@ export function JournalTransports({
           d’Île-de-France Mobilités ; ils ne prouvent pas un effet sur les
           visites ou les ventes.
         </Text>
+        {alertTypes != null ? (
+          <Text className="text-muted">
+            Types suivis :{" "}
+            {alertTypes.length
+              ? alertTypes.map((t) => transportAlertTypeLabels[t]).join(", ")
+              : "aucun"}
+            . Les autres messages sont masqués ; cela ne prouve pas un trafic
+            normal.
+          </Text>
+        ) : null}
         {traffic?.issue ? (
           <Text className="text-warning">{issues[traffic.issue]}</Text>
         ) : null}
@@ -161,8 +175,8 @@ export function JournalTransports({
             ))}
             {line.capturedAt && !line.disruptions.length ? (
               <Text className="text-muted">
-                Aucun message publié pour cette ligne dans la réponse consultée.
-                Cela ne garantit pas un trafic normal.
+                Aucun message dans les types suivis pour cette ligne, dans la
+                réponse consultée. Cela ne garantit pas un trafic normal.
               </Text>
             ) : null}
             {line.partial ? (

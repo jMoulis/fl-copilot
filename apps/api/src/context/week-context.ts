@@ -10,6 +10,7 @@ import {
   weeklyContextSchema,
   storeContextFingerprint,
   addContextDays,
+  filterTransportAlerts,
   parisDate,
   type WeeklyContext,
   type StoreContextSettings,
@@ -356,6 +357,11 @@ export function createWeekContextService(
           };
         })(),
       ]);
+      if (options.preferStored && result.journal)
+        result.journal.transport = filterTransportAlerts(
+          result.journal.transport,
+          settings.transportAlertTypes,
+        );
       return weeklyContextSchema.parse(result);
     },
   };

@@ -111,6 +111,7 @@ export interface MobileSyncServiceOptions {
   storeContext?: boolean;
   storeMerchandising?: boolean;
   storeTransports?: boolean;
+  transportAlertFilters?: boolean;
   qualitativeCommercialPlans?: boolean;
   tgPresentations?: boolean;
   storeLayouts?: boolean;
@@ -277,6 +278,12 @@ export class MobileSyncService {
       ? await this.database.getFirstAsync(
           "SELECT value FROM app_metadata WHERE key=?",
           `store-transports:${storeId}`,
+        )
+      : true;
+    const transportAlertFiltersAdopted = this.options.transportAlertFilters
+      ? await this.database.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key=?",
+          `transport-alert-filters:${storeId}`,
         )
       : true;
     const storeMerchandisingAdopted = this.options.storeMerchandising
@@ -449,6 +456,7 @@ export class MobileSyncService {
       !storeContextAdopted ||
       !storeMerchandisingAdopted ||
       !storeTransportsAdopted ||
+      !transportAlertFiltersAdopted ||
       !visualsAdopted ||
       !layoutsAdopted ||
       !physicalAllocationsAdopted ||
@@ -495,6 +503,11 @@ export class MobileSyncService {
       snapshot.entities.storeTransports !== true
     )
       throw Error("STORE_TRANSPORTS_UPGRADE_REQUIRED");
+    if (
+      this.options.transportAlertFilters &&
+      snapshot.entities.transportAlertFilters !== true
+    )
+      throw Error("TRANSPORT_ALERT_FILTERS_UPGRADE_REQUIRED");
     if (
       this.options.storeMerchandising &&
       snapshot.entities.storeMerchandising !== true
@@ -1544,6 +1557,9 @@ export class MobileSyncService {
       syncProtocolVersion: SYNC_PROTOCOL_VERSION,
       ...(this.options.storeMerchandising ? { storeMerchandising: true } : {}),
       ...(this.options.storeTransports ? { storeTransports: true } : {}),
+      ...(this.options.transportAlertFilters
+        ? { transportAlertFilters: true }
+        : {}),
       ...(this.options.tgPresentations ? { tgPresentations: true } : {}),
       ...(this.options.qualitativeCommercialPlans
         ? { qualitativeCommercialPlans: true }

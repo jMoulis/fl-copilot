@@ -337,6 +337,16 @@ export async function applyBootstrap(
         bootstrap.serverTime,
       );
     }
+    if (bootstrap.entities.transportAlertFilters === true) {
+      if (!bootstrap.entities.storeContextSettings)
+        throw Error("TRANSPORT_ALERT_FILTERS_BOOTSTRAP_INVALID");
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+        `transport-alert-filters:${storeId}`,
+        "1",
+        bootstrap.serverTime,
+      );
+    }
     if (bootstrap.entities.storeMerchandising === true) {
       if (!bootstrap.entities.storeContextSettings)
         throw Error("STORE_MERCHANDISING_BOOTSTRAP_INVALID");
@@ -566,6 +576,7 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
     "storeContextSettings",
     "storeMerchandising",
     "storeTransports",
+    "transportAlertFilters",
     "qualitativeCommercialPlans",
     "tgPresentations",
     "physicalAllocations",

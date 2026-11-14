@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { Db } from "mongodb";
 import {
   addContextDays,
+  filterTransportAlerts,
   dailyJournalContextSchema,
   parisDate,
   storeContextFingerprint,
@@ -75,16 +76,19 @@ function selectedTransportContext(
       distanceMetres: config.distanceMetres,
     };
   });
-  return {
-    ...base,
-    lines,
-    status: lines.every((l) => l.status === "AVAILABLE")
-      ? "AVAILABLE"
-      : lines.some((l) => l.status !== "UNAVAILABLE")
-        ? "STALE"
-        : "UNAVAILABLE",
-    issue: missing ? "HISTORY_UNAVAILABLE" : (archived?.issue ?? null),
-  };
+  return filterTransportAlerts(
+    {
+      ...base,
+      lines,
+      status: lines.every((l) => l.status === "AVAILABLE")
+        ? "AVAILABLE"
+        : lines.some((l) => l.status !== "UNAVAILABLE")
+          ? "STALE"
+          : "UNAVAILABLE",
+      issue: missing ? "HISTORY_UNAVAILABLE" : (archived?.issue ?? null),
+    },
+    settings.transportAlertTypes,
+  );
 }
 export function contextMonday(date: string) {
   const weekday = new Date(`${date}T12:00:00Z`).getUTCDay();

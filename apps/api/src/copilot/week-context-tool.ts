@@ -187,7 +187,7 @@ export async function readCopilotWeek(
   const traffic = journal?.transport;
   const rawTrafficText =
     traffic && typeof traffic !== "string"
-      ? ` Transports IDFM : ${states[traffic.status]}, ${traffic.lines.length} lignes suivies, rayon ${traffic.radiusMetres} m. ${traffic.lines
+      ? ` Transports IDFM (lignes et types d’alerte sélectionnés par le magasin, extraits bornés ; absence de message ≠ trafic normal) : ${states[traffic.status]}, ${traffic.lines.length} lignes suivies, rayon ${traffic.radiusMetres} m. ${traffic.lines
           .filter(
             (l) =>
               l.disruptions.length ||

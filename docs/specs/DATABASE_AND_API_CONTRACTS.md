@@ -5603,3 +5603,18 @@ projection remain unavailable instead of being rebuilt from today's feed.
 Native explicit collection uses a bounded request and existing SQLite cache
 scope guards, preserves cached content on failure and never queues provider
 collection into the business Outbox. Automatic focus refresh remains GET.
+
+
+## Store transport alert effects — 14 November 2026
+
+Optional nullable `StoreContextSettings.transportAlertTypes` holds at most six
+unique effect-group keys. Missing/null preserves all types; empty means no
+messages selected. Existing writers preserve omission, explicit null resets.
+The independent `transportAlertFilters` capability projects this setting only
+to supported ACK/conflict/pull/bootstrap readers; native capability adoption
+uses the existing metadata/bootstrap path. No migration, entity or new command.
+The collector retains its original bounded captures. A shared pure effect-code
+filter applies to live screen projections, stored reads and line histories;
+Copilot stored reads inherit it without provider refresh. Filtered results stay
+qualified as partial and absence is not normal traffic. See
+`../qa/TRANSPORT_ALERT_FILTERS_2026_11_14.md`.
