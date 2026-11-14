@@ -1,3 +1,15 @@
+## Owner arbitration — 14 November: descriptive Journal associations
+
+Implement the shared deterministic Spearman study now, using canonical daily
+comparisons and retained Journal observations. Return fixed CA/margin × observed
+temperature/rainfall analyses with sample support, calendar exclusions, weekly
+sensitivity and recorded-event qualification. Department/current family, explicit
+closed-day windows and unchanged read budgets; no causal/predictive model, agent,
+provider refresh or native build. See
+`../qa/JOURNAL_DESCRIPTIVE_ASSOCIATIONS_2026_11_14.md` for the reporting policy,
+source boundaries and delivery qualification. Longer history improves support;
+it is not a prerequisite to implementing the engine.
+
 ## Owner arbitration — 14 November: automatic private memory
 
 Enable automatic recording of new explicitly stated operating practices through

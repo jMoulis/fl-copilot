@@ -216,6 +216,8 @@ import {
   copilotExecutionPreviewResultSchema,
 } from "@fl-copilot/domain";
 import { copilotAnalyticsQuerySchema } from "@fl-copilot/domain";
+import { journalAssociationInputSchema } from "@fl-copilot/domain";
+import { journalAssociationResultSchema } from "./journal-associations-tool.js";
 import {
   analyticsQueryResultSchema,
   type AnalyticsQueryResult,
@@ -682,6 +684,9 @@ export function createCopilotAiProvider(
     analyticsQuery?(
       input: z.infer<typeof copilotAnalyticsQuerySchema>,
     ): Promise<AnalyticsQueryResult>;
+    journalAssociations?(
+      input: z.infer<typeof journalAssociationInputSchema>,
+    ): Promise<z.infer<typeof journalAssociationResultSchema>>;
     retailExpertise?(
       input: z.infer<typeof retailExpertiseInputSchema>,
     ): Promise<z.infer<typeof retailExpertiseToolResultSchema>>;
@@ -2912,6 +2917,36 @@ export function createCopilotAiProvider(
                                   o.storeId !== request.storeId ||
                                   o.sourceDocumentId !== input.sourceDocumentId,
                               )
+                            )
+                              throw Error("READ_SCOPE_INVALID");
+                            return result;
+                          },
+                        ),
+                    }),
+                  }
+                : {}),
+              ...(reads.journalAssociations
+                ? {
+                    journal_associations: tool({
+                      description:
+                        "Study descriptive correlations between observed weather differences and sales/margin changes, using retained Journal and canonical figures. Explicit past range up to 93 days; YEAR_OVER_YEAR matches ISO week/weekday, J_MINUS_7 matches previous weekday. familyId null means department, otherwise exact current catalogue family. Returns all four Spearman associations, sample/exclusions, leave-one-week-out and without-recorded-events sensitivity, citable provenance. Read coefficients together with sample status and sensitivity; 21 pairs/4 weeks is a reporting policy, not significance. Neither causality, forecast nor quantified weather impact; prices/promotions/traffic remain uncontrolled. No monthly-economy daily correlation, provider refresh, web search or writes.",
+                      inputSchema: journalAssociationInputSchema,
+                      execute: (input) =>
+                        executeRead(
+                          JSON.stringify(["journal-associations", input]),
+                          async () => {
+                            const result = journalAssociationResultSchema.parse(
+                              await reads.journalAssociations!(input),
+                            );
+                            if (
+                              JSON.stringify(result.query) !==
+                                JSON.stringify(
+                                  journalAssociationInputSchema.parse(input),
+                                ) ||
+                              result.scope !==
+                                (input.familyId
+                                  ? "CURRENT_PRODUCT_FAMILY"
+                                  : "DEPARTMENT")
                             )
                               throw Error("READ_SCOPE_INVALID");
                             return result;

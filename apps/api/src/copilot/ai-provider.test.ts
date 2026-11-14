@@ -6379,6 +6379,93 @@ function discoveryReads(
     ...overrides,
   };
 }
+
+it.each([false, true])(
+  "runs a read-only Journal study and rejects mismatched study scope=%s",
+  async (mismatch) => {
+    const { journalAssociationResultSchema } =
+      await import("./journal-associations-tool");
+    const f = fixture();
+    const input = {
+      startDate: "2026-10-05",
+      endDate: "2026-11-01",
+      referenceMode: "YEAR_OVER_YEAR",
+      familyId: null,
+    } as const;
+    const journalAssociations = vi.fn(async () =>
+      journalAssociationResultSchema.parse({
+        version: "journal-spearman-v1",
+        query: { ...input, ...(mismatch ? { endDate: "2026-10-31" } : {}) },
+        scope: "DEPARTMENT",
+        status: "DESCRIPTIVE_ONLY",
+        requestedDays: 28,
+        policy: { minimumPairs: 21, minimumWeeks: 4 },
+        stationIds: [],
+        warnings: ["Descriptive only"],
+        series: [],
+        evidence: [
+          {
+            id: "journal-study-proof",
+            sourceId: "journal-study-source",
+            sourceVersion: null,
+            sourceType: "DATA_QUALITY",
+            factKind: "QUALITY",
+            label: "Étude descriptive",
+            value: "Support insuffisant, aucun effet causal établi.",
+          },
+        ],
+      }),
+    );
+    let calls = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      if (calls++ === 0) {
+        expect(
+          body.tools.some(
+            (t: { name: string }) => t.name === "journal_associations",
+          ),
+        ).toBe(true);
+        return discoveryResponse([{ name: "journal_associations", input }]);
+      }
+      expect(JSON.stringify(body).includes("journal-study-proof")).toBe(
+        !mismatch,
+      );
+      return response();
+    };
+    const result = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      journalAssociations,
+    }).generate(f.request, schema);
+    expect(journalAssociations).toHaveBeenCalledExactlyOnceWith(input);
+    expect(calls).toBe(2);
+    expect(
+      result.toolEvidence?.some((e) => e.id === "journal-study-proof") ?? false,
+    ).toBe(!mismatch);
+  },
+);
+
+it("defers the specialized Journal study without expanding ordinary primary context tools", async () => {
+  const f = fixture();
+  const journalAssociations = vi.fn();
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    expect(
+      body.tools.some(
+        (t: { name: string }) => t.name === "journal_associations",
+      ),
+    ).toBe(false);
+    expect(
+      body.tools.some((t: { name: string }) => t.name === "find_tools"),
+    ).toBe(true);
+    return response();
+  };
+  await createCopilotAiProvider(
+    f.config,
+    transport,
+    discoveryReads({ journalAssociations }),
+  ).generate(f.request, schema);
+  expect(journalAssociations).not.toHaveBeenCalled();
+});
 async function discoveryResponse(
   calls: Array<{ name: string; input: unknown }>,
 ) {

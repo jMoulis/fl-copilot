@@ -28,3 +28,4 @@ export * from "./copilot-comparison-period";
 export * from "./analytics-query-chart";
 
 export * from "./economic-context";
+export * from "./journal-associations";

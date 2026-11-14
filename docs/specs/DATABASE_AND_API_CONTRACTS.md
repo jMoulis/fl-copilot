@@ -1,3 +1,12 @@
+## Journal descriptive study — 14 November 2026
+
+`journalAssociationInputSchema` and `journalAssociationStudySchema` define a
+read-only, bounded deterministic study on existing canonical daily snapshots and
+retained Journal sources. `journal_associations` is a specialized deferred Copilot
+read; no public endpoint, collection, migration, sync command or client capability
+is introduced. Existing evidence/citation transport carries the results.
+See `../qa/JOURNAL_DESCRIPTIVE_ASSOCIATIONS_2026_11_14.md` for qualifications.
+
 ## JSON synchronization — absent visual-reading revision
 
 A legacy/original-backed visual PDF reading may store a null analysis revision. The canonical serializer normalizes this to an omitted optional property in both pull and bootstrap, never an own `undefined` value inside a `z.json()` entity. Explicit positive revisions and the stored original remain unchanged; no client cursor is advanced past a rejected envelope. See `../qa/M8_VISUAL_READING_SYNC_JSON_2026_11_04.md`.

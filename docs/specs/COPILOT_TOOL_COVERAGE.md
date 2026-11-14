@@ -1,3 +1,14 @@
+## Journal descriptive associations — 14 November
+
+`journal_associations` is a specialized deferred read for an explicit closed-day
+window (up to 93 days), department or exact current product family. The shared
+deterministic engine compares paired ISO N-1/J−7 changes in sales/margin to
+qualified observed weather differences, with calendar/sample exclusions and
+weekly/recorded-event sensitivity. It returns citable descriptive results, not
+causality, forecasts, monthly-economic daily correlations or business writes.
+No new agent, provider refresh, UI or model request is added to normal bilans.
+[Contract, reporting policy and delivery](../qa/JOURNAL_DESCRIPTIVE_ASSOCIATIONS_2026_11_14.md).
+
 ## Current action/conflict boundary — 3 November
 
 The current source reconciliation closes M7 workstream 1 for the functional V1 pilot baseline, with the accepted persil/synchronization and offline decision cases plus 275 current SQLite/controller checks. [Operation/exception matrix and retained boundaries](../qa/M7_ACTION_CONFLICT_CLOSURE_2026_11_03.md). Known tombstones and same-identity conflict groups are implemented. Unknown absence, identity reassignment, contradictory versions, oversized reviews and replay of permanently refused commands do not authorize generic repair. Administrative source/file recovery and physical two-device hardening keep their separate scope. This supersedes historical entries that classify every such refusal as a missing model tool; it does not grant unrestricted CRUD or remove canonical checks. No new tool, prompt, writer or runtime behavior.

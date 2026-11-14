@@ -131,6 +131,7 @@ import { readIdentityReviewPreview } from "./copilot/identity-review-tool.js";
 import { readCataloguePreview } from "./copilot/catalogue-preview-tool.js";
 import { readCommercialExecutionPreview } from "./copilot/commercial-plan-tool.js";
 import { readAnalyticsQuery } from "./copilot/analytics-query-tool.js";
+import { readJournalAssociations } from "./copilot/journal-associations-tool.js";
 import { createCopilotWebResearchJournal } from "./copilot/web-research-journal.js";
 import { createCopilotWebResearch } from "./copilot/web-research.js";
 import { readRetailExpertise } from "./copilot/retail-expertise-tool.js";
@@ -1044,6 +1045,18 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               analyticsQuery: async (input) => {
                 await authorize();
                 const result = await readAnalyticsQuery(db, storeId, input);
+                await authorize();
+                return result;
+              },
+              journalAssociations: async (input) => {
+                await authorize();
+                const result = await readJournalAssociations(
+                  db,
+                  dependencies.weekContext ??
+                    createWeekContextService(dependencies.database),
+                  storeId,
+                  input,
+                );
                 await authorize();
                 return result;
               },
