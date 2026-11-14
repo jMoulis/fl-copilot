@@ -577,6 +577,7 @@ export class ApiClient {
     storeTransports = false,
     transportAlertFilters = false,
     automaticMemory = false,
+    personalTasks = false,
   ) {
     const query = new URLSearchParams();
     if (commercialReview) query.set("commercialReview", "true");
@@ -612,6 +613,7 @@ export class ApiClient {
     if (substitutionEvidence) query.set("substitutionEvidence", "true");
     if (substitutionScores) query.set("substitutionScores", "true");
     if (copilotHistory) query.set("copilotHistory", "true");
+    if (personalTasks) query.set("personalTasks", "true");
     if (copilotKnowledge) query.set("copilotKnowledge", "true");
     if (automaticMemory) query.set("automaticMemory", "true");
     if (copilotDecisions) query.set("copilotDecisions", "true");
@@ -693,6 +695,7 @@ export class ApiClient {
     storeTransports = false,
     transportAlertFilters = false,
     automaticMemory = false,
+    personalTasks = false,
   ) {
     const query = new URLSearchParams();
     if (rawObservationDays !== undefined)
@@ -730,6 +733,7 @@ export class ApiClient {
     if (substitutionEvidence) query.set("substitutionEvidence", "true");
     if (substitutionScores) query.set("substitutionScores", "true");
     if (copilotHistory) query.set("copilotHistory", "true");
+    if (personalTasks) query.set("personalTasks", "true");
     if (copilotKnowledge) query.set("copilotKnowledge", "true");
     if (automaticMemory) query.set("automaticMemory", "true");
     if (copilotDecisions) query.set("copilotDecisions", "true");

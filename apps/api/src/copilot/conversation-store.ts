@@ -1,4 +1,10 @@
 import {
+  applyPersonalTask,
+  canAccessPersonalTask,
+  serializePersonalTask,
+  type PersonalTaskDocument,
+} from "../personal-task-sync";
+import {
   canAccessIllustrationGeneration,
   serializeIllustrationGeneration,
   type IllustrationGenerationDocument,
@@ -73,7 +79,9 @@ import {
   serializeActionExecution,
   type ActionExecutionDocument,
 } from "./action-execution-store";
+// Historical name: this registry also gates other owner-private sync records.
 export const chatCollections = {
+  personal_task: "personalTasks",
   copilot_layout_illustration_generation:
     "copilotLayoutIllustrationGenerations",
   copilot_layout_illustration: "copilotLayoutIllustrations",
@@ -93,6 +101,7 @@ export type ChatRecordDocument = (
   | EmailDecisionDocument
   | CopilotConversation
   | CopilotMessage
+  | PersonalTaskDocument
   | KnowledgeDocument
   | DecisionDocument
   | ExecutionLinkDocument
@@ -101,6 +110,8 @@ export type ChatRecordDocument = (
   _id: string;
 };
 export function serializeChat(type: string, row: ChatRecordDocument) {
+  if (type === "personal_task")
+    return serializePersonalTask(row as PersonalTaskDocument);
   if (type === "copilot_layout_illustration_generation")
     return serializeIllustrationGeneration(
       row as IllustrationGenerationDocument,
@@ -180,6 +191,8 @@ export async function canAccessChatCommand(
     return canAccessExecutionLink(db, storeId, ownerId, c);
   if (c.entityType === "copilot_decision")
     return canAccessDecision(db, storeId, ownerId, c);
+  if (c.entityType === "personal_task")
+    return canAccessPersonalTask(db, storeId, ownerId, c);
   if (c.entityType === "copilot_knowledge")
     return canAccessKnowledge(db, storeId, ownerId, c);
   if (!ownerId || !isChatType(c.entityType)) return false;
@@ -271,6 +284,8 @@ export async function applyChatCommand(
     return applyExecutionLink(ctx, storeId, ownerId, c, requestId, changes);
   if (c.entityType === "copilot_decision")
     return applyDecision(ctx, storeId, ownerId, c, requestId, changes);
+  if (c.entityType === "personal_task")
+    return applyPersonalTask(ctx, storeId, ownerId, c, requestId, changes);
   if (c.entityType === "copilot_knowledge")
     return applyKnowledge(ctx, storeId, ownerId, c, requestId, changes);
   const reject = (code: string): CommandMutationResult => ({

@@ -58,11 +58,13 @@ validation d'une restauration cloud Atlas. Cette réserve reste visible.
   suffisant reste à mesurer ; aucune causalité, prévision ou stabilité empirique
   n'est déclarée validée par ce test.
 
-## Prochain lot cadré, non implémenté
+## Prochain lot — maquette validée, intégration en cours
 
 Pilotage quotidien dans le Journal : réunir les tâches commerciales existantes
 et des pense-bêtes libres, **privés au compte dans le magasin**, avec **rappel
 facultatif**. Ces deux choix sont confirmés par le propriétaire le 14 novembre.
+La maquette est validée par le propriétaire ; la livraison et la recette native
+restent suivies dans [le journal du lot](../qa/JOURNAL_DAILY_PILOTING_2026_11_14.md).
 Le [brief UX et technique](../ux/DAILY_PILOTING_BRIEF_2026_11_14.md) décrit le
 périmètre et les critères de recette. La maquette précède les changements d'écran.
 

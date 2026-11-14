@@ -220,7 +220,10 @@ export function createMongoSyncPullService(
         string,
         import("../copilot/conversation-store").ChatRecordDocument
       >();
-      if (query.copilotHistory === "true" && ownerId) {
+      if (
+        (query.copilotHistory === "true" || query.personalTasks === "true") &&
+        ownerId
+      ) {
         await Promise.all(
           Object.entries(chatCollections).map(async ([type, collection]) => {
             const ids = selected
@@ -228,6 +231,9 @@ export function createMongoSyncPullService(
               .map((change) => change.entityId);
             if (
               !ids.length ||
+              (type === "personal_task"
+                ? query.personalTasks !== "true"
+                : query.copilotHistory !== "true") ||
               (type === "email_intake_decision" &&
                 query.emailIntake !== "true") ||
               (type === "copilot_action_execution" &&
@@ -307,7 +313,10 @@ export function createMongoSyncPullService(
               (change.entityType !== "copilot_knowledge" ||
                 query.copilotKnowledge === "true") &&
               (!isChatType(change.entityType) ||
-                (query.copilotHistory === "true" && !!ownerId)) &&
+                (!!ownerId &&
+                  (change.entityType === "personal_task"
+                    ? query.personalTasks === "true"
+                    : query.copilotHistory === "true"))) &&
               (query.commercialReview === "true" ||
                 ![
                   "commercial_review_page",

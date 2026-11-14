@@ -70,12 +70,14 @@ type Editor = {
 export function CommercialExecutionView({
   plan,
   compact = false,
+  initialTaskId,
   installationOnly = false,
   filter: controlledFilter,
   onFilter,
 }: {
   plan: CommercialWeekPlan;
   compact?: boolean;
+  initialTaskId?: string;
   installationOnly?: boolean;
   filter?: ExecutionFilter;
   onFilter?(filter: ExecutionFilter): void;
@@ -90,6 +92,7 @@ export function CommercialExecutionView({
   const [selectedTg, setSelectedTg] = useState(
     plan.preparation.placements[0]?.id,
   );
+  const autoOpened = useRef<string | undefined>(undefined);
   const saveLock = useRef(false);
   const [loadedRevision, setLoadedRevision] = useState<string>();
   const [localFilter, setLocalFilter] = useState<ExecutionFilter>("TODO");
@@ -120,6 +123,31 @@ export function CommercialExecutionView({
             setProposals(d.p);
             setRecords(d.r);
             setLoadedRevision(plan.revisionId);
+            if (
+              initialTaskId &&
+              autoOpened.current !== `${plan.revisionId}:${initialTaskId}`
+            ) {
+              autoOpened.current = `${plan.revisionId}:${initialTaskId}`;
+              const proposal = d.p.find((p) => p.id === initialTaskId),
+                record = proposal
+                  ? (d.r.find((r) =>
+                      commercialExecutionSameTarget(r.entity, proposal),
+                    ) ?? null)
+                  : null;
+              if (proposal)
+                setEditor({
+                  proposal,
+                  record,
+                  status: record?.entity.status ?? "TODO",
+                  note: record?.entity.note ?? "",
+                  actuals: executionActualsDraft(record?.entity.actuals),
+                  plan,
+                });
+              else
+                setError(
+                  "Cette tâche ne figure plus dans la version actuelle du plan. Consulte le plan avant de choisir.",
+                );
+            }
           }
         })
         .catch(() => {
@@ -131,7 +159,7 @@ export function CommercialExecutionView({
       return () => {
         active = false;
       };
-    }, [refresh, syncStatus, plan.revisionId]),
+    }, [refresh, syncStatus, plan, initialTaskId]),
   );
   async function edit(
     p: CommercialExecutionProposal,

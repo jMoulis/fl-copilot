@@ -241,8 +241,14 @@ export function createMongoSyncPushService(
                 entityId: command.entityId,
                 status: "REJECTED",
                 error: {
-                  code: "COPILOT_HISTORY_ACCESS_INVALID",
-                  messageFr: "Cette conversation n’est pas accessible.",
+                  code:
+                    command.entityType === "personal_task"
+                      ? "PERSONAL_TASK_SCOPE_INVALID"
+                      : "COPILOT_HISTORY_ACCESS_INVALID",
+                  messageFr:
+                    command.entityType === "personal_task"
+                      ? "Ce pense-bête n’est pas accessible pour ce compte."
+                      : "Cette conversation n’est pas accessible.",
                   retryable: false,
                   requestId,
                 },

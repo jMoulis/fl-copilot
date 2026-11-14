@@ -5,6 +5,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { reminderFixture } from "../../../../scripts/test-reminder-fixtures";
 import { reminderFingerprint } from "@fl-copilot/domain";
+import { personalTaskFingerprint, type PersonalTask } from "@fl-copilot/domain";
 import { ReminderProvider, useReminders } from "./provider";
 
 type Response = { notification: { request: { content: { data: unknown } } } };
@@ -105,10 +106,14 @@ vi.mock("./repository", () => ({
     return () => runtime.reminderListeners.delete(listener);
   },
 }));
+vi.mock("../journal/personal-task-reminders", () => ({
+  reconcilePersonalTaskReminders: vi.fn(async () => {}),
+}));
 vi.mock("./native", () => ({
   notificationsAvailable: () => true,
   notificationModule: runtime.module,
   notificationAdapter: runtime.adapter,
+  personalReminderAdapter: async () => null,
 }));
 const native = {
   setNotificationHandler: runtime.handler,
@@ -887,5 +892,88 @@ it("does not open a document after account change during notification synchroniz
     await handling;
   });
   expect(runtime.navigate).not.toHaveBeenCalled();
+  expect(runtime.dismissTo).not.toHaveBeenCalled();
+});
+
+function personalTaskNotificationFixture(done = false) {
+  const task: PersonalTask = {
+    id: "88888888-8888-4888-8888-888888888888",
+    storeId: runtime.storeId!,
+    ownerId: runtime.ownerId,
+    text: "Contrôler les avocats",
+    date: "2026-11-14",
+    time: "16:00",
+    status: done ? "DONE" : "TODO",
+    completedAt: done ? "2026-11-14T09:00:00.000Z" : null,
+    cancelledAt: null,
+    createdAt: "2026-11-14T08:00:00.000Z",
+    updatedAt: "2026-11-14T09:00:00.000Z",
+    version: 2,
+  };
+  runtime.sqlite.getFirstAsync.mockResolvedValue({
+    id: task.id,
+    store_id: task.storeId,
+    owner_id: task.ownerId,
+    payload_json: JSON.stringify(task),
+    remote_payload_json: JSON.stringify(task),
+    remote_version: 2,
+    sync_state: "SYNCED",
+    dirty: 0,
+  });
+  return {
+    task,
+    data: {
+      kind: "PERSONAL_TASK",
+      taskId: task.id,
+      storeId: task.storeId,
+      ownerId: task.ownerId,
+      fingerprint: personalTaskFingerprint(task),
+    },
+  };
+}
+it("opens an owned personal task in the existing Journal without completing it or stacking a new screen", async () => {
+  const f = personalTaskNotificationFixture();
+  await render();
+  await act(async () => {
+    for (const listener of runtime.responseListeners)
+      listener(response(f.data));
+  });
+  expect(runtime.dismissTo).toHaveBeenCalledWith({
+    pathname: "/(tabs)/today",
+    params: { date: f.task.date, personalTaskId: f.task.id },
+  });
+  expect(runtime.push).not.toHaveBeenCalled();
+  expect(runtime.syncNow).not.toHaveBeenCalled();
+});
+it("suppresses a completed personal reminder and routes its stale tap to the current Journal record", async () => {
+  const f = personalTaskNotificationFixture(true);
+  await render();
+  const handler = runtime.handler.mock.calls.at(-1)![0];
+  const display = await handler.handleNotification({
+    request: { content: { data: f.data } },
+  });
+  expect(display.shouldShowBanner).toBe(false);
+  await act(async () => {
+    for (const listener of runtime.responseListeners)
+      listener(response(f.data));
+  });
+  expect(observed.error).toContain("modifié ou terminé");
+  expect(runtime.dismissTo).toHaveBeenCalledWith({
+    pathname: "/(tabs)/today",
+    params: { date: f.task.date, personalTaskId: f.task.id },
+  });
+});
+it("never opens another owner's personal notification", async () => {
+  const f = personalTaskNotificationFixture();
+  await render();
+  await act(async () => {
+    for (const listener of runtime.responseListeners)
+      listener(
+        response({
+          ...f.data,
+          ownerId: "99999999-9999-4999-8999-999999999999",
+        }),
+      );
+  });
   expect(runtime.dismissTo).not.toHaveBeenCalled();
 });

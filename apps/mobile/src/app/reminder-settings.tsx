@@ -235,7 +235,7 @@ export default function ReminderSettings() {
     <AppScreen>
       <AppHeader
         title="Notifications sur ce téléphone"
-        subtitle="Réponses, documents reçus et rappels commerciaux."
+        subtitle="Réponses, documents reçus, opérations et pense-bêtes personnels."
       />
       <SecondaryButton
         label="Retour aux réglages"
@@ -378,7 +378,7 @@ export default function ReminderSettings() {
           message={error ?? runtimeError!}
         />
       ) : null}
-      <SectionCard title="Mes rappels">
+      <SectionCard title="Rappels commerciaux">
         {rows.length ? (
           rows.map(({ reminder: r, status }) => (
             <View key={r.id} className="gap-2">

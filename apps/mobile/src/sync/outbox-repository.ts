@@ -113,7 +113,7 @@ function assertChanged(result: SQLiteRunResult, transition: string) {
 }
 
 export const ACTIVE_FAILED_OUTBOX_SQL =
-  "status='FAILED' AND COALESCE(last_error_code,'') NOT IN ('COPILOT_KNOWLEDGE_SUPERSEDED','COPILOT_DECISION_SUPERSEDED','EMAIL_INTAKE_DECISION_SUPERSEDED','COMMERCIAL_CHOICE_SUPERSEDED','COMMERCIAL_PREPARATION_SUPERSEDED','COMMERCIAL_EXECUTION_SUPERSEDED','STORE_CONTEXT_SUPERSEDED','STORE_LAYOUT_SUPERSEDED','NEED_UNIT_SUPERSEDED','NEED_MEMBERSHIP_SUPERSEDED','PRODUCT_SUBSTITUTION_SUPERSEDED','STORE_EVENT_SUPERSEDED','COMMERCIAL_PLAN_SUPERSEDED','COMMERCIAL_VERSION_DECISION_SUPERSEDED','PRODUCT_MASTER_CONFLICT_SUPERSEDED','VISUAL_LIBRARY_SUPERSEDED','COMMERCIAL_VALIDATION_SUPERSEDED','COMMERCIAL_REVIEW_SUPERSEDED','DOCUMENT_ARCHIVE_SUPERSEDED')";
+  "status='FAILED' AND COALESCE(last_error_code,'') NOT IN ('PERSONAL_TASK_SUPERSEDED','COPILOT_KNOWLEDGE_SUPERSEDED','COPILOT_DECISION_SUPERSEDED','EMAIL_INTAKE_DECISION_SUPERSEDED','COMMERCIAL_CHOICE_SUPERSEDED','COMMERCIAL_PREPARATION_SUPERSEDED','COMMERCIAL_EXECUTION_SUPERSEDED','STORE_CONTEXT_SUPERSEDED','STORE_LAYOUT_SUPERSEDED','NEED_UNIT_SUPERSEDED','NEED_MEMBERSHIP_SUPERSEDED','PRODUCT_SUBSTITUTION_SUPERSEDED','STORE_EVENT_SUPERSEDED','COMMERCIAL_PLAN_SUPERSEDED','COMMERCIAL_VERSION_DECISION_SUPERSEDED','PRODUCT_MASTER_CONFLICT_SUPERSEDED','VISUAL_LIBRARY_SUPERSEDED','COMMERCIAL_VALIDATION_SUPERSEDED','COMMERCIAL_REVIEW_SUPERSEDED','DOCUMENT_ARCHIVE_SUPERSEDED')";
 
 export class OutboxRepository {
   constructor(
@@ -126,7 +126,7 @@ export class OutboxRepository {
       pending_count: number | null;
       failed_count: number | null;
     }>(
-      `SELECT SUM(CASE WHEN status IN ('PENDING','SYNCING') THEN 1 ELSE 0 END) AS pending_count,SUM(CASE WHEN ${ACTIVE_FAILED_OUTBOX_SQL} THEN 1 ELSE 0 END) AS failed_count FROM sync_outbox WHERE store_id=? AND ((entity_type NOT GLOB 'copilot_*' AND entity_type NOT IN ('email_intake_decision','document_archive')) OR json_extract(payload_json,'$.ownerId')=?)`,
+      `SELECT SUM(CASE WHEN status IN ('PENDING','SYNCING') THEN 1 ELSE 0 END) AS pending_count,SUM(CASE WHEN ${ACTIVE_FAILED_OUTBOX_SQL} THEN 1 ELSE 0 END) AS failed_count FROM sync_outbox WHERE store_id=? AND ((entity_type NOT GLOB 'copilot_*' AND entity_type NOT IN ('personal_task','email_intake_decision','document_archive')) OR json_extract(payload_json,'$.ownerId')=?)`,
       storeId,
       ownerId ?? null,
     );
@@ -207,14 +207,14 @@ export class OutboxRepository {
       `
         SELECT * FROM sync_outbox
         WHERE store_id = ? AND status = 'PENDING'
-          AND (? IS NULL OR (entity_type NOT GLOB 'copilot_*' AND entity_type NOT IN ('email_intake_decision','document_archive')) OR json_extract(payload_json,'$.ownerId')=?)
-          AND (entity_type NOT IN ('visual_asset','visual_identity','product_visual_link','mercalys_publication','copilot_knowledge','copilot_decision','copilot_layout_illustration_generation','copilot_layout_illustration','email_intake_decision','copilot_execution_link','copilot_action_execution','product_alias','commercial_offer_choice','commercial_week_preparation','commercial_execution_task','store_context_settings','store_layout','need_unit','need_membership','product_substitution','store_product_event','store_journal_note','commercial_week_plan','commercial_version_decision') OR NOT EXISTS (
+          AND (? IS NULL OR (entity_type NOT GLOB 'copilot_*' AND entity_type NOT IN ('personal_task','email_intake_decision','document_archive')) OR json_extract(payload_json,'$.ownerId')=?)
+          AND (entity_type NOT IN ('visual_asset','visual_identity','product_visual_link','mercalys_publication','personal_task','copilot_knowledge','copilot_decision','copilot_layout_illustration_generation','copilot_layout_illustration','email_intake_decision','copilot_execution_link','copilot_action_execution','product_alias','commercial_offer_choice','commercial_week_preparation','commercial_execution_task','store_context_settings','store_layout','need_unit','need_membership','product_substitution','store_product_event','store_journal_note','commercial_week_plan','commercial_version_decision') OR NOT EXISTS (
             SELECT 1 FROM sync_outbox prior
             WHERE prior.store_id = sync_outbox.store_id
               AND prior.entity_type = sync_outbox.entity_type
               AND prior.entity_id = sync_outbox.entity_id
               AND prior.local_sequence < sync_outbox.local_sequence
-              AND ((prior.status IN ('PENDING', 'SYNCING') OR (prior.status='FAILED' AND COALESCE(prior.last_error_code,'') NOT IN ('COPILOT_KNOWLEDGE_SUPERSEDED','COPILOT_DECISION_SUPERSEDED','EMAIL_INTAKE_DECISION_SUPERSEDED','COMMERCIAL_CHOICE_SUPERSEDED','COMMERCIAL_PREPARATION_SUPERSEDED','COMMERCIAL_EXECUTION_SUPERSEDED','STORE_CONTEXT_SUPERSEDED','STORE_LAYOUT_SUPERSEDED','NEED_UNIT_SUPERSEDED','NEED_MEMBERSHIP_SUPERSEDED','PRODUCT_SUBSTITUTION_SUPERSEDED','STORE_EVENT_SUPERSEDED','COMMERCIAL_PLAN_SUPERSEDED','COMMERCIAL_VERSION_DECISION_SUPERSEDED','PRODUCT_MASTER_CONFLICT_SUPERSEDED','VISUAL_LIBRARY_SUPERSEDED'))) OR
+              AND ((prior.status IN ('PENDING', 'SYNCING') OR (prior.status='FAILED' AND COALESCE(prior.last_error_code,'') NOT IN ('PERSONAL_TASK_SUPERSEDED','COPILOT_KNOWLEDGE_SUPERSEDED','COPILOT_DECISION_SUPERSEDED','EMAIL_INTAKE_DECISION_SUPERSEDED','COMMERCIAL_CHOICE_SUPERSEDED','COMMERCIAL_PREPARATION_SUPERSEDED','COMMERCIAL_EXECUTION_SUPERSEDED','STORE_CONTEXT_SUPERSEDED','STORE_LAYOUT_SUPERSEDED','NEED_UNIT_SUPERSEDED','NEED_MEMBERSHIP_SUPERSEDED','PRODUCT_SUBSTITUTION_SUPERSEDED','STORE_EVENT_SUPERSEDED','COMMERCIAL_PLAN_SUPERSEDED','COMMERCIAL_VERSION_DECISION_SUPERSEDED','PRODUCT_MASTER_CONFLICT_SUPERSEDED','VISUAL_LIBRARY_SUPERSEDED'))) OR
                 (prior.status = 'CONFLICT' AND NOT EXISTS (
                   SELECT 1 FROM sync_conflicts c WHERE c.command_id = prior.command_id AND c.status IN ('RESOLVED_LOCAL', 'RESOLVED_REMOTE', 'MERGED')
                 )))
@@ -266,7 +266,7 @@ export class OutboxRepository {
        (SELECT json_extract(CASE WHEN json_valid(p.payload_json) THEN p.payload_json ELSE '{}' END,'$.deletedAt') FROM copilot_conversations p WHERE p.id=json_extract(CASE WHEN json_valid(sync_outbox.payload_json) THEN sync_outbox.payload_json ELSE '{}' END,'$.conversationId') AND p.store_id=sync_outbox.store_id AND p.owner_id=json_extract(CASE WHEN json_valid(sync_outbox.payload_json) THEN sync_outbox.payload_json ELSE '{}' END,'$.ownerId')) AS parent_deleted
        FROM sync_outbox
        WHERE store_id=? AND ${ACTIVE_FAILED_OUTBOX_SQL} AND local_sequence>?
-       AND (entity_type NOT IN ('copilot_conversation','copilot_message','copilot_knowledge','copilot_decision','copilot_layout_illustration_generation','copilot_layout_illustration','email_intake_decision','copilot_execution_link','copilot_action_execution','document_archive') OR
+       AND (entity_type NOT IN ('copilot_conversation','copilot_message','personal_task','copilot_knowledge','copilot_decision','copilot_layout_illustration_generation','copilot_layout_illustration','email_intake_decision','copilot_execution_link','copilot_action_execution','document_archive') OR
          (? IS NOT NULL AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.ownerId')=?
           AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.storeId')=?))
        AND (entity_type NOT IN ('visual_asset','visual_identity','product_visual_link') OR

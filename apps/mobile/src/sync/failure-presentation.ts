@@ -12,6 +12,7 @@ const labels: Record<string, string> = {
   email_intake_decision: "Confirmation des documents reçus par email",
   copilot_execution_link: "Association de mise en place",
   copilot_action_execution: "Réalisation déclarée",
+  personal_task: "Pense-bête personnel",
   copilot_knowledge: "Pratique mémorisée",
   need_unit: "Unité de besoin",
   need_membership: "Association produit/besoin",

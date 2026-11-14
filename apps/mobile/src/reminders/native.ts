@@ -107,3 +107,59 @@ export async function requestReminderPermission() {
   });
   return p.granted || p.ios?.status === n.IosAuthorizationStatus.PROVISIONAL;
 }
+
+/** Same guarded native module as commercial reminders; no new provider/service. */
+export async function personalReminderAdapter(): Promise<
+  import("../journal/personal-task-reminders").PersonalReminderAdapter | null
+> {
+  const current = nativeRegistrationIsCurrent(),
+    n = await notificationModule();
+  if (!n) return null;
+  return {
+    permission: async () => {
+      if (!current()) return false;
+      const p = await n.getPermissionsAsync();
+      return (
+        p.granted || p.ios?.status === n.IosAuthorizationStatus.PROVISIONAL
+      );
+    },
+    pending: async () =>
+      current()
+        ? (await n.getAllScheduledNotificationsAsync()).map((p) => ({
+            identifier: p.identifier,
+            data: p.content.data,
+          }))
+        : [],
+    cancel: async (id) => {
+      if (current()) await n.cancelScheduledNotificationAsync(id);
+    },
+    schedule: async (t, at) => {
+      if (!current()) throw Error("NOTIFICATION_CONTEXT_CHANGED");
+      const identifier = await n.scheduleNotificationAsync({
+        identifier: `fl-personal-${t.id}`,
+        content: {
+          title: "Ton pense-bête",
+          body: t.text,
+          sound: "default",
+          data: {
+            kind: "PERSONAL_TASK",
+            taskId: t.id,
+            storeId: t.storeId,
+            ownerId: t.ownerId,
+            fingerprint: `${t.version}:${t.date}:${t.time}`,
+          },
+        },
+        trigger: {
+          type: n.SchedulableTriggerInputTypes.DATE,
+          date: new Date(at),
+          channelId: "commercial-reminders",
+        },
+      });
+      if (!current()) {
+        await n.cancelScheduledNotificationAsync(identifier);
+        throw Error("NOTIFICATION_CONTEXT_CHANGED");
+      }
+      return identifier;
+    },
+  };
+}

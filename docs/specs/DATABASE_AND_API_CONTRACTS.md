@@ -1,3 +1,15 @@
+## Owner-approved extension — 14 November 2026: private daily tasks
+
+`personalTasks=true` independently negotiates owner/store-private task bootstrap
+and pull through existing sync endpoints. Bootstrap binds `personalTasksOwnerId`;
+legacy clients receive no task entity. `PERSONAL_TASK_UPSERT` uses stable IDs,
+immutable owner/store/creation identity, positive revision CAS, canonical atomic
+Outbox/processed-command persistence and retained history. Cached replay checks
+the current actor before returning a private result. Device-only reminder settings
+are not part of the synchronized task. SQLite 65 and Mongo 62 add the explicit
+stores/indexes. This adds no AI capability or generic task write endpoint.
+See `../qa/JOURNAL_DAILY_PILOTING_2026_11_14.md`. Compatible API must precede native.
+
 ## Journal descriptive study — 14 November 2026
 
 `journalAssociationInputSchema` and `journalAssociationStudySchema` define a

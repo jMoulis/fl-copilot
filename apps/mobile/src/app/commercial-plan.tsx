@@ -46,7 +46,11 @@ const digest = (s: string) =>
 
 export default function CommercialPlanScreen() {
   const { session } = useAuth(),
-    params = useLocalSearchParams<{ weekStart?: string; mode?: string }>();
+    params = useLocalSearchParams<{
+      weekStart?: string;
+      mode?: string;
+      taskId?: string;
+    }>();
   const explicit = contextWeekQuerySchema.safeParse({
     weekStart: params.weekStart,
   });
@@ -59,6 +63,7 @@ export default function CommercialPlanScreen() {
       key={`${storeId}:${session?.user.id}:${weekStart}`}
       storeId={storeId}
       weekStart={weekStart}
+      initialTaskId={params.taskId}
       installationOnly={params.mode === "installation"}
     />
   ) : (
@@ -74,10 +79,12 @@ export default function CommercialPlanScreen() {
 function StoreWeek({
   storeId,
   weekStart,
+  initialTaskId,
   installationOnly = false,
 }: {
   storeId: string;
   weekStart: string;
+  initialTaskId?: string;
   installationOnly?: boolean;
 }) {
   const { sqlite } = useLocalDatabase(),
@@ -168,6 +175,7 @@ function StoreWeek({
         <CommercialExecutionView
           key={plan.entity.revisionId}
           plan={plan.entity}
+          initialTaskId={initialTaskId}
           installationOnly
         />
       </AppScreen>
@@ -329,7 +337,10 @@ function StoreWeek({
       ) : null}
       {plan ? (
         <>
-          <CommercialExecutionView plan={plan.entity} />
+          <CommercialExecutionView
+            plan={plan.entity}
+            initialTaskId={initialTaskId}
+          />
           <DetailsDisclosure title="Alternatives et contre-promos">
             <WeeklySubstitutesView
               storeId={storeId}

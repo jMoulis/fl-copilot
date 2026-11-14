@@ -949,6 +949,11 @@ CREATE INDEX copilot_layout_illustration_generation_scope ON copilot_layout_illu
     name: "store-journal-notes",
     sql: `CREATE TABLE store_journal_notes(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,start_date TEXT NOT NULL,end_date TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 1); CREATE INDEX store_journal_note_period ON store_journal_notes(store_id,start_date,end_date); CREATE TABLE store_journal_note_history(action_id TEXT PRIMARY KEY NOT NULL,note_id TEXT NOT NULL,store_id TEXT NOT NULL,payload_json TEXT NOT NULL,created_at TEXT NOT NULL);`,
   },
+  {
+    version: 65,
+    name: "private-personal-tasks",
+    sql: `CREATE TABLE personal_tasks(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,planned_date TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 1); CREATE INDEX personal_tasks_scope ON personal_tasks(store_id,owner_id,planned_date); CREATE TABLE personal_task_history(action_id TEXT PRIMARY KEY NOT NULL,task_id TEXT NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,payload_json TEXT NOT NULL,created_at TEXT NOT NULL); CREATE TABLE personal_task_reminders(task_id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 0,notification_id TEXT,fingerprint TEXT,status TEXT NOT NULL DEFAULT 'OFF');`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

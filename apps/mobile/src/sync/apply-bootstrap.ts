@@ -1,3 +1,4 @@
+import { applyPersonalTaskRecord } from "../journal/personal-task-repository";
 import { applyJournalNote } from "../journal/journal-note-repository";
 import { applyIllustrationGenerationRecord } from "../copilot/layout-illustration-generation-repository";
 import { applyLayoutIllustrationRecord } from "../copilot/layout-illustration-repository";
@@ -188,6 +189,18 @@ export async function applyBootstrap(
       await transaction.runAsync(
         "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
         `copilot-decisions:${storeId}:${ownerId}`,
+        "1",
+        bootstrap.serverTime,
+      );
+    }
+    if (bootstrap.entities.personalTasks) {
+      if (!ownerId || ownerId !== bootstrap.entities.personalTasksOwnerId)
+        throw Error("PERSONAL_TASK_SCOPE_INVALID");
+      for (const task of bootstrap.entities.personalTasks)
+        await applyPersonalTaskRecord(transaction, { storeId, ownerId }, task);
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+        `personal-tasks:${storeId}:${ownerId}`,
         "1",
         bootstrap.serverTime,
       );
@@ -597,6 +610,8 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
     "emailIntakeHistoryRequired",
     "emailIntakeOwnerId",
     "copilotDecisionOwnerId",
+    "personalTasks",
+    "personalTasksOwnerId",
     "copilotKnowledge",
     "copilotKnowledgeOwnerId",
     "automaticMemory",

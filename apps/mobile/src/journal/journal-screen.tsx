@@ -1,10 +1,12 @@
+import { DailyTaskList } from "./daily-task-list";
+import { copilotBusinessDateSchema } from "@fl-copilot/domain";
 import { JournalTransports } from "./journal-transports";
 import { JournalExternalContext } from "./journal-context";
 import { JournalNotes } from "./journal-notes";
 import clementineArt from "../../assets/journal/clementinier.webp";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { randomUUID } from "expo-crypto";
 import { currentCommercialWeek } from "@fl-copilot/commercial-core";
@@ -59,10 +61,23 @@ function StoreJournal({
   storeId: string;
   ownerId: string;
 }) {
+  const params = useLocalSearchParams<{
+    date?: string;
+    personalTaskId?: string;
+  }>();
+  const scope = useMemo(() => ({ storeId, ownerId }), [storeId, ownerId]);
+  const consumeTask = useCallback(
+    () => router.setParams({ personalTaskId: undefined, date: undefined }),
+    [],
+  );
   const { sqlite, deviceId } = useLocalDatabase(),
     { lastSyncedAt } = useSync();
   const [today, setToday] = useState(tradingToday),
     [date, setDate] = useState(tradingToday);
+  useEffect(() => {
+    const parsed = copilotBusinessDateSchema.safeParse(params.date);
+    if (parsed.success) setDate(parsed.data);
+  }, [params.date]);
   const weekStart = currentCommercialWeek(new Date(`${date}T12:00:00Z`)).start;
   const {
     settings,
@@ -282,6 +297,13 @@ function StoreJournal({
           onSettings={() => router.push("/store-settings")}
         />
       </View>
+      <DailyTaskList
+        scope={scope}
+        date={date}
+        today={today}
+        openTaskId={params.personalTaskId}
+        onTaskOpened={consumeTask}
+      />
       <JournalExternalContext
         date={date}
         context={context?.journal}
@@ -297,6 +319,7 @@ function StoreJournal({
         busy={busy}
         onRefresh={() => void refresh()}
       />
+
       <View style={styles.terrain}>
         <View style={styles.sectionHead}>
           <Text accessibilityRole="header" style={styles.sectionTitle}>

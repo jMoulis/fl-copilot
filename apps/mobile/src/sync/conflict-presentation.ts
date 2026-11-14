@@ -26,6 +26,7 @@ export function conflictEntityLabel(conflict: SyncConflict) {
     email_intake_decision: "Confirmation de documents reçus",
     copilot_execution_link: "Association de mise en place",
     copilot_action_execution: "Réalisation déclarée",
+    personal_task: "Pense-bête personnel",
     copilot_knowledge: "Pratique mémorisée",
     store_layout: "Plan physique du magasin",
     visual_asset: "Image produit",

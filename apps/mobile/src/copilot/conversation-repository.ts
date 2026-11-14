@@ -1,3 +1,4 @@
+import { applyPersonalTaskRecord } from "../journal/personal-task-repository";
 import { copilotHistoryPageSchema } from "@fl-copilot/sync-contracts";
 import { applyIllustrationGenerationRecord } from "./layout-illustration-generation-repository";
 import { applyEmailDecisionRecord } from "../intake/email-decision-repository";
@@ -65,6 +66,7 @@ export async function applyCopilotRecord(
   type:
     | keyof typeof schemas
     | "email_intake_decision"
+    | "personal_task"
     | "copilot_knowledge"
     | "copilot_decision"
     | "copilot_execution_link"
@@ -87,6 +89,8 @@ export async function applyCopilotRecord(
     return applyExecutionLinkRecord(db, scope, payload, ackVersion);
   if (type === "copilot_decision")
     return applyDecisionRecord(db, scope, payload, ackVersion);
+  if (type === "personal_task")
+    return applyPersonalTaskRecord(db, scope, payload, ackVersion);
   if (type === "copilot_knowledge")
     return applyKnowledgeRecord(db, scope, payload, ackVersion);
   let e = schemas[type].parse(payload);
