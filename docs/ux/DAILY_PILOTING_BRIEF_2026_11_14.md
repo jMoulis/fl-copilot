@@ -1,6 +1,6 @@
 # Daily piloting — scoped brief, 14 November 2026
 
-Status: **SCOPED, NOT IMPLEMENTED**. Owner authorizes roadmap consolidation and
+Status: **MOCKUP APPROVED; IMPLEMENTATION IN PROGRESS**. Owner authorizes roadmap consolidation and
 the definition of the next daily-piloting increment. Owner explicitly chooses
 free reminders in addition to existing commercial tasks, private to their
 account, with optional notification reminders. Screen changes follow a mockup
@@ -47,7 +47,7 @@ their own meanings.
    product, category, commercial plan or AI processing.
 4. Personal task detail supports edit, mark done/reopen, change date/time and
    cancellation with retained history. The proposed first statuses are **À faire**,
-   **Fait**, **Annulé**. These labels still require visual review.
+   **Fait**, **Annulé**. These labels are accepted in the reviewed mockup.
 5. Commercial rows open their existing declaration/detail, preserving source and
    revision checks. A saved plan or accepted recommendation is not an installation.
 6. Group dated personal entries by the selected day. On today's view, make overdue
@@ -127,5 +127,5 @@ merely by recording this brief.
 - Commercial declaration and stale-plan behavior remain those of the existing
   canonical service. No task progress implies sales uplift or physical exposure.
 
-The next deliverable is a focused interactive mockup, followed by shared contracts
-and implementation once the screen flow has been reviewed.
+The owner approves the focused interactive mockup on 14 November. Implementation
+and delivery evidence are tracked in [the feature ledger](../qa/JOURNAL_DAILY_PILOTING_2026_11_14.md). Native release and owner acceptance remain distinct.

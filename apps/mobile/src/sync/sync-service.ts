@@ -135,6 +135,7 @@ export interface MobileSyncServiceOptions {
   emailIntakeAllowed?(storeId: string): boolean;
   copilotExecutionLinks?: boolean;
   copilotActionExecutions?: boolean;
+  personalTasks?: boolean;
   copilotKnowledge?: boolean;
   automaticMemory?: boolean;
   memoryCommandId?: () => string;
@@ -401,6 +402,12 @@ export class MobileSyncService {
           `copilot-decisions:${storeId}:${this.options.copilotOwnerId}`,
         )
       : true;
+    const personalTasksAdopted = this.options.personalTasks
+      ? await this.database.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key=?",
+          `personal-tasks:${storeId}:${this.options.copilotOwnerId}`,
+        )
+      : true;
     const knowledgeAdopted = this.options.copilotKnowledge
       ? await this.database.getFirstAsync(
           "SELECT value FROM app_metadata WHERE key=?",
@@ -485,6 +492,7 @@ export class MobileSyncService {
       !scoresAdopted ||
       !chatAdopted ||
       !historyDeletionAdopted ||
+      !personalTasksAdopted ||
       !knowledgeAdopted ||
       !decisionsAdopted ||
       !illustrationsAdopted ||
@@ -540,6 +548,11 @@ export class MobileSyncService {
     const snapshot = await this.withRetry(() =>
       this.transport.bootstrap(storeId),
     );
+    if (
+      this.options.personalTasks &&
+      snapshot.entities.personalTasksOwnerId !== this.options.copilotOwnerId
+    )
+      throw Error("PERSONAL_TASKS_UPGRADE_REQUIRED");
     if (
       this.options.storeTransports &&
       snapshot.entities.storeTransports !== true
@@ -946,6 +959,7 @@ export class MobileSyncService {
               [
                 "copilot_conversation",
                 "copilot_message",
+                "personal_task",
                 "copilot_knowledge",
                 "copilot_decision",
                 "copilot_layout_illustration_generation",
@@ -1099,6 +1113,7 @@ export class MobileSyncService {
           if (
             command.entityType === "copilot_conversation" ||
             command.entityType === "copilot_message" ||
+            command.entityType === "personal_task" ||
             command.entityType === "copilot_knowledge" ||
             command.entityType === "copilot_decision" ||
             command.entityType === "copilot_layout_illustration_generation" ||
@@ -1352,6 +1367,7 @@ export class MobileSyncService {
           if (
             command.entityType === "copilot_conversation" ||
             command.entityType === "copilot_message" ||
+            command.entityType === "personal_task" ||
             command.entityType === "copilot_knowledge" ||
             command.entityType === "copilot_decision" ||
             command.entityType === "copilot_layout_illustration_generation" ||
@@ -1361,7 +1377,7 @@ export class MobileSyncService {
             command.entityType === "copilot_execution_link"
           )
             await transaction.runAsync(
-              `UPDATE ${command.entityType === "copilot_conversation" ? "copilot_conversations" : command.entityType === "copilot_knowledge" ? "copilot_knowledge" : command.entityType === "copilot_action_execution" ? "action_executions" : command.entityType === "copilot_execution_link" ? "copilot_execution_links" : command.entityType === "email_intake_decision" ? "email_intake_decisions" : command.entityType === "copilot_layout_illustration_generation" ? "copilot_layout_illustration_generations" : command.entityType === "copilot_layout_illustration" ? "copilot_layout_illustrations" : command.entityType === "copilot_decision" ? "copilot_decisions" : "copilot_messages"} SET sync_state='CONFLICT' WHERE id=? AND store_id=?`,
+              `UPDATE ${command.entityType === "copilot_conversation" ? "copilot_conversations" : command.entityType === "personal_task" ? "personal_tasks" : command.entityType === "copilot_knowledge" ? "copilot_knowledge" : command.entityType === "copilot_action_execution" ? "action_executions" : command.entityType === "copilot_execution_link" ? "copilot_execution_links" : command.entityType === "email_intake_decision" ? "email_intake_decisions" : command.entityType === "copilot_layout_illustration_generation" ? "copilot_layout_illustration_generations" : command.entityType === "copilot_layout_illustration" ? "copilot_layout_illustrations" : command.entityType === "copilot_decision" ? "copilot_decisions" : "copilot_messages"} SET sync_state='CONFLICT' WHERE id=? AND store_id=?`,
               command.entityId,
               storeId,
             );
@@ -1500,6 +1516,7 @@ export class MobileSyncService {
           if (
             command.entityType === "copilot_conversation" ||
             command.entityType === "copilot_message" ||
+            command.entityType === "personal_task" ||
             command.entityType === "copilot_knowledge" ||
             command.entityType === "copilot_decision" ||
             command.entityType === "copilot_layout_illustration_generation" ||
@@ -1509,7 +1526,7 @@ export class MobileSyncService {
             command.entityType === "copilot_execution_link"
           )
             await transaction.runAsync(
-              `UPDATE ${command.entityType === "copilot_conversation" ? "copilot_conversations" : command.entityType === "copilot_knowledge" ? "copilot_knowledge" : command.entityType === "copilot_action_execution" ? "action_executions" : command.entityType === "copilot_execution_link" ? "copilot_execution_links" : command.entityType === "email_intake_decision" ? "email_intake_decisions" : command.entityType === "copilot_layout_illustration_generation" ? "copilot_layout_illustration_generations" : command.entityType === "copilot_layout_illustration" ? "copilot_layout_illustrations" : command.entityType === "copilot_decision" ? "copilot_decisions" : "copilot_messages"} SET sync_state='ERROR' WHERE id=? AND store_id=?`,
+              `UPDATE ${command.entityType === "copilot_conversation" ? "copilot_conversations" : command.entityType === "personal_task" ? "personal_tasks" : command.entityType === "copilot_knowledge" ? "copilot_knowledge" : command.entityType === "copilot_action_execution" ? "action_executions" : command.entityType === "copilot_execution_link" ? "copilot_execution_links" : command.entityType === "email_intake_decision" ? "email_intake_decisions" : command.entityType === "copilot_layout_illustration_generation" ? "copilot_layout_illustration_generations" : command.entityType === "copilot_layout_illustration" ? "copilot_layout_illustrations" : command.entityType === "copilot_decision" ? "copilot_decisions" : "copilot_messages"} SET sync_state='ERROR' WHERE id=? AND store_id=?`,
               command.entityId,
               storeId,
             );

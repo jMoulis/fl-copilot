@@ -1,3 +1,6 @@
+vi.mock("../journal/daily-task-list", () => ({
+  DailyTaskList: "DailyTaskList",
+}));
 vi.mock("../journal/journal-notes", () => ({ JournalNotes: "JournalNotes" }));
 import {
   createElement,
@@ -45,7 +48,8 @@ vi.mock("@expo/vector-icons/MaterialCommunityIcons", () => ({
   default: "TransportIcon",
 }));
 vi.mock("expo-router", () => ({
-  router: { push: runtime.push },
+  router: { push: runtime.push, setParams: vi.fn() },
+  useLocalSearchParams: () => ({}),
   useFocusEffect: (callback: () => void | (() => void)) =>
     useEffect(callback, [callback]),
   Redirect: "Redirect",

@@ -27,10 +27,10 @@ leurs cases non cochées ne sont plus des tâches actives.
 
 ## Prochain lot — cadré, non implémenté
 
-- [ ] **Pilotage quotidien dans le Journal** : liste commune des tâches commerciales
+- [ ] **Pilotage quotidien dans le Journal — maquette validée, intégration en cours** : liste commune des tâches commerciales
       et pense-bêtes libres, ces derniers privés au compte dans le magasin, avec
       rappel facultatif. Choix confirmés par le propriétaire. [Brief](../ux/DAILY_PILOTING_BRIEF_2026_11_14.md).
-      Prochaine étape : maquette interactive puis implémentation du parcours retenu.
+      La maquette interactive est validée. [Implémentation et recette](../qa/JOURNAL_DAILY_PILOTING_2026_11_14.md).
 
 ## Réserves et sujets explicitement reportés
 

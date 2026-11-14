@@ -66,6 +66,16 @@ export default function SyncConflictDetailScreen() {
               storeId={conflict.storeId}
               localId={conflict.entityId}
             />
+          ) : conflict.entityType === "personal_task" ? (
+            <SecondaryButton
+              label="Comparer ce pense-bête dans le Journal"
+              onPress={() =>
+                router.push({
+                  pathname: "/(tabs)/today",
+                  params: { personalTaskId: conflict.entityId },
+                })
+              }
+            />
           ) : conflict.entityType === "email_intake_decision" ? (
             <EmailDecisionConflict key={conflict.id} conflict={conflict} />
           ) : isVisualEntityType(conflict.entityType) ? (

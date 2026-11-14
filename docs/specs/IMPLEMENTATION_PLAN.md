@@ -1,3 +1,13 @@
+## Owner-approved daily piloting implementation — 14 November 2026
+
+The owner approves the Journal task-list mockup, private personal tasks and optional
+device-local reminders. Implement through shared strict contracts, SQLite 65,
+Mongo 62 and the existing authenticated private sync/Outbox path. Reuse the
+commercial task declarations and native notification lifecycle. No model, AI tool,
+provider, recurrence or automatic task writer is added. See
+`../qa/JOURNAL_DAILY_PILOTING_2026_11_14.md` for the scoped acceptance and delivery.
+The scoped-only checkpoint below is historical to the documentation increment.
+
 ## Current checkpoint and next scoped increment — 14 November 2026
 
 Use `../progress/PILOT_STATUS_2026_11_14.md` and the active product backlog for

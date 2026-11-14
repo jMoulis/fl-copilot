@@ -68,6 +68,7 @@ export async function applyPullPage(
       if (
         change.entityType === "copilot_conversation" ||
         change.entityType === "copilot_message" ||
+        change.entityType === "personal_task" ||
         change.entityType === "copilot_knowledge" ||
         change.entityType === "copilot_decision" ||
         change.entityType === "copilot_layout_illustration_generation" ||

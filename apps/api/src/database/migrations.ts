@@ -1253,6 +1253,21 @@ export const mongoMigrations: readonly MongoMigration[] = [
       );
     },
   },
+  {
+    version: 62,
+    name: "private-personal-tasks",
+    async up(db) {
+      await db
+        .collection("personalTasks")
+        .createIndex({ storeId: 1, ownerId: 1, date: 1 });
+      await db
+        .collection("personalTaskHistory")
+        .createIndex(
+          { storeId: 1, ownerId: 1, taskId: 1, version: 1 },
+          { unique: true },
+        );
+    },
+  },
 ];
 
 export async function runMongoMigrations(

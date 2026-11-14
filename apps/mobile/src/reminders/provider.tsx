@@ -1,4 +1,11 @@
 import {
+  personalTaskNotificationSchema,
+  personalTaskFingerprint,
+} from "@fl-copilot/domain";
+import { PersonalTaskRepository } from "../journal/personal-task-repository";
+import { reconcilePersonalTaskReminders } from "../journal/personal-task-reminders";
+import { personalReminderAdapter } from "./native";
+import {
   copilotCompletionNotificationSchema,
   emailReadyNotificationSchema,
   documentReadyNotificationSchema,
@@ -133,6 +140,15 @@ export function ReminderProvider({ children }: PropsWithChildren) {
               if (active.current === context) await repo.setStatus(r, s, id);
             },
           });
+          await reconcilePersonalTaskReminders(
+            sqlite,
+            status === "authenticated" && store && context.ownerId
+              ? { storeId: store, ownerId: context.ownerId }
+              : undefined,
+            await personalReminderAdapter(),
+            new Date(),
+            () => active.current === context,
+          );
           if (active.current === context) setError(undefined);
         } catch {
           if (active.current === context)
@@ -180,11 +196,31 @@ export function ReminderProvider({ children }: PropsWithChildren) {
         n.setNotificationHandler({
           handleNotification: async (notification) => {
             const data = notification.request.content.data;
+            const personal = personalTaskNotificationSchema.safeParse(data);
+            let personalVisible = false;
+            if (
+              personal.success &&
+              personal.data.ownerId === context.ownerId &&
+              personal.data.storeId === storeId
+            ) {
+              const record = await new PersonalTaskRepository(sqlite, {
+                storeId: storeId!,
+                ownerId: context.ownerId!,
+              })
+                .get(personal.data.taskId)
+                .catch(() => null);
+              personalVisible =
+                !!record &&
+                record.entity.status === "TODO" &&
+                personalTaskFingerprint(record.entity) ===
+                  personal.data.fingerprint;
+            }
             const visible =
               alive &&
               active.current === context &&
               data?.storeId === storeId &&
-              (data?.kind === "COMMERCIAL_REMINDER_TEST" ||
+              (personalVisible ||
+                data?.kind === "COMMERCIAL_REMINDER_TEST" ||
                 reminderNotificationDataSchema.safeParse(data).success);
             return {
               shouldPlaySound: visible,
@@ -212,6 +248,36 @@ export function ReminderProvider({ children }: PropsWithChildren) {
             )
               router.dismissTo("/reminder-settings");
             else router.navigate("/reminder-settings");
+            return;
+          }
+          const personal = personalTaskNotificationSchema.safeParse(data);
+          if (personal.success) {
+            if (
+              personal.data.ownerId !== context.ownerId ||
+              personal.data.storeId !== storeId
+            )
+              return;
+            const task = await new PersonalTaskRepository(sqlite, {
+              storeId: storeId!,
+              ownerId: context.ownerId!,
+            }).get(personal.data.taskId);
+            if (!alive || active.current !== context) return;
+            n.clearLastNotificationResponse();
+            if (
+              !task ||
+              task.entity.status !== "TODO" ||
+              personalTaskFingerprint(task.entity) !== personal.data.fingerprint
+            ) {
+              setError(
+                "Ce pense-bête a été modifié ou terminé. Retrouve-le dans le Journal.",
+              );
+            }
+            router.dismissTo({
+              pathname: "/(tabs)/today",
+              params: task
+                ? { date: task.entity.date, personalTaskId: task.entity.id }
+                : {},
+            });
             return;
           }
           const email = emailReadyNotificationSchema.safeParse(data);

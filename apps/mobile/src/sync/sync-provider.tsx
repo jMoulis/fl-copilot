@@ -224,6 +224,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
               true,
               true,
               true,
+              true, // owner-private daily tasks
             ),
           ),
         illustrationHistoryPage: (storeId, before) =>
@@ -300,6 +301,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
               true,
               true,
               true,
+              true, // owner-private daily tasks
             ),
           ),
       },
@@ -349,6 +351,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
           ) === true,
         copilotExecutionLinks: true,
         copilotActionExecutions: true,
+        personalTasks: true,
         copilotKnowledge: true,
         automaticMemory: true,
         memoryCommandId: randomUUID,

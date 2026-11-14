@@ -1,4 +1,8 @@
 import {
+  serializePersonalTask,
+  type PersonalTaskDocument,
+} from "../personal-task-sync";
+import {
   serializeJournalNote,
   type JournalNoteDocument,
 } from "../journal-note-sync";
@@ -277,6 +281,19 @@ export function createMongoSyncBootstrapService(
                 : null;
             if (decisions && decisions.length > 500)
               throw Error("COPILOT_DECISION_LIMIT");
+            const personalTasks =
+              query.personalTasks === "true"
+                ? await mongoDatabase
+                    .collection<PersonalTaskDocument>("personalTasks")
+                    .find(
+                      { storeId: store.storeId, ownerId: store.userId },
+                      { session },
+                    )
+                    .limit(5001)
+                    .toArray()
+                : null;
+            if (personalTasks && personalTasks.length > 5000)
+              throw Error("PERSONAL_TASK_BOOTSTRAP_LIMIT");
             const knowledge =
               query.copilotKnowledge === "true"
                 ? await mongoDatabase
@@ -580,6 +597,12 @@ export function createMongoSyncBootstrapService(
                   ? {
                       copilotDecisions: decisions.map(serializeDecision),
                       copilotDecisionOwnerId: store.userId,
+                    }
+                  : {}),
+                ...(personalTasks
+                  ? {
+                      personalTasksOwnerId: store.userId,
+                      personalTasks: personalTasks.map(serializePersonalTask),
                     }
                   : {}),
                 ...(knowledge

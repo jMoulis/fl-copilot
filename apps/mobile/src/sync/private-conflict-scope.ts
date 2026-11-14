@@ -10,6 +10,7 @@ export function canDisplayConflict(
     ![
       "copilot_conversation",
       "copilot_message",
+      "personal_task",
       "copilot_knowledge",
       "copilot_decision",
       "copilot_layout_illustration",
