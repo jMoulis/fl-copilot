@@ -1,3 +1,18 @@
+## Journal UX increment — 14 November: quiet empty transport feeds
+
+Remove generic per-line no-message text and the partial-excerpt warning when
+there are no selected alerts. Preserve line/capture identity and real missing
+source/error states. Reuse the existing native sheet and regression check;
+no API, schema, provider, agent or sync change. Queue for the next native build.
+
+Owner extends the same native batch with vector icons and collapsible transport
+mode groups. Resolve mode through existing saved line IDs, retaining recognized
+legacy name prefixes when settings are absent and an explicit other group for
+unknown modes. Sort groups, lines and alerts by existing circulation effect;
+equipment-only information remains neutral. Open affected groups by default,
+preserve manual collapse on refresh and reset it when switching day. No new
+severity claim, API contract, persistence, provider request or AI call.
+
 ## Journal corrective increment — 14 November: station equipment notices
 
 Build 58 owner testing exposes PRIM elevator outages coded SIGNIFICANT_DELAYS.

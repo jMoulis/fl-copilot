@@ -290,6 +290,7 @@ function StoreJournal({
         onRefresh={() => void refresh()}
       />
       <JournalTransports
+        configuredLines={settings?.entity.transports?.lines}
         alertTypes={settings?.entity.transportAlertTypes}
         context={context?.journal}
         date={date}
