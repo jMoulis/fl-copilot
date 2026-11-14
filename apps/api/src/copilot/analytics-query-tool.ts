@@ -20,7 +20,7 @@ import {
   salesConcentrationPeriodSchema,
 } from "@fl-copilot/analytics-core";
 import { departmentEvidencePerformanceSchema } from "./daily-evidence.js";
-const performanceSchema = departmentEvidencePerformanceSchema.extend({
+export const performanceSchema = departmentEvidencePerformanceSchema.extend({
   productId: z.uuid(),
   formulaVersion: z.literal("product-daily-v1"),
   sales: departmentEvidencePerformanceSchema.shape.sales.extend({
