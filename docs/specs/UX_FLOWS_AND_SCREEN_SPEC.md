@@ -4621,3 +4621,27 @@ excerpt warning in that case. Keep missing-capture/provider errors explicit;
 an empty list must not be relabelled as normal traffic. Existing source metadata,
 filter settings and originals remain unchanged. Native-only copy adjustment;
 no API release required.
+
+
+## Transport mode groups and alert priority — 14 November 2026
+
+Reuse locally synchronized line settings (`mode` matched by stable line ID) to
+group the transport sheet into Metro, Tram, Train/RER, Bus and an honest Other
+fallback. Recognized mode prefixes cover legacy captures without settings;
+never infer Metro from a line number. Use bundled vector pictograms rather
+than emoji or generated raster assets. No API/schema/provider change is needed.
+
+Rank circulation effects for presentation: interruption first, reduced service,
+delays, detour/service modification, then information; empty lines last. Sort
+groups and their member lines by their highest alert priority, keeping source
+arrays/messages intact. This is an application display order, not a provider
+severity measurement or an inferred shop impact. Red denotes interruption,
+amber other circulation changes, neutral information and empty/unknown lines.
+Equipment-only notices remain information even if their stored effect is delay.
+
+Group headers retain line/alert counts, an expand chevron and any missing-reading
+count, without green/normal-traffic claims. Groups with alerts open by default;
+other groups are collapsed but remain reachable. User expansion survives a
+refresh and resets on a different selected day. Preserve missing-source messages,
+original dates, source access, settings and manual refresh. Remove generic
+empty-message and empty partial-excerpt paragraphs as previously approved.

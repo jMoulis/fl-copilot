@@ -2,15 +2,22 @@ import { useState } from "react";
 import { Text, View, Pressable, Linking } from "react-native";
 import { router } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import {
   parisDate,
   transportAlertTypeLabels,
+  type StoreTransports,
   type TransportAlertType,
   type JournalContext,
   type TransportContext,
 } from "@fl-copilot/domain";
 import { BottomSheet, SecondaryButton } from "../components/ui";
 import { journalColors as c } from "./journal-theme";
+import {
+  groupTransportLines,
+  transportAlertPresentation,
+  type TransportGroup,
+} from "./journal-transport-presentation";
 const source = "https://me-deplacer.iledefrance-mobilites.fr/infos-trafic";
 const stamp = (s: string) =>
   new Date(s).toLocaleString("fr-FR", { timeZone: "Europe/Paris" });
@@ -51,12 +58,14 @@ export function JournalTransports({
   busy,
   onRefresh,
   alertTypes,
+  configuredLines,
 }: {
   context?: JournalContext;
   date: string;
   busy: boolean;
   onRefresh(): void;
   alertTypes?: TransportAlertType[] | null;
+  configuredLines?: StoreTransports["lines"];
 }) {
   const [open, setOpen] = useState(false),
     [linkError, setLinkError] = useState(false);
@@ -65,6 +74,7 @@ export function JournalTransports({
   const lines = traffic
     ? transportLinesForDate(traffic, date, parisDate(new Date().toISOString()))
     : [];
+  const groups = groupTransportLines(lines, configuredLines);
   const count = lines.reduce((n, l) => n + l.disruptions.length, 0),
     known = lines.some((l) => l.capturedAt);
   const issues = {
@@ -140,46 +150,8 @@ export function JournalTransports({
             suivre dans ses réglages.
           </Text>
         ) : null}
-        {lines.map((line) => (
-          <View key={line.id} className="gap-2 border-t border-line pt-4">
-            <Text className="text-lg font-semibold text-ink">{line.name}</Text>
-            <Text className="text-muted">
-              {line.stopName} · {line.distanceMetres} m à vol d’oiseau
-            </Text>
-            {line.capturedAt ? (
-              <Text className="text-sm text-muted">
-                Collecte : {stamp(line.capturedAt)}
-                {line.status === "STALE" ? " · version conservée" : ""}
-              </Text>
-            ) : (
-              <Text className="text-warning">
-                Aucune capture disponible pour cette journée. Une absence de
-                donnée ne signifie pas une absence de perturbation.
-              </Text>
-            )}
-            {line.disruptions.map((d) => (
-              <View key={d.id} className="gap-2 rounded-xl bg-canvas p-3">
-                <Text selectable className="text-ink">
-                  {d.message || "Message publié sans texte exploitable."}
-                </Text>
-                {d.applicationPeriods.slice(0, 3).map((p, i) => (
-                  <Text key={i} className="text-sm text-muted">
-                    Application annoncée : {period(p.begin)} – {period(p.end)} ·
-                    heure de Paris
-                  </Text>
-                ))}
-                {d.schedule ? (
-                  <Text className="text-sm text-muted">{d.schedule}</Text>
-                ) : null}
-              </View>
-            ))}
-            {line.partial && line.disruptions.length > 0 ? (
-              <Text className="text-warning">
-                Extrait partiel des messages publiés. Consulte la source pour le
-                détail.
-              </Text>
-            ) : null}
-          </View>
+        {groups.map((group) => (
+          <TransportSection key={`${date}:${group.mode}`} group={group} />
         ))}
         <SecondaryButton
           label="Régler les transports du magasin"
@@ -210,5 +182,146 @@ export function JournalTransports({
         </Text>
       </BottomSheet>
     </>
+  );
+}
+
+function TransportSection({ group }: { group: TransportGroup }) {
+  const [expandedOverride, setExpandedOverride] = useState<boolean | null>(
+    null,
+  );
+  const expanded = expandedOverride ?? group.count > 0;
+  const firstAlert = group.lines[0]?.disruptions[0];
+  const color = firstAlert
+    ? c[transportAlertPresentation(firstAlert).tone]
+    : c.muted;
+  const summary = `${group.lines.length} ligne${group.lines.length > 1 ? "s" : ""} · ${group.count} alerte${group.count > 1 ? "s" : ""}${group.missing ? ` · ${group.missing} sans relevé` : ""}`;
+  return (
+    <View
+      style={{
+        borderWidth: 1,
+        borderColor: c.line,
+        borderRadius: 16,
+        backgroundColor: c.surface,
+        padding: 16,
+      }}
+    >
+      <Pressable
+        testID={`transport-group-${group.mode}`}
+        accessibilityRole="button"
+        accessibilityLabel={`${group.label} : ${summary}`}
+        accessibilityState={{ expanded }}
+        onPress={() => setExpandedOverride(!expanded)}
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 12,
+          minHeight: 44,
+        }}
+      >
+        <View
+          style={{
+            backgroundColor: `${color}18`,
+            borderRadius: 12,
+            padding: 10,
+          }}
+        >
+          <MaterialCommunityIcons name={group.icon} size={24} color={color} />
+        </View>
+        <View style={{ flex: 1, gap: 4 }}>
+          <Text style={{ color: c.ink, fontSize: 17, fontWeight: "600" }}>
+            {group.label}
+          </Text>
+          <Text style={{ color: c.muted, fontSize: 12 }}>{summary}</Text>
+        </View>
+        <Ionicons
+          name={expanded ? "chevron-up" : "chevron-down"}
+          size={18}
+          color={c.muted}
+        />
+      </Pressable>
+      {expanded
+        ? group.lines.map((line) => (
+            <View
+              key={line.id}
+              style={{
+                gap: 8,
+                borderTopWidth: 1,
+                borderTopColor: c.line,
+                paddingTop: 16,
+                marginTop: 16,
+              }}
+            >
+              <View
+                style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+              >
+                <MaterialCommunityIcons
+                  name={group.icon}
+                  size={18}
+                  color={
+                    line.disruptions[0]
+                      ? c[transportAlertPresentation(line.disruptions[0]).tone]
+                      : c.muted
+                  }
+                />
+                <Text className="text-lg font-semibold text-ink">
+                  {line.name}
+                </Text>
+              </View>
+              <Text className="text-muted">
+                {line.stopName} · {line.distanceMetres} m à vol d’oiseau
+              </Text>
+              {line.capturedAt ? (
+                <Text className="text-sm text-muted">
+                  Collecte : {stamp(line.capturedAt)}
+                  {line.status === "STALE" ? " · version conservée" : ""}
+                </Text>
+              ) : (
+                <Text className="text-warning">
+                  Aucune capture disponible pour cette journée. Une absence de
+                  donnée ne signifie pas une absence de perturbation.
+                </Text>
+              )}
+              {line.disruptions.map((d) => (
+                <View
+                  key={d.id}
+                  className="gap-2 rounded-xl bg-canvas p-3"
+                  style={{
+                    borderLeftWidth: 3,
+                    borderLeftColor: c[transportAlertPresentation(d).tone],
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: c[transportAlertPresentation(d).tone],
+                      fontSize: 12,
+                      fontWeight: "600",
+                    }}
+                  >
+                    {transportAlertPresentation(d).label}
+                  </Text>
+                  <Text selectable className="text-ink">
+                    {d.message || "Message publié sans texte exploitable."}
+                  </Text>
+                  {d.applicationPeriods.slice(0, 3).map((p, i) => (
+                    <Text key={i} className="text-sm text-muted">
+                      Application annoncée : {period(p.begin)} – {period(p.end)}{" "}
+                      · heure de Paris
+                    </Text>
+                  ))}
+                  {d.schedule ? (
+                    <Text className="text-sm text-muted">{d.schedule}</Text>
+                  ) : null}
+                </View>
+              ))}
+              {line.partial && line.disruptions.length > 0 ? (
+                <Text className="text-warning">
+                  Extrait partiel des messages publiés. Consulte la source pour
+                  le détail.
+                </Text>
+              ) : null}
+            </View>
+          ))
+        : null}
+    </View>
   );
 }

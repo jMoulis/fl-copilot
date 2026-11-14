@@ -12,6 +12,9 @@ vi.mock("react-native", () => ({
 }));
 vi.mock("expo-router", () => ({ router: { push: vi.fn() } }));
 vi.mock("@expo/vector-icons/Ionicons", () => ({ default: "Icon" }));
+vi.mock("@expo/vector-icons/MaterialCommunityIcons", () => ({
+  default: "TransportIcon",
+}));
 vi.mock("../components/ui", () => ({
   BottomSheet: ({
     visible,
@@ -99,8 +102,21 @@ it("keeps empty filtered lines quiet without losing their identity or shop confi
     );
   });
   await act(() =>
-    tree!.root.find((n) => String(n.type) === "Pressable").props.onPress(),
+    tree!.root
+      .findByProps({
+        accessibilityLabel: "Consulter les transports à proximité",
+      })
+      .props.onPress(),
   );
+  const group = tree!.root.findByProps({ testID: "transport-group-METRO" });
+  expect(group.props.accessibilityState.expanded).toBe(false);
+  await act(() => group.props.onPress());
+  expect(group.props.accessibilityState.expanded).toBe(true);
+  expect(
+    tree!.root
+      .findAll((n) => String(n.type) === "TransportIcon")
+      .map((n) => n.props.name),
+  ).toEqual(["subway-variant", "subway-variant"]);
   const text = tree!.root
     .findAll((n) => String(n.type) === "Text")
     .map((n) => n.children.join(""))
@@ -122,4 +138,93 @@ it("keeps empty filtered lines quiet without losing their identity or shop confi
   expect((await import("expo-router")).router.push).toHaveBeenCalledWith(
     "/store-transports",
   );
+});
+
+it("opens disrupted groups first, preserves manual collapse over refresh and exposes missing readings", async () => {
+  const context = {
+    ...journalContextFixture(),
+    transport: {
+      ...traffic,
+      lines: [
+        {
+          ...traffic.lines[0]!,
+          disruptions: [
+            {
+              id: "stopped",
+              message: "Service interrompu",
+              effect: "NO_SERVICE",
+              applicationPeriods: [],
+              schedule: null,
+              updatedAt: null,
+            },
+          ],
+        },
+        {
+          ...traffic.lines[0]!,
+          id: "IDFM:C00002",
+          name: "Bus 238",
+          capturedAt: null,
+          disruptions: [],
+          status: "UNAVAILABLE" as const,
+          history: [],
+        },
+      ],
+    },
+  };
+  const props = {
+    context,
+    date: "2026-11-13",
+    busy: false,
+    onRefresh: vi.fn(),
+  };
+  await act(() => {
+    tree = create(createElement(JournalTransports, props));
+  });
+  await act(() =>
+    tree!.root
+      .findByProps({
+        accessibilityLabel: "Consulter les transports à proximité",
+      })
+      .props.onPress(),
+  );
+  const groups = tree!.root.findAll(
+    (n) =>
+      String(n.type) === "Pressable" &&
+      n.props.testID?.startsWith("transport-group-"),
+  );
+  expect(groups.map((n) => n.props.testID)).toEqual([
+    "transport-group-METRO",
+    "transport-group-BUS",
+  ]);
+  expect(groups[0]!.props.accessibilityState.expanded).toBe(true);
+  expect(groups[1]!.props.accessibilityState.expanded).toBe(false);
+  expect(groups[1]!.props.accessibilityLabel).toContain("1 sans relevé");
+  const alerts = () =>
+    tree!.root
+      .findAll((n) => String(n.type) === "Text")
+      .map((n) => n.children.join(""))
+      .join(" ");
+  expect(alerts()).toContain("Service interrompu");
+  await act(() => groups[0]!.props.onPress());
+  expect(alerts()).not.toContain("Service interrompu");
+  await act(() =>
+    tree!.update(createElement(JournalTransports, { ...props, busy: true })),
+  );
+  expect(
+    tree!.root.findByProps({ testID: "transport-group-METRO" }).props
+      .accessibilityState.expanded,
+  ).toBe(false);
+  await act(() =>
+    tree!.root.findByProps({ testID: "transport-group-BUS" }).props.onPress(),
+  );
+  expect(alerts()).toContain("Aucune capture disponible");
+  await act(() =>
+    tree!.update(
+      createElement(JournalTransports, { ...props, date: "2026-11-14" }),
+    ),
+  );
+  expect(
+    tree!.root.findByProps({ testID: "transport-group-METRO" }).props
+      .accessibilityState.expanded,
+  ).toBe(true);
 });

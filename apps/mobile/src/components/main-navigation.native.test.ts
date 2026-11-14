@@ -41,6 +41,9 @@ vi.mock("react-native", () => ({
   useWindowDimensions: () => ({ fontScale: 1 }),
 }));
 vi.mock("@expo/vector-icons/Ionicons", () => ({ default: "Icon" }));
+vi.mock("@expo/vector-icons/MaterialCommunityIcons", () => ({
+  default: "TransportIcon",
+}));
 vi.mock("expo-router", () => ({
   router: { push: runtime.push },
   useFocusEffect: (callback: () => void | (() => void)) =>
