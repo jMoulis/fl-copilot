@@ -1,3 +1,5 @@
+import { knowledgeForClient } from "../copilot/knowledge-store";
+import { copilotKnowledgeSchema } from "@fl-copilot/domain";
 import {
   applyJournalNoteCommand,
   JournalNoteParentPendingError,
@@ -410,6 +412,12 @@ export function createMongoSyncPushService(
             result.remoteEntity = legacyPhysicalEntity(
               result.entityType,
               result.remoteEntity,
+            );
+      if (!input.automaticMemory)
+        for (const result of results)
+          if (result.entityType === "copilot_knowledge" && result.remoteEntity)
+            result.remoteEntity = knowledgeForClient(
+              copilotKnowledgeSchema.parse(result.remoteEntity),
             );
       if (!input.commercialExecutionActuals)
         for (const result of results) {

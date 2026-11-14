@@ -199,7 +199,7 @@ export async function applyBootstrap(
         await applyKnowledgeRecord(transaction, { storeId, ownerId }, e);
       await transaction.runAsync(
         "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
-        `copilot-knowledge:${storeId}:${ownerId}`,
+        `copilot-knowledge${bootstrap.entities.automaticMemory ? ":v2" : ""}:${storeId}:${ownerId}`,
         "1",
         bootstrap.serverTime,
       );
@@ -599,6 +599,7 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
     "copilotDecisionOwnerId",
     "copilotKnowledge",
     "copilotKnowledgeOwnerId",
+    "automaticMemory",
     "copilotHistoryOwnerId",
     "copilotHistoryPartial",
     "copilotConversations",

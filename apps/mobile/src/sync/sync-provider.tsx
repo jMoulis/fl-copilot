@@ -223,6 +223,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
               true,
               true,
               true,
+              true,
             ),
           ),
         illustrationHistoryPage: (storeId, before) =>
@@ -265,6 +266,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
               storeId,
               cursor,
               undefined,
+              true,
               true,
               true,
               true,
@@ -348,6 +350,13 @@ export function SyncProvider({ children }: PropsWithChildren) {
         copilotExecutionLinks: true,
         copilotActionExecutions: true,
         copilotKnowledge: true,
+        automaticMemory: true,
+        memoryCommandId: randomUUID,
+        automaticMemoryAllowed: (storeId) =>
+          emailReadSession.current?.user.id === session?.user.id &&
+          emailReadSession.current?.stores.some(
+            (store) => store.storeId === storeId,
+          ) === true,
         copilotHistory: true,
         mercalysPublications: true,
         mercalysRecordUpdates: true,

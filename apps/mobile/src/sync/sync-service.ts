@@ -1,3 +1,7 @@
+import {
+  readAutomaticMemory,
+  captureAutomaticMemories,
+} from "../copilot/automatic-memory";
 import { applyJournalNote } from "../journal/journal-note-repository";
 import { copilotTurnTransportRequestSchema } from "@fl-copilot/sync-contracts";
 import {
@@ -132,6 +136,9 @@ export interface MobileSyncServiceOptions {
   copilotExecutionLinks?: boolean;
   copilotActionExecutions?: boolean;
   copilotKnowledge?: boolean;
+  automaticMemory?: boolean;
+  memoryCommandId?: () => string;
+  automaticMemoryAllowed?(storeId: string): boolean;
   copilotHistory?: boolean;
   copilotOwnerId?: string;
   commercialVersions?: boolean;
@@ -228,10 +235,19 @@ export class MobileSyncService {
 
   private async runSync(storeId: string): Promise<SyncSummary> {
     const startedAt = this.now();
+    const memoryScope =
+      this.options.automaticMemory &&
+      this.options.copilotOwnerId &&
+      this.options.memoryCommandId &&
+      this.options.automaticMemoryAllowed?.(storeId)
+        ? { storeId, ownerId: this.options.copilotOwnerId }
+        : null;
+    if (memoryScope)
+      await readAutomaticMemory(this.database, memoryScope, startedAt);
     await new OutboxRepository(this.database, this.now).recoverInterrupted(
       storeId,
     );
-    const pushed = await this.pushUnlocked(storeId);
+    let pushed = await this.pushUnlocked(storeId);
     const reviewAdopted = this.options.commercialReview
       ? await this.database.getFirstAsync<{ value: string }>(
           "SELECT value FROM app_metadata WHERE key = ?",
@@ -388,7 +404,7 @@ export class MobileSyncService {
     const knowledgeAdopted = this.options.copilotKnowledge
       ? await this.database.getFirstAsync(
           "SELECT value FROM app_metadata WHERE key=?",
-          `copilot-knowledge:${storeId}:${this.options.copilotOwnerId}`,
+          `copilot-knowledge${this.options.automaticMemory ? ":v2" : ""}:${storeId}:${this.options.copilotOwnerId}`,
         )
       : true;
     const chatAdopted = this.options.copilotHistory
@@ -485,7 +501,33 @@ export class MobileSyncService {
       await this.bootstrapUnlocked(storeId);
     }
     await this.adoptDocumentArchives(storeId);
-    const pulled = await this.pullUnlocked(storeId);
+    let pulled = await this.pullUnlocked(storeId);
+    if (memoryScope) {
+      const created = await captureAutomaticMemories(
+        this.database,
+        memoryScope,
+        {
+          deviceId: this.options.deviceId,
+          now: this.now(),
+          uuid: this.options.memoryCommandId!,
+          canCapture: () =>
+            this.options.automaticMemoryAllowed?.(storeId) === true,
+        },
+      );
+      if (created && this.options.automaticMemoryAllowed?.(storeId)) {
+        const extraPush = await this.pushUnlocked(storeId);
+        pushed = {
+          pushed: pushed.pushed + extraPush.pushed,
+          conflicts: pushed.conflicts + extraPush.conflicts,
+          failed: pushed.failed + extraPush.failed,
+        };
+        const extraPull = await this.pullUnlocked(storeId);
+        pulled = {
+          pulled: pulled.pulled + extraPull.pulled,
+          cursor: extraPull.cursor,
+        };
+      }
+    }
     return {
       ...pushed,
       ...pulled,
@@ -503,6 +545,11 @@ export class MobileSyncService {
       snapshot.entities.storeTransports !== true
     )
       throw Error("STORE_TRANSPORTS_UPGRADE_REQUIRED");
+    if (
+      this.options.automaticMemory &&
+      snapshot.entities.automaticMemory !== true
+    )
+      throw Error("AUTOMATIC_MEMORY_UPGRADE_REQUIRED");
     if (
       this.options.transportAlertFilters &&
       snapshot.entities.transportAlertFilters !== true
@@ -1561,6 +1608,7 @@ export class MobileSyncService {
         ? { transportAlertFilters: true }
         : {}),
       ...(this.options.tgPresentations ? { tgPresentations: true } : {}),
+      ...(this.options.automaticMemory ? { automaticMemory: true } : {}),
       ...(this.options.qualitativeCommercialPlans
         ? { qualitativeCommercialPlans: true }
         : {}),

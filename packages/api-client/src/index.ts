@@ -140,7 +140,7 @@ export class ApiClient {
       onActivity?(activity: CopilotActivity): void;
       backgroundCompletion?: boolean;
       synchronization?: SyncPushRequest;
-      memorySuggestions?: boolean;
+      memorySuggestions?: boolean | 2;
       webResearch?: boolean;
       recommendationTracking?: boolean;
       executionLinks?: boolean;
@@ -342,7 +342,10 @@ export class ApiClient {
                   ? { "x-copilot-web-research": "1" }
                   : {}),
                 ...(streaming.memorySuggestions
-                  ? { "x-copilot-memory-suggestions": "1" }
+                  ? {
+                      "x-copilot-memory-suggestions":
+                        streaming.memorySuggestions === 2 ? "2" : "1",
+                    }
                   : {}),
               },
               body: JSON.stringify(transportInput),
@@ -573,6 +576,7 @@ export class ApiClient {
     journalNotes = false,
     storeTransports = false,
     transportAlertFilters = false,
+    automaticMemory = false,
   ) {
     const query = new URLSearchParams();
     if (commercialReview) query.set("commercialReview", "true");
@@ -609,6 +613,7 @@ export class ApiClient {
     if (substitutionScores) query.set("substitutionScores", "true");
     if (copilotHistory) query.set("copilotHistory", "true");
     if (copilotKnowledge) query.set("copilotKnowledge", "true");
+    if (automaticMemory) query.set("automaticMemory", "true");
     if (copilotDecisions) query.set("copilotDecisions", "true");
     if (emailIntake) query.set("emailIntake", "true");
     if (layoutIllustrations && copilotHistory)
@@ -687,6 +692,7 @@ export class ApiClient {
     journalNotes = false,
     storeTransports = false,
     transportAlertFilters = false,
+    automaticMemory = false,
   ) {
     const query = new URLSearchParams();
     if (rawObservationDays !== undefined)
@@ -725,6 +731,7 @@ export class ApiClient {
     if (substitutionScores) query.set("substitutionScores", "true");
     if (copilotHistory) query.set("copilotHistory", "true");
     if (copilotKnowledge) query.set("copilotKnowledge", "true");
+    if (automaticMemory) query.set("automaticMemory", "true");
     if (copilotDecisions) query.set("copilotDecisions", "true");
     if (emailIntake) query.set("emailIntake", "true");
     if (layoutIllustrations && copilotHistory)

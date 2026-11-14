@@ -47,6 +47,7 @@ import {
 } from "../copilot/decision-store";
 import {
   serializeKnowledge,
+  knowledgeForClient,
   type KnowledgeDocument,
 } from "../copilot/knowledge-store";
 import { chatBootstrap } from "../copilot/conversation-store";
@@ -584,7 +585,15 @@ export function createMongoSyncBootstrapService(
                 ...(knowledge
                   ? {
                       copilotKnowledgeOwnerId: store.userId,
-                      copilotKnowledge: knowledge.map(serializeKnowledge),
+                      copilotKnowledge: knowledge.map((r) =>
+                        knowledgeForClient(
+                          serializeKnowledge(r),
+                          query.automaticMemory === "true",
+                        ),
+                      ),
+                      ...(query.automaticMemory === "true"
+                        ? { automaticMemory: true }
+                        : {}),
                     }
                   : {}),
                 ...(query.mercalysPublications === "true"

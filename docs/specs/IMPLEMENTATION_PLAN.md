@@ -1,3 +1,16 @@
+## Owner arbitration — 14 November: automatic private memory
+
+Enable automatic recording of new explicitly stated operating practices through
+the existing canonical response, sourced proposals, native memory repository and
+Outbox. Keep a device/account/store opt-out and editable/forgettable records.
+Use an internal nullable response annotation rather than a separate model or
+memory-only tool round. Preserve private scope, creation provenance, legacy wire
+compatibility, transactional source checks and no historical backfill. This does
+not authorize other business writes or silent changes to existing practices.
+See `../qa/COPILOT_AUTOMATIC_MEMORY_2026_11_14.md` for contracts, verification and
+API-before-native delivery. Earlier manual-only memory requirements remain valid
+for legacy clients and are superseded only within this explicit arbitration.
+
 ## Copilot corrective increment — 14 November: direct core context reads
 
 Owner Journal benchmarks expose repeated discovery before reading the stored

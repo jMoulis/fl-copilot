@@ -96,6 +96,7 @@ export async function runCopilotTurn(
     onActivity?: (activity: CopilotActivity) => void;
     onGenerationFailure?: (failure: CopilotGenerationFailure) => void;
     allowMemorySuggestions?: boolean;
+    automaticMemory?: boolean;
     onTitleReady?: (proposal: {
       message: CopilotMessage;
       title: string;
@@ -263,7 +264,12 @@ export async function runCopilotTurn(
       storeKnowledge,
       userQuestion: initial.parent.text || null,
       ...(dependencies.allowMemorySuggestions
-        ? { memorySuggestion: { currentUserMessageId: initial.parent.id } }
+        ? {
+            memorySuggestion: {
+              currentUserMessageId: initial.parent.id,
+              ...(dependencies.automaticMemory ? { automatic: true } : {}),
+            },
+          }
         : {}),
     };
     dependencies.onActivity?.({
