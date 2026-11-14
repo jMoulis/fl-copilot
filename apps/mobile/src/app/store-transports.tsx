@@ -6,6 +6,9 @@ import { randomUUID } from "expo-crypto";
 import { ApiClient } from "@fl-copilot/api-client";
 import {
   storeTransportsSchema,
+  transportAlertTypes,
+  transportAlertTypeLabels,
+  type TransportAlertType,
   type NearbyTransportResult,
 } from "@fl-copilot/domain";
 import { useAuth } from "../auth/auth-provider";
@@ -53,6 +56,9 @@ function TransportEditor({
   const repo = useMemo(() => new StoreContextRepository(sqlite), [sqlite]),
     api = useMemo(() => new ApiClient(getApiBaseUrl()), []);
   const [saved, setSaved] = useState<LocalStoreContext | null>(),
+    [alertTypes, setAlertTypes] = useState<TransportAlertType[]>([
+      ...transportAlertTypes,
+    ]),
     [address, setAddress] = useState(""),
     [radius, setRadius] = useState("800"),
     [mode, setMode] = useState<"ADDRESS" | "STORE_GPS">("ADDRESS"),
@@ -72,6 +78,7 @@ function TransportEditor({
     result?.location ?? null,
     result?.lines ?? [],
     result?.retrievedAt ?? null,
+    alertTypes,
   ]);
   const dirty =
     saved !== undefined &&
@@ -94,6 +101,10 @@ function TransportEditor({
         : undefined;
       const nextMode =
         p?.location.source ?? (row?.entity.position ? "STORE_GPS" : "ADDRESS");
+      const selectedTypes = row?.entity.transportAlertTypes ?? [
+        ...transportAlertTypes,
+      ];
+      setAlertTypes(selectedTypes);
       setSaved(row);
       setAddress(p?.address ?? "");
       setRadius(String(p?.radiusMetres ?? 800));
@@ -106,6 +117,7 @@ function TransportEditor({
         next?.location ?? null,
         next?.lines ?? [],
         next?.retrievedAt ?? null,
+        selectedTypes,
       ]);
     },
     [storeId],
@@ -220,6 +232,7 @@ function TransportEditor({
         {
           ...saved.entity,
           transports: parsed.data,
+          transportAlertTypes: alertTypes,
           version:
             (saved.syncState === "ERROR"
               ? (saved.remoteVersion ?? 0)
@@ -415,6 +428,38 @@ function TransportEditor({
                 Source : Île-de-France Mobilités. La proximité d’une ligne ne
                 prouve pas son effet sur la fréquentation du magasin.
               </Text>
+              <Text className="text-lg font-semibold text-ink">
+                Types d’alertes suivies
+              </Text>
+              <Text className="text-sm text-muted">
+                Ces filtres s’appliquent au Journal et au contexte du copilote.
+                Les relevés d’origine restent conservés.
+              </Text>
+              {transportAlertTypes.map((type) => (
+                <View key={type} className="flex-row items-center gap-3 py-2">
+                  <Text className="flex-1 text-ink">
+                    {transportAlertTypeLabels[type]}
+                  </Text>
+                  <Switch
+                    accessibilityLabel={transportAlertTypeLabels[type]}
+                    value={alertTypes.includes(type)}
+                    disabled={disabled}
+                    onValueChange={(enabled) =>
+                      setAlertTypes((previous) =>
+                        transportAlertTypes.filter((t) =>
+                          t === type ? enabled : previous.includes(t),
+                        ),
+                      )
+                    }
+                  />
+                </View>
+              ))}
+              {!alertTypes.length ? (
+                <Text className="text-warning">
+                  Aucun type sélectionné : les messages seront masqués. Cela ne
+                  signifie pas que le trafic est normal.
+                </Text>
+              ) : null}
               <PrimaryButton
                 label={busy ? "En cours…" : "Enregistrer la sélection"}
                 disabled={disabled || !dirty || saved.syncState === "CONFLICT"}

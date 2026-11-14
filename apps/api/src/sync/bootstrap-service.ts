@@ -696,11 +696,15 @@ export function createMongoSyncBootstrapService(
                       ...(query.storeTransports === "true"
                         ? { storeTransports: true }
                         : {}),
+                      ...(query.transportAlertFilters === "true"
+                        ? { transportAlertFilters: true }
+                        : {}),
                       storeContextSettings: contextSettings.map((row) =>
                         legacyStoreContext(
                           serializeStoreContext(row),
                           query.storeMerchandising === "true",
                           query.storeTransports === "true",
+                          query.transportAlertFilters === "true",
                         ),
                       ),
                     }

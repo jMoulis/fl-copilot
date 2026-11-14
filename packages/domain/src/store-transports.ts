@@ -160,3 +160,73 @@ export function storeTransportLocationChanged(settings: StoreContextSettings) {
           settings.position.longitude !== profile.location.longitude)))
   );
 }
+
+/** Provider effect codes, not inferred incident causes. Unknown codes remain information. */
+export const transportAlertTypeSchema = z.enum([
+  "INTERRUPTION",
+  "REDUCED_SERVICE",
+  "DELAYS",
+  "DETOUR",
+  "SERVICE_CHANGE",
+  "INFORMATION",
+]);
+export type TransportAlertType = z.infer<typeof transportAlertTypeSchema>;
+export const transportAlertTypes = transportAlertTypeSchema.options;
+export const transportAlertTypeLabels: Record<TransportAlertType, string> = {
+  INTERRUPTION: "Interruptions",
+  REDUCED_SERVICE: "Service réduit",
+  DELAYS: "Retards",
+  DETOUR: "Déviations",
+  SERVICE_CHANGE: "Modifications de service",
+  INFORMATION: "Informations et autres",
+};
+export const transportAlertSelectionSchema = z
+  .array(transportAlertTypeSchema)
+  .max(6)
+  .refine((v) => new Set(v).size === v.length, "Choisis des types distincts.");
+export function transportAlertType(effect: string | null): TransportAlertType {
+  switch (effect) {
+    case "NO_SERVICE":
+      return "INTERRUPTION";
+    case "REDUCED_SERVICE":
+      return "REDUCED_SERVICE";
+    case "SIGNIFICANT_DELAYS":
+      return "DELAYS";
+    case "DETOUR":
+      return "DETOUR";
+    case "MODIFIED_SERVICE":
+    case "ADDITIONAL_SERVICE":
+      return "SERVICE_CHANGE";
+    default:
+      return "INFORMATION";
+  }
+}
+/** Filter only projections. Retained source messages and capture dates never change. */
+export function filterTransportAlerts(
+  context: TransportContext | "NOT_CONFIGURED",
+  types?: TransportAlertType[] | null,
+): TransportContext | "NOT_CONFIGURED" {
+  if (typeof context === "string" || types == null) return context;
+  const selected = new Set(types);
+  const filter = <
+    T extends { disruptions: TransportDisruption[]; partial: boolean },
+  >(
+    row: T,
+  ): T => {
+    const disruptions = row.disruptions.filter((d) =>
+      selected.has(transportAlertType(d.effect)),
+    );
+    return {
+      ...row,
+      disruptions,
+      partial: row.partial || disruptions.length < row.disruptions.length,
+    };
+  };
+  return {
+    ...context,
+    lines: context.lines.map((l) => ({
+      ...filter(l),
+      ...(l.history ? { history: l.history.map(filter) } : {}),
+    })),
+  };
+}

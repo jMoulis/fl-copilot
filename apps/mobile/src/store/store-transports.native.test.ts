@@ -130,7 +130,13 @@ it("discovers from a typed address, saves selection through SQLite/Outbox and ke
   expect(text()).toContain("Les Agnettes");
   await act(() =>
     tree!.root
-      .find((n) => String(n.type) === "Switch")
+      .findAll((n) => String(n.type) === "Switch")[0]!
+      .props.onValueChange(false),
+  );
+  await act(() =>
+    tree!.root
+      .findAll((n) => String(n.type) === "Switch")
+      .find((n) => n.props.accessibilityLabel === "Retards")!
       .props.onValueChange(false),
   );
   await act(() => button("Enregistrer la sélection").props.onPress());
@@ -138,6 +144,8 @@ it("discovers from a typed address, saves selection through SQLite/Outbox and ke
     runtime.sqlite as VisualTestDatabase,
   ).get(runtime.storeId);
   expect(saved?.entity.transports?.lines[0]?.enabled).toBe(false);
+  expect(saved?.entity.transportAlertTypes).not.toContain("DELAYS");
+  expect(saved?.entity.transportAlertTypes).toContain("INFORMATION");
   expect(saved?.syncState).toBe("PENDING");
   expect(text()).toContain("À synchroniser");
   expect(raw.prepare("SELECT COUNT(*) AS n FROM sync_outbox").get()?.n).toBe(2);

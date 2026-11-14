@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { storeTransportsSchema } from "./store-transports";
+import {
+  storeTransportsSchema,
+  transportAlertSelectionSchema,
+} from "./store-transports";
 /** Manager-declared commercial context; neither measured geometry nor inferred sales heat. */
 export const storeMerchandisingZoneSchema = z
   .strictObject({
@@ -73,6 +76,7 @@ export const storeContextSettingsSchema = z
       .nullable(),
     merchandising: storeMerchandisingSchema.nullable().optional(),
     transports: storeTransportsSchema.nullable().optional(),
+    transportAlertTypes: transportAlertSelectionSchema.nullable().optional(),
     version: z.number().int().positive(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
@@ -102,6 +106,10 @@ export function preserveStoreContextExtensions(
 ): StoreContextSettings {
   return {
     ...next,
+    ...(next.transportAlertTypes === undefined &&
+    previous?.transportAlertTypes !== undefined
+      ? { transportAlertTypes: previous.transportAlertTypes }
+      : {}),
     ...(next.merchandising === undefined &&
     previous?.merchandising !== undefined
       ? { merchandising: previous.merchandising }
@@ -116,10 +124,15 @@ export function legacyStoreContext(
   settings: StoreContextSettings,
   merchandisingSupported = false,
   transportsSupported = false,
+  alertFiltersSupported = false,
 ): StoreContextSettings {
-  const { merchandising, transports, ...legacy } = settings;
+  const { merchandising, transports, transportAlertTypes, ...legacy } =
+    settings;
   return {
     ...legacy,
+    ...(alertFiltersSupported && transportAlertTypes !== undefined
+      ? { transportAlertTypes }
+      : {}),
     ...(merchandisingSupported && merchandising !== undefined
       ? { merchandising }
       : {}),

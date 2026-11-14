@@ -222,6 +222,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
               true,
               true,
               true,
+              true,
             ),
           ),
         illustrationHistoryPage: (storeId, before) =>
@@ -296,6 +297,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
               true,
               true,
               true,
+              true,
             ),
           ),
       },
@@ -320,6 +322,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
         storeContext: true,
         storeMerchandising: true,
         storeTransports: true,
+        transportAlertFilters: true,
         qualitativeCommercialPlans: true,
         tgPresentations: true,
         storeLayouts: true,

@@ -290,6 +290,7 @@ function StoreJournal({
         onRefresh={() => void refresh()}
       />
       <JournalTransports
+        alertTypes={settings?.entity.transportAlertTypes}
         context={context?.journal}
         date={date}
         busy={busy}

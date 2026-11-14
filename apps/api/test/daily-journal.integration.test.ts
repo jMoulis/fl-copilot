@@ -413,4 +413,106 @@ describe.skipIf(!uri)("durable daily shop context", () => {
     );
     expect(retry.status).toBe("ALREADY_COLLECTED");
   });
+  it("changes alert filters over stored captures without provider calls or deleting any source message", async () => {
+    const { settings, db, read } = await setup();
+    const at = new Date("2026-10-09T08:00:00Z");
+    const configured = {
+      ...settings,
+      transports: storeTransportsFixture(),
+      transportAlertTypes: ["DELAYS" as const],
+    };
+    await db.collection("storeContextSettings").updateOne(
+      { storeId: settings.storeId },
+      {
+        $set: {
+          transports: configured.transports,
+          transportAlertTypes: configured.transportAlertTypes,
+        },
+      },
+    );
+    const sourceRead = async (storeId: string, weekStart: string) => {
+      const context = await read(storeId, weekStart);
+      const line = configured.transports.lines[0]!;
+      const disruptions = ["NO_SERVICE", "SIGNIFICANT_DELAYS"].map(
+        (effect) => ({
+          id: effect,
+          effect,
+          message: effect,
+          applicationPeriods: [],
+          schedule: null,
+          updatedAt: null,
+        }),
+      );
+      context.journal!.transport = {
+        status: "AVAILABLE",
+        issue: null,
+        radiusMetres: 800,
+        lines: [
+          {
+            id: line.id,
+            name: "Metro 13",
+            stopName: line.stopName,
+            distanceMetres: line.distanceMetres,
+            status: "AVAILABLE",
+            retrievedAt: at.toISOString(),
+            validUntil: "2026-10-09T09:00:00.000Z",
+            capturedAt: at.toISOString(),
+            disruptions,
+            partial: false,
+          },
+        ],
+      };
+      return context;
+    };
+    await collectDailyJournal(
+      database,
+      { read: sourceRead },
+      settings.storeId,
+      at,
+    );
+    const network = vi.fn(() => {
+      throw Error("UNEXPECTED_HTTP");
+    });
+    const service = createWeekContextService(database, network, () => at, {
+      preferStored: true,
+    });
+    const filtered = await service.readStored!(settings.storeId, "2026-10-05");
+    expect(filtered.journal!.transport).toMatchObject({
+      lines: [
+        { disruptions: [{ effect: "SIGNIFICANT_DELAYS" }], partial: true },
+      ],
+    });
+    const count = (c: typeof filtered) =>
+      typeof c.journal?.transport === "object"
+        ? c.journal.transport.lines[0]!.disruptions.length
+        : -1;
+    expect(count(filtered)).toBe(1);
+    await db
+      .collection("storeContextSettings")
+      .updateOne(
+        { storeId: settings.storeId },
+        { $set: { transportAlertTypes: [] } },
+      );
+    expect(
+      count(await service.readStored!(settings.storeId, "2026-10-05")),
+    ).toBe(0);
+    await db
+      .collection("storeContextSettings")
+      .updateOne(
+        { storeId: settings.storeId },
+        { $set: { transportAlertTypes: null } },
+      );
+    expect(
+      count(await service.readStored!(settings.storeId, "2026-10-05")),
+    ).toBe(2);
+    const stored = await db
+      .collection("contextProviderCache")
+      .findOne({ snapshotOf: /^journal-daily:/ });
+    expect(
+      stored!.entry.contexts.find(
+        (c: { weekStart: string }) => c.weekStart === "2026-10-05",
+      ).journal.transport.lines[0].disruptions,
+    ).toHaveLength(2);
+    expect(network).not.toHaveBeenCalled();
+  });
 });

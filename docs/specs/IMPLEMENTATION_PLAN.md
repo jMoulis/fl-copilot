@@ -1,3 +1,12 @@
+## Journal increment — 14 November: selected transport alert effects
+
+Owner accepts native build 57 manual capture and requests effect-based filters.
+Add six preferences to existing store settings/sync and project only matching
+messages into Journal and Copilot, preserving original captures. Independent
+capability keeps old strict clients compatible; no model, migration, tool or
+agent. See `../qa/TRANSPORT_ALERT_FILTERS_2026_11_14.md`. API then grouped native
+release; physical filter acceptance remains pending.
+
 ## Journal corrective increment — 13 November: explicit context capture
 
 Owner requests manual capture without waiting for fixed collection slots. Reuse

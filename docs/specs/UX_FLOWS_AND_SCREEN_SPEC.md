@@ -1,3 +1,12 @@
+## Store transport refinement — 14 November: alert types
+
+The transport editor adds six effect-category switches, all selected initially,
+saved with the existing line selection. Journal detail shows the saved types.
+An empty selection explicitly hides messages, with no normal-traffic claim.
+Keep original captures and conflict-version summaries; use the existing save,
+sync, unsaved-form and role rules. See
+`../qa/TRANSPORT_ALERT_FILTERS_2026_11_14.md`.
+
 ## Journal refinement — 13 November 2026: collect now
 
 A visible « Actualiser maintenant » action in Journal and transport details saves

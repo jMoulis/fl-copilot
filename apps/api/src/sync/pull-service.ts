@@ -535,6 +535,7 @@ export function createMongoSyncPullService(
                   serializeStoreContext(row),
                   query.storeMerchandising === "true",
                   query.storeTransports === "true",
+                  query.transportAlertFilters === "true",
                 ),
                 changedAt: change.changedAt.toISOString(),
               };

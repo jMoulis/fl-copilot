@@ -363,5 +363,92 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           .settings?.merchandising,
       ).toBeNull();
     }, 30000);
+
+    it("negotiates alert filters, preserves an old writer's omission and restores preferences across devices", async () => {
+      const s = {
+        ...storeContextFixture(),
+        transports: storeTransportsFixture(),
+        transportAlertTypes: ["DELAYS" as const],
+      };
+      const push = createMongoSyncPushService(database);
+      const saved = await push.push(
+        { ...request(s), transportAlertFilters: true },
+        "filters-save",
+      );
+      expect(saved.results[0]).toMatchObject({
+        status: "APPLIED",
+        remoteEntity: { transportAlertTypes: ["DELAYS"] },
+      });
+      const { transportAlertTypes, ...oldShape } = s;
+      void transportAlertTypes;
+      const legacyWrite = await push.push(
+        request({ ...oldShape, version: 2 }, 1),
+        "old-writer",
+      );
+      expect(legacyWrite.results[0]?.status).toBe("APPLIED");
+      expect(legacyWrite.results[0]?.remoteEntity).not.toHaveProperty(
+        "transportAlertTypes",
+      );
+      const db = await database.getDb();
+      expect(
+        await db
+          .collection<StoreContextDocument>("storeContextSettings")
+          .findOne({ _id: s.storeId }),
+      ).toMatchObject({ version: 2, transportAlertTypes: ["DELAYS"] });
+      const pull = createMongoSyncPullService(database);
+      const legacyPull = await pull.pull(s.storeId, {
+        limit: 500,
+        storeContext: "true",
+        storeTransports: "true",
+      });
+      expect(
+        legacyPull.changes.every(
+          (c) => !Object.hasOwn(c.entity as object, "transportAlertTypes"),
+        ),
+      ).toBe(true);
+      const capablePull = await pull.pull(s.storeId, {
+        limit: 500,
+        storeContext: "true",
+        storeTransports: "true",
+        transportAlertFilters: "true",
+      });
+      expect(capablePull.changes[0]?.entity).toHaveProperty(
+        "transportAlertTypes",
+        ["DELAYS"],
+      );
+      const auth = {
+        storeId: s.storeId,
+        storeName: "Test",
+        role: "MANAGER",
+        userId: randomUUID(),
+        sessionId: randomUUID(),
+        deviceId: randomUUID(),
+      };
+      const boot = await createMongoSyncBootstrapService(database).bootstrap(
+        auth,
+        {
+          rawObservationDays: 90,
+          storeContext: "true",
+          storeTransports: "true",
+          transportAlertFilters: "true",
+        },
+      );
+      expect(boot.entities.transportAlertFilters).toBe(true);
+      expect(boot.entities.storeContextSettings?.[0]).toHaveProperty(
+        "transportAlertTypes",
+        ["DELAYS"],
+      );
+      const conflict = await push.push(
+        {
+          ...request({ ...s, transportAlertTypes: [], version: 2 }, 1),
+          transportAlertFilters: true,
+        },
+        "other-device",
+      );
+      expect(conflict.results[0]).toMatchObject({
+        status: "CONFLICT",
+        remoteEntity: { transportAlertTypes: ["DELAYS"] },
+      });
+    }, 30000);
   },
 );

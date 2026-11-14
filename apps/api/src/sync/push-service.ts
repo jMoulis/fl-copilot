@@ -381,7 +381,11 @@ export function createMongoSyncPushService(
           "QUALITATIVE_COMMERCIAL_PLAN_UPGRADE_REQUIRED",
           "Mets l’application à jour pour lire ce plan de merchandising. Tes données locales sont conservées.",
         );
-      if (!input.storeMerchandising || !input.storeTransports)
+      if (
+        !input.storeMerchandising ||
+        !input.storeTransports ||
+        !input.transportAlertFilters
+      )
         for (const result of results)
           if (
             result.entityType === "store_context_settings" &&
@@ -391,6 +395,7 @@ export function createMongoSyncPushService(
               storeContextSettingsSchema.parse(result.remoteEntity),
               input.storeMerchandising === true,
               input.storeTransports === true,
+              input.transportAlertFilters === true,
             );
       if (!input.physicalAllocations)
         for (const result of results)
