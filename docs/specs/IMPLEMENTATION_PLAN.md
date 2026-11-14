@@ -1,3 +1,14 @@
+## Copilot corrective increment — 14 November: direct core context reads
+
+Owner Journal benchmarks expose repeated discovery before reading the stored
+Journal, field observations and confirmed substitutions. Extend the existing
+canonical-chat immediate catalogue with those configured read-only capabilities;
+retain deferred specialized tools, scope checks, confirmations and all budgets.
+Shorten the existing Journal description to match noncollecting production reads.
+No new tool, agent, routing layer, prompt rule, model or business mutation.
+See `../qa/COPILOT_CONTEXT_DISCOVERY_2026_11_14.md` for evidence, memory verification
+and live token-measurement limits. API-only delivery; no extra native build.
+
 ## Journal UX increment — 14 November: quiet empty transport feeds
 
 Remove generic per-line no-message text and the partial-excerpt warning when

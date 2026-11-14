@@ -6394,7 +6394,10 @@ async function discoveryResponse(
     headers: { "content-type": "application/json" },
   });
 }
-function discoverySse(calls?: Array<{ name: string; input: unknown }>) {
+function discoverySse(
+  calls?: Array<{ name: string; input: unknown }>,
+  text = '{"answer":"Voici le bilan."}',
+) {
   const events: unknown[] = [
     {
       type: "response.created",
@@ -6435,7 +6438,7 @@ function discoverySse(calls?: Array<{ name: string; input: unknown }>) {
         type: "response.output_text.delta",
         item_id: "msg-discovery",
         output_index: 0,
-        delta: '{"answer":"Voici le bilan."}',
+        delta: text,
       },
       {
         type: "response.output_item.done",
@@ -6460,6 +6463,140 @@ function discoverySse(calls?: Array<{ name: string; input: unknown }>) {
     { headers: { "content-type": "text/event-stream" } },
   );
 }
+it.each([false, true])(
+  "reads Journal, observations and confirmed alternatives without discovery in a large canonical catalogue (streaming %s)",
+  async (streaming) => {
+    const { copilotResponseSchema } = await import("@fl-copilot/domain");
+    const f = fixture();
+    const productId = randomUUID();
+    const weekInput = { weekStart: "2026-10-05" };
+    const eventsInput = {
+      startAt: "2026-10-05T00:00:00.000Z",
+      endAt: "2026-10-06T00:00:00.000Z",
+      productId: null,
+      afterId: null,
+      limit: 10,
+    };
+    const substituteInput = {
+      productId,
+      needUnitId: null,
+      at: new Date(evaluatedAt).toISOString(),
+      offset: 0,
+      limit: 5,
+    };
+    const evidence = (id: string) => [
+      {
+        id,
+        sourceType: "DATA_QUALITY" as const,
+        sourceId: f.request.storeId,
+        sourceVersion: null,
+        label: "Disponibilité des sources",
+        value: "Non renseigné ; aucune absence terrain ne peut être déduite.",
+        factKind: "QUALITY" as const,
+      },
+    ];
+    const reads = discoveryReads({
+      analyticsQuery: vi.fn(),
+      weekContext: vi.fn(async () => ({
+        ...weekInput,
+        context: null,
+        evidence: evidence("journal-missing"),
+      })),
+      fieldEvents: vi.fn(async () => ({
+        startAt: eventsInput.startAt,
+        endAt: eventsInput.endAt,
+        productId: null,
+        events: [],
+        hasMore: false,
+        nextAfterId: null,
+        evidence: evidence("events-missing"),
+      })),
+      substitutes: vi.fn(async () => ({
+        tool: "substitution.lookup" as const,
+        productId,
+        needUnitId: null,
+        evaluatedAt: substituteInput.at,
+        ruleVersion: "substitute-lookup.v1",
+        lookupStatus: "READY" as const,
+        candidates: [],
+        candidateCount: 0,
+        hasMore: false,
+        nextOffset: null,
+        excluded: [],
+        excludedCount: 0,
+        excludedHasMore: false,
+        evidence: evidence("substitutes-missing"),
+      })),
+    });
+    let calls = 0;
+    const activity = vi.fn();
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      const names = body.tools.map((t: { name: string }) => t.name);
+      expect(names).toEqual(
+        expect.arrayContaining([
+          "find_tools",
+          "analytics_period",
+          "analytics_query",
+          "commercial_documents",
+          "commercial_plan",
+          "store_week",
+          "store_events",
+          "substitution_lookup",
+        ]),
+      );
+      expect(names).not.toContain("product_catalogue_preview");
+      const requested =
+        calls++ === 0
+          ? [
+              { name: "store_week", input: weekInput },
+              { name: "store_events", input: eventsInput },
+              { name: "substitution_lookup", input: substituteInput },
+            ]
+          : undefined;
+      const answer = JSON.stringify({
+        language: "fr-FR",
+        summary: "Les sources restent incomplètes.",
+        narrative: "Les sources restent incomplètes.",
+        facts: [],
+        interpretation: [],
+        recommendations: [],
+        questions: [],
+      });
+      return streaming
+        ? discoverySse(requested, directReferenceModelFixture(answer) as string)
+        : requested
+          ? discoveryResponse(requested)
+          : response(answer);
+    };
+    const result = await createCopilotAiProvider(
+      f.config,
+      transport,
+      reads,
+    ).generate(
+      f.request,
+      copilotResponseSchema,
+      undefined,
+      streaming ? vi.fn() : undefined,
+      activity,
+    );
+    expect(calls).toBe(2);
+    expect(reads.weekContext).toHaveBeenCalledExactlyOnceWith(weekInput);
+    expect(reads.fieldEvents).toHaveBeenCalledExactlyOnceWith(eventsInput);
+    expect(reads.substitutes).toHaveBeenCalledExactlyOnceWith(substituteInput);
+    expect(reads.period).not.toHaveBeenCalled();
+    expect(reads.productPreview).not.toHaveBeenCalled();
+    expect(activity.mock.calls.map(([a]) => a.id)).not.toContain(
+      "tool-discovery",
+    );
+    expect(result.toolEvidence?.map((e) => e.id).sort()).toEqual([
+      "events-missing",
+      "journal-missing",
+      "substitutes-missing",
+    ]);
+  },
+);
+
 it.each([false, true])(
   "discovers relevant authorized tools before a real canonical period read and preserves streaming (%s)",
   async (streaming) => {
