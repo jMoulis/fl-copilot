@@ -1,3 +1,10 @@
+## Journal UX increment — 14 November: quiet empty transport feeds
+
+Remove generic per-line no-message text and the partial-excerpt warning when
+there are no selected alerts. Preserve line/capture identity and real missing
+source/error states. Reuse the existing native sheet and regression check;
+no API, schema, provider, agent or sync change. Queue for the next native build.
+
 ## Journal corrective increment — 14 November: station equipment notices
 
 Build 58 owner testing exposes PRIM elevator outages coded SIGNIFICANT_DELAYS.

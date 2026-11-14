@@ -173,13 +173,7 @@ export function JournalTransports({
                 ) : null}
               </View>
             ))}
-            {line.capturedAt && !line.disruptions.length ? (
-              <Text className="text-muted">
-                Aucun message dans les types suivis pour cette ligne, dans la
-                réponse consultée. Cela ne garantit pas un trafic normal.
-              </Text>
-            ) : null}
-            {line.partial ? (
+            {line.partial && line.disruptions.length > 0 ? (
               <Text className="text-warning">
                 Extrait partiel des messages publiés. Consulte la source pour le
                 détail.

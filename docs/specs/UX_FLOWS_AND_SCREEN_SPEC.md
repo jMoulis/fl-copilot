@@ -4610,3 +4610,14 @@ manual screen refresh reads the retained daily collection when present.
 Copilot analysis consults the stored context without provider refresh. No archive
 yet means unavailable context, not no event/zero rain/normal traffic. Planned
 weather and published events remain distinct from observations at the shop.
+
+
+## Transport empty-feed presentation — 14 November 2026
+
+Owner requests a quieter transport sheet after validating the equipment filter.
+Keep line identity and capture timestamps when its filtered alert list is empty,
+but remove the generic empty-message paragraph and suppress the per-line partial
+excerpt warning in that case. Keep missing-capture/provider errors explicit;
+an empty list must not be relabelled as normal traffic. Existing source metadata,
+filter settings and originals remain unchanged. Native-only copy adjustment;
+no API release required.

@@ -81,11 +81,17 @@ it("uses the captured past day instead of today's feed and preserves unknown bef
     transportLinesForDate(traffic, "2026-11-11", "2026-11-13")[0],
   ).toMatchObject({ status: "UNAVAILABLE", capturedAt: null, disruptions: [] });
 });
-it("keeps a valid empty provider reply distinct from guaranteed normal traffic and opens shop configuration", async () => {
+it("keeps empty filtered lines quiet without losing their identity or shop configuration", async () => {
   await act(() => {
     tree = create(
       createElement(JournalTransports, {
-        context: { ...journalContextFixture(), transport: traffic },
+        context: {
+          ...journalContextFixture(),
+          transport: {
+            ...traffic,
+            lines: traffic.lines.map((line) => ({ ...line, partial: true })),
+          },
+        },
         date: "2026-11-13",
         busy: false,
         onRefresh: vi.fn(),
@@ -99,7 +105,11 @@ it("keeps a valid empty provider reply distinct from guaranteed normal traffic a
     .findAll((n) => String(n.type) === "Text")
     .map((n) => n.children.join(""))
     .join(" ");
-  expect(text).toContain("Cela ne garantit pas un trafic normal");
+  expect(text).toContain("Metro 13");
+  expect(text).toContain("Les Agnettes");
+  expect(text).not.toContain("Aucun message dans les types suivis");
+  expect(text).not.toContain("Extrait partiel");
+  expect(text).not.toContain("trafic normal");
   await act(() =>
     tree!.root
       .find(
