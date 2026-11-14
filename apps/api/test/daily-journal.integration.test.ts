@@ -443,6 +443,15 @@ describe.skipIf(!uri)("durable daily shop context", () => {
           updatedAt: null,
         }),
       );
+      disruptions.push({
+        id: "elevator",
+        effect: "SIGNIFICANT_DELAYS",
+        message:
+          "Les Agnettes Panne de l'ascenseur situé Salle d'accès Quai 1, direction Les Courtilles · Panne d'un ascenseur",
+        applicationPeriods: [],
+        schedule: null,
+        updatedAt: null,
+      });
       context.journal!.transport = {
         status: "AVAILABLE",
         issue: null,
@@ -504,7 +513,7 @@ describe.skipIf(!uri)("durable daily shop context", () => {
       );
     expect(
       count(await service.readStored!(settings.storeId, "2026-10-05")),
-    ).toBe(2);
+    ).toBe(3);
     const stored = await db
       .collection("contextProviderCache")
       .findOne({ snapshotOf: /^journal-daily:/ });
@@ -512,7 +521,7 @@ describe.skipIf(!uri)("durable daily shop context", () => {
       stored!.entry.contexts.find(
         (c: { weekStart: string }) => c.weekStart === "2026-10-05",
       ).journal.transport.lines[0].disruptions,
-    ).toHaveLength(2);
+    ).toHaveLength(3);
     expect(network).not.toHaveBeenCalled();
   });
 });

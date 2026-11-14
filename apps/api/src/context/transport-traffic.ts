@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import type { Db } from "mongodb";
 import { z } from "zod";
 import {
+  isStationEquipmentNotice,
   transportContextSchema,
   transportDisruptionSchema,
   parisDate,
@@ -135,6 +136,16 @@ export function normalizeTraffic(raw: unknown, lineId: string) {
   const disruptions = r.disruptions.filter((d) => ids.has(d.id));
   if ([...ids].some((id) => !disruptions.some((d) => d.id === id)))
     throw Error("TRANSPORT_DISRUPTION_MISSING");
+  // Keep circulation in the bounded capture even when station equipment notices
+  // flood the provider's first results. Stable within each group; source unchanged.
+  const prioritized = disruptions
+    .map((d) => ({
+      disruption: d,
+      equipment: isStationEquipmentNotice(
+        d.messages.map((m) => plainText(m.text)).join(" · "),
+      ),
+    }))
+    .sort((a, b) => Number(a.equipment) - Number(b.equipment));
   const format = (t: string) =>
     t.length === 8
       ? `${t.slice(6, 8)}/${t.slice(4, 6)}/${t.slice(0, 4)}`
@@ -150,7 +161,7 @@ export function normalizeTraffic(raw: unknown, lineId: string) {
           d.messages.map((m) => plainText(m.text)).join(" · ").length > 700 ||
           (d.application_patterns?.length ?? 0) > 4,
       ),
-    disruptions: disruptions.slice(0, 8).map((d) => ({
+    disruptions: prioritized.slice(0, 8).map(({ disruption: d }) => ({
       id: d.id,
       message: d.messages
         .map((m) => plainText(m.text))

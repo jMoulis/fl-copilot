@@ -1,3 +1,12 @@
+## Journal corrective increment — 14 November: station equipment notices
+
+Build 58 owner testing exposes PRIM elevator outages coded SIGNIFICANT_DELAYS.
+Reuse INFORMATION for explicit equipment-only outage notices in the existing
+shared projection; retain mixed circulation alerts and original captured effects.
+Prioritize circulation before the existing eight-message capture bound, without
+changing source cache policy or schemas. API-only correction, no new native
+build. See `../qa/TRANSPORT_ALERT_FILTERS_2026_11_14.md` for tests and limitations.
+
 ## Journal increment — 14 November: selected transport alert effects
 
 Owner accepts native build 57 manual capture and requests effect-based filters.

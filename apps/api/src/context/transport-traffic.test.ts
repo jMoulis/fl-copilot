@@ -172,3 +172,32 @@ it("contains the key in the PRIM header only, archives normalized data and retai
   );
   expect(last).toMatchObject({ status: "STALE" });
 });
+
+it("keeps circulation ahead of equipment-only messages before bounding the capture", () => {
+  const raw = response();
+  const equipment = Array.from({ length: 8 }, (_, i) => ({
+    ...raw.disruptions[0]!,
+    id: `lift-${i}`,
+    severity: { effect: "SIGNIFICANT_DELAYS" },
+    messages: [
+      {
+        text: "Les Agnettes : panne de l'ascenseur situé quai 1 direction Les Courtilles.",
+      },
+    ],
+  }));
+  raw.disruptions = [...equipment, raw.disruptions[0]!];
+  raw.line_reports[0]!.line.links = raw.disruptions.map((d) => ({
+    type: "disruption",
+    id: d.id,
+  }));
+  const before = JSON.stringify(raw);
+  const result = normalizeTraffic(raw, "IDFM:C01383");
+  expect(result.partial).toBe(true);
+  expect(result.disruptions).toHaveLength(8);
+  expect(result.disruptions[0]!.id).toBe("work");
+  expect(result.disruptions.slice(1).map((d) => d.id)).toEqual(
+    equipment.slice(0, 7).map((d) => d.id),
+  );
+  expect(result.disruptions[1]!.effect).toBe("SIGNIFICANT_DELAYS");
+  expect(JSON.stringify(raw)).toBe(before);
+});
