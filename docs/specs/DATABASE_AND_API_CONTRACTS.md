@@ -5628,3 +5628,27 @@ collection. Original effects/messages and saved archives remain unchanged;
 provider TTL, strict schemas and sync contracts do not change. Older already
 bounded captures may not contain omitted circulation alerts. This is an API-only
 correction compatible with native build 58.
+
+## Automatic private memory — 14 November 2026
+
+The owner enables delegated recording of new user-stated practices. Reuse
+`copilotKnowledge`, its audit, canonical private command and incremental sync.
+Optional `captureMode: AUTOMATIC` identifies creation provenance; the historical
+owner UUID is attribution, not a claim of per-item approval. A user source is
+required. Legacy edits retain this provenance; automatic creation retries return
+current canonical state without overwriting a correction or forgotten record.
+
+The authenticated `x-copilot-memory-suggestions: 2` client capability enables one
+nullable candidate in the existing model response. The canonical chat DTO remains
+unchanged: a validated candidate becomes the existing sourced TOOL proposal and
+is recorded by native SQLite/Outbox, never directly by the model. Independent
+`automaticMemory=true` bootstrap/pull and boolean push negotiation retain provenance
+for capable clients and project old strict entity shapes for legacy clients.
+Native adoption uses `copilot-knowledge:v2:<store>:<owner>`; unsupported servers
+are rejected before adoption. No new entity/table/migration or quota increase.
+
+Device/account/store activation and handled-proposal markers use existing
+`app_metadata`. New activation does not replay past questions; forgetting fences
+older declarations. Scope, source visibility/supersession and current opt-in are
+checked inside the local write transaction. See
+`../qa/COPILOT_AUTOMATIC_MEMORY_2026_11_14.md` for delivery and rollback boundaries.

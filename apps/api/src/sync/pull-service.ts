@@ -407,6 +407,7 @@ export function createMongoSyncPullService(
                   row,
                   supportsHistoryDeletion,
                   supportsAnalyticsDestinations,
+                  query.automaticMemory === "true",
                 ),
                 changedAt: change.changedAt.toISOString(),
               };

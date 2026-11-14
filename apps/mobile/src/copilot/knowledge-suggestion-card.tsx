@@ -1,3 +1,4 @@
+import { useSync } from "../sync/sync-provider";
 import { useCallback, useState, useMemo, useRef, useLayoutEffect } from "react";
 import { ChatText as Text } from "./chat-text";
 import { router, useFocusEffect } from "expo-router";
@@ -18,7 +19,8 @@ export function KnowledgeSuggestionCard({
 }) {
   const { content } = readKnowledgeSuggestion(message),
     { sqlite } = useLocalDatabase(),
-    { session } = useAuth();
+    { session } = useAuth(),
+    { lastSyncedAt } = useSync();
   const ownerId = session?.user.id,
     storeId = session?.stores[0]?.storeId;
   const context = useMemo(
@@ -27,6 +29,8 @@ export function KnowledgeSuggestionCard({
       ownerId,
       storeId,
       knowledgeId: content.knowledgeId,
+      proposalId: message.id,
+      lastSyncedAt,
       owned:
         message.storeId === storeId &&
         message.ownerId === ownerId &&
@@ -38,6 +42,8 @@ export function KnowledgeSuggestionCard({
       ownerId,
       storeId,
       content.knowledgeId,
+      message.id,
+      lastSyncedAt,
       message.storeId,
       message.ownerId,
     ],
@@ -83,14 +89,36 @@ export function KnowledgeSuggestionCard({
           context.storeId!,
           context.ownerId!,
         )
-        .then((row) => {
+        .then(async (row) => {
+          if (!current()) return;
+          let expectedId = context.knowledgeId;
+          if (!row) {
+            const handled = await context.sqlite.getFirstAsync<{
+              value: string;
+            }>(
+              "SELECT value FROM app_metadata WHERE key=?",
+              `automatic-memory:${context.storeId}:${context.ownerId}:handled:${context.proposalId}`,
+            );
+            if (handled?.value && handled.value !== "SKIPPED") {
+              expectedId = handled.value;
+              row = await context.sqlite.getFirstAsync<{
+                payload_json: string;
+                sync_state: string;
+              }>(
+                "SELECT payload_json,sync_state FROM copilot_knowledge WHERE id=? AND store_id=? AND owner_id=?",
+                handled.value,
+                context.storeId!,
+                context.ownerId!,
+              );
+            }
+          }
           if (!current()) return;
           const entity = row
             ? copilotKnowledgeSchema.parse(JSON.parse(row.payload_json))
             : null;
           if (
             entity &&
-            (entity.id !== context.knowledgeId ||
+            (entity.id !== expectedId ||
               entity.storeId !== context.storeId ||
               entity.ownerId !== context.ownerId)
           )
@@ -117,7 +145,9 @@ export function KnowledgeSuggestionCard({
         saved
           ? saved.entity.status === "FORGOTTEN"
             ? "Information oubliée"
-            : "Pratique mémorisée"
+            : saved.entity.captureMode === "AUTOMATIC"
+              ? "Mémorisée automatiquement"
+              : "Pratique mémorisée"
           : saved === undefined
             ? "Vérifier la mémoire"
             : "Retenir pour nos prochaines discussions ?"
@@ -125,13 +155,15 @@ export function KnowledgeSuggestionCard({
       description={
         saved
           ? saved.syncState === "SYNCED"
-            ? "Votre décision a été synchronisée."
+            ? saved.entity.captureMode === "AUTOMATIC"
+              ? "Cette habitude a été mémorisée automatiquement et synchronisée."
+              : "Votre décision a été synchronisée."
             : "Votre décision est conservée sur cet appareil ; vérifiez sa synchronisation dans la mémoire."
           : failed
             ? "Consultez la mémoire avant toute modification : votre décision actuelle n’est pas vérifiée."
             : saved === undefined
               ? "Lecture de votre décision sur cet appareil…"
-              : "Vous pourrez modifier le texte avant de confirmer. Aucune mémorisation sans votre confirmation."
+              : "Tu peux vérifier cette habitude dans la mémoire, la modifier ou la mémoriser manuellement."
       }
     >
       {saved === null || saved?.entity.status === "ACTIVE" ? (

@@ -27,6 +27,8 @@ import {
   type SyncPushRequest,
 } from "@fl-copilot/sync-contracts";
 import type { CopilotKnowledge } from "@fl-copilot/domain";
+import { readAutomaticMemory } from "../../mobile/src/copilot/automatic-memory";
+import { buildKnowledgeSuggestionMessages } from "../src/copilot/knowledge-suggestion-messages";
 const uri = process.env.TEST_MONGODB_URI;
 describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
   "Confirmed private operating practices",
@@ -43,6 +45,195 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
     afterAll(async () => {
       if (db) await db.dropDatabase();
       if (client) await client.close();
+    });
+    it("captures once through real SQLite/Mongo sync, projects legacy reads and preserves a later manual correction against another device retry", async () => {
+      const f = chatFixture(randomUUID),
+        scope = { storeId: f.storeId, ownerId: f.ownerId };
+      const source = {
+        ...f.message,
+        text: "Je prépare les TG le mardi.",
+        attachments: [],
+      };
+      const assistant = {
+        ...source,
+        id: randomUUID(),
+        role: "ASSISTANT" as const,
+        replyToMessageId: source.id,
+        text: "Une habitude utile.",
+      };
+      const proposal = buildKnowledgeSuggestionMessages(
+        assistant,
+        [
+          {
+            statement: source.text,
+            sources: [{ messageId: source.id, quote: source.text }],
+          },
+        ],
+        {
+          memorySuggestion: {
+            currentUserMessageId: source.id,
+            automatic: true,
+          },
+          userQuestion: source.text,
+        } as Parameters<typeof buildKnowledgeSuggestionMessages>[2],
+      )[0]!;
+      await db
+        .collection("copilotConversations")
+        .insertOne({ _id: f.conversation.id, ...f.conversation } as never);
+      await db.collection("copilotMessages").insertMany(
+        [source, assistant, proposal].map((m) => ({
+          _id: m.id,
+          ...m,
+        })) as never,
+      );
+      const service = {
+        getDb: async () => db,
+        checkHealth: async () => "connected" as const,
+        close: async () => {},
+      };
+      const push = createMongoSyncPushService(service),
+        pull = createMongoSyncPullService(service),
+        boot = createMongoSyncBootstrapService(service);
+      const authority = {
+        ...scope,
+        userId: scope.ownerId,
+        sessionId: randomUUID(),
+        deviceId: f.deviceId,
+        storeName: "Pilote",
+        role: "MANAGER" as const,
+      };
+      const query = {
+        copilotHistory: "true",
+        copilotKnowledge: "true",
+        automaticMemory: "true",
+      };
+      const a = new MercalysTestDatabase(),
+        b = new MercalysTestDatabase();
+      const transport = {
+        push: (r: SyncPushRequest) => push.push(r, randomUUID(), scope.ownerId),
+        pull: (storeId: string, cursor: string) =>
+          pull.pull(
+            storeId,
+            syncPullQuerySchema.parse({ ...query, cursor }),
+            scope.ownerId,
+          ),
+        bootstrap: () =>
+          boot.bootstrap(authority, bootstrapQuerySchema.parse(query)),
+      };
+      const sync = (device: MercalysTestDatabase) =>
+        new MobileSyncService(device, transport, {
+          appVersion: "test",
+          deviceId: f.deviceId,
+          copilotHistory: true,
+          copilotKnowledge: true,
+          copilotOwnerId: scope.ownerId,
+          automaticMemory: true,
+          memoryCommandId: randomUUID,
+          automaticMemoryAllowed: () => true,
+          now: () => "2026-10-15T12:00:00.000Z",
+        }).sync(scope.storeId);
+      try {
+        for (const device of [a, b]) {
+          await runLocalMigrations(device);
+          await readAutomaticMemory(device, scope, "2026-10-10T00:00:00.000Z");
+        }
+        const result = await sync(a);
+        expect(result.failed).toBe(0);
+        expect(result.conflicts).toBe(0);
+        const repo = new CopilotKnowledgeRepository(a, scope),
+          first = (await repo.list())[0]!;
+        expect(first.syncState).toBe("SYNCED");
+        expect(first.entity).toMatchObject({
+          captureMode: "AUTOMATIC",
+          sourceMessageId: source.id,
+          version: 1,
+        });
+        await sync(b);
+        expect(
+          await db.collection("copilotKnowledge").countDocuments(scope),
+        ).toBe(1);
+        expect(
+          await db.collection("copilotKnowledgeHistory").countDocuments(scope),
+        ).toBe(1);
+        const legacy = await boot.bootstrap(
+          authority,
+          bootstrapQuerySchema.parse({
+            copilotHistory: "true",
+            copilotKnowledge: "true",
+          }),
+        );
+        expect(legacy.entities.copilotKnowledge![0]).not.toHaveProperty(
+          "captureMode",
+        );
+        const modern = await boot.bootstrap(
+          authority,
+          bootstrapQuerySchema.parse(query),
+        );
+        expect(modern.entities.automaticMemory).toBe(true);
+        expect(modern.entities.copilotKnowledge![0]).toHaveProperty(
+          "captureMode",
+          "AUTOMATIC",
+        );
+        // A legacy client can still edit the known shape; creation provenance is retained remotely.
+        const { captureMode: _captureMode, ...oldShape } = first.entity;
+        void _captureMode;
+        const edit = syncPushRequestSchema.parse({
+          syncProtocolVersion: 1,
+          appVersion: "old",
+          deviceId: f.deviceId,
+          storeId: scope.storeId,
+          commands: [
+            {
+              commandId: randomUUID(),
+              localSequence: 1,
+              type: "COPILOT_KNOWLEDGE_UPSERT",
+              entityType: "copilot_knowledge",
+              entityId: first.entity.id,
+              expectedRemoteVersion: 1,
+              createdAt: first.entity.updatedAt,
+              payload: {
+                ...oldShape,
+                version: 2,
+                statement: "Je prépare les TG le jeudi.",
+              },
+            },
+          ],
+        });
+        const edited = (await push.push(edit, randomUUID(), scope.ownerId))
+          .results[0]!;
+        expect(edited.status).toBe("APPLIED");
+        expect(edited.remoteEntity).not.toHaveProperty("captureMode");
+        const retry = syncPushRequestSchema.parse({
+          ...edit,
+          automaticMemory: true,
+          commands: [
+            {
+              ...edit.commands[0]!,
+              commandId: randomUUID(),
+              expectedRemoteVersion: null,
+              payload: first.entity,
+            },
+          ],
+        });
+        const retried = (await push.push(retry, randomUUID(), scope.ownerId))
+          .results[0]!;
+        expect(retried.status).toBe("APPLIED");
+        expect(retried.remoteEntity).toMatchObject({
+          version: 2,
+          statement: "Je prépare les TG le jeudi.",
+          captureMode: "AUTOMATIC",
+        });
+        expect(
+          await db.collection("copilotKnowledgeHistory").countDocuments(scope),
+        ).toBe(2);
+        expect(
+          (await push.push(retry, randomUUID(), randomUUID())).results[0]!
+            .status,
+        ).toBe("REJECTED");
+      } finally {
+        a.db.close();
+        b.db.close();
+      }
     });
     it.each(["KEEP_LOCAL", "ADOPT_REMOTE"] as const)(
       "resolves a complete private group and restores the chosen practice on another device (%s)",

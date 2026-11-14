@@ -17,6 +17,16 @@ export function serializeKnowledge(row: KnowledgeDocument) {
   if (_id !== parsed.id) throw Error("COPILOT_KNOWLEDGE_IDENTITY_INVALID");
   return parsed;
 }
+/** Preserve automatic-capture provenance remotely; old strict clients receive their known shape. */
+export function knowledgeForClient(
+  record: CopilotKnowledge,
+  automaticMemory = false,
+) {
+  if (automaticMemory) return record;
+  const { captureMode: _captureMode, ...legacy } = record;
+  void _captureMode;
+  return legacy;
+}
 export async function canAccessKnowledge(
   db: Db,
   storeId: string,
@@ -61,9 +71,24 @@ export async function applyKnowledge(
   });
   if (!(await canAccessKnowledge(ctx.database, storeId, ownerId, c)))
     return reject("COPILOT_KNOWLEDGE_SCOPE_INVALID");
-  const e = copilotKnowledgeSchema.parse(c.payload),
-    col = ctx.database.collection<KnowledgeDocument>("copilotKnowledge");
+  let e = copilotKnowledgeSchema.parse(c.payload);
+  const col = ctx.database.collection<KnowledgeDocument>("copilotKnowledge");
   const old = await col.findOne({ _id: e.id }, { session: ctx.session });
+  if (
+    old &&
+    e.captureMode === "AUTOMATIC" &&
+    e.version === 1 &&
+    c.expectedRemoteVersion == null &&
+    old.sourceMessageId === e.sourceMessageId
+  )
+    return {
+      resultStatus: "APPLIED",
+      resultingVersion: old.version,
+      responseJson: { remoteEntity: serializeKnowledge(old) },
+    };
+  if (old && e.captureMode !== undefined && e.captureMode !== old.captureMode)
+    return reject("COPILOT_KNOWLEDGE_REVISION_INVALID");
+  if (old?.captureMode) e = { ...e, captureMode: old.captureMode };
   if ((c.expectedRemoteVersion ?? null) !== (old?.version ?? null))
     return {
       resultStatus: "CONFLICT",
@@ -125,6 +150,7 @@ export async function applyKnowledge(
       commandId: c.commandId,
       status: e.status,
       confirmedBy: e.confirmedBy,
+      ...(e.captureMode ? { captureMode: e.captureMode } : {}),
       updatedAt: e.updatedAt,
     },
     { session: ctx.session },

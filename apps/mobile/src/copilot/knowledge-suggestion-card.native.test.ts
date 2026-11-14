@@ -18,6 +18,9 @@ vi.mock("../auth/auth-provider", () => ({
 vi.mock("../providers/database-provider", () => ({
   useLocalDatabase: () => ({ sqlite: runtime.sqlite }),
 }));
+vi.mock("../sync/sync-provider", () => ({
+  useSync: () => ({ lastSyncedAt: undefined }),
+}));
 vi.mock("./chat-text", () => ({ ChatText: "Text" }));
 vi.mock("../components/ui", () => ({
   SectionCard: ({
@@ -259,7 +262,7 @@ it("ignores a late result from the previous database and keeps the currently ver
     pathname: "/copilot-memory",
     params: { proposal: s.message.id },
   });
-  expect(currentRead).toHaveBeenCalledTimes(1);
+  expect(currentRead).toHaveBeenCalledTimes(2);
 });
 it("keeps a current verified result across ordinary message rerenders without extra reads", async () => {
   const s = await fixture();

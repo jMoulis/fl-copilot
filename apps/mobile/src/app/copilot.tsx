@@ -1,3 +1,4 @@
+import { readAutomaticMemory } from "@/copilot/automatic-memory";
 import { useChatPush } from "@/notifications/chat-push-provider";
 import { createVisualSourcePhotoPort } from "@/copilot/visual-source-photo";
 import { nativeVisualFileStorage } from "@/products/visual-file-storage";
@@ -1146,13 +1147,21 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
           return page.messages.find((message) => message.id === input.replyId);
         },
         ask: (input, signal, onProgress, onActivity, synchronization) =>
-          withAccessToken((token) =>
+          withAccessToken(async (token) =>
             api.copilotTurn(token, storeId, ownerId, input, signal, {
               onProgress,
               onActivity,
               synchronization,
               backgroundCompletion: chatCompletionAllowed.current,
-              memorySuggestions: true,
+              memorySuggestions: (
+                await readAutomaticMemory(
+                  sqlite,
+                  { storeId, ownerId },
+                  new Date().toISOString(),
+                )
+              ).enabled
+                ? 2
+                : true,
               webResearch: true,
               recommendationTracking: true,
               executionLinks: true,

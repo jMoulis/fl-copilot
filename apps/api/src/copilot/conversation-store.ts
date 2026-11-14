@@ -26,6 +26,7 @@ import {
   canAccessKnowledge,
   applyKnowledge,
   serializeKnowledge,
+  knowledgeForClient,
   type KnowledgeDocument,
 } from "./knowledge-store";
 import {
@@ -129,8 +130,14 @@ export function serializeChatForClient(
   row: ChatRecordDocument,
   supportsDeletion = false,
   supportsAnalyticsDestinations: boolean | 2 = false,
+  supportsAutomaticMemory = false,
 ) {
   const record = serializeChat(type, row);
+  if (type === "copilot_knowledge")
+    return knowledgeForClient(
+      record as import("@fl-copilot/domain").CopilotKnowledge,
+      supportsAutomaticMemory,
+    );
   if (type === "copilot_message") {
     const { analyticsDestinations, answerSources, ...body } =
       record as CopilotMessage;

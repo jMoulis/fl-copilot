@@ -1,9 +1,13 @@
 import {
+  readAutomaticMemory,
+  setAutomaticMemory,
+} from "@/copilot/automatic-memory";
+import {
   confirmKnowledgeSuggestion,
   loadKnowledgeSuggestion,
 } from "@/copilot/knowledge-suggestion";
 import { useCallback, useMemo, useRef, useState, useLayoutEffect } from "react";
-import { Text, TextInput, View, Alert } from "react-native";
+import { Text, TextInput, View, Alert, Switch } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { randomUUID } from "expo-crypto";
 import type { CopilotKnowledge } from "@fl-copilot/domain";
@@ -49,6 +53,7 @@ function CopilotMemoryScreenContent() {
   const activeList = useRef<{ repo: typeof repo; active: boolean } | null>(
     null,
   );
+  const [automatic, setAutomatic] = useState<boolean>();
   const [entries, setEntries] = useState<Entry[]>([]),
     [selected, setSelected] = useState<CopilotKnowledge>(),
     [statement, setStatement] = useState(""),
@@ -77,6 +82,11 @@ function CopilotMemoryScreenContent() {
       if (repo)
         void (async () => {
           const rows = await repo.list();
+          const preference = await readAutomaticMemory(
+            sqlite,
+            { storeId: storeId!, ownerId: ownerId! },
+            new Date().toISOString(),
+          );
           const proposal =
             params.proposal && storeId && ownerId
               ? await loadKnowledgeSuggestion(
@@ -91,6 +101,7 @@ function CopilotMemoryScreenContent() {
               : null;
           if (life.active) {
             setEntries(rows);
+            setAutomatic(preference.enabled);
             if (proposal) {
               const existing = rows.find(
                 (e) => e.entity.id === proposal.content.knowledgeId,
@@ -207,9 +218,53 @@ function CopilotMemoryScreenContent() {
     <AppScreen>
       <AppHeader
         title="Mémoire du copilote"
-        subtitle="Vos pratiques confirmées, privées à votre compte pour ce magasin. Réutilisées entre vos conversations après synchronisation."
+        subtitle="Tes habitudes, privées à ton compte pour ce magasin et réutilisées entre tes discussions."
       />
       <SecondaryButton label="Retour" onPress={() => router.back()} />
+      <SectionCard
+        title="Mémoire automatique"
+        description="Retient les nouvelles habitudes utiles que tu exprimes, sans confirmation à chaque fois. Les chiffres temporaires et les documents ne sont pas des habitudes. Tu peux toujours modifier ou oublier un souvenir."
+      >
+        <Switch
+          accessibilityLabel="Mémoire automatique sur cet appareil"
+          value={automatic === true}
+          disabled={automatic === undefined || busy}
+          onValueChange={(enabled) => {
+            const life = activeList.current;
+            if (
+              !storeId ||
+              !ownerId ||
+              writeLock.current ||
+              !life?.active ||
+              life.repo !== repo
+            )
+              return;
+            writeLock.current = true;
+            setBusy(true);
+            void setAutomaticMemory(
+              sqlite,
+              { storeId, ownerId },
+              enabled,
+              new Date().toISOString(),
+            )
+              .then((value) => {
+                if (life.active && activeList.current === life)
+                  setAutomatic(value.enabled);
+              })
+              .catch(() => {
+                if (life.active && activeList.current === life)
+                  setError("Le réglage n’a pas pu être enregistré.");
+              })
+              .finally(() => {
+                writeLock.current = false;
+                if (life.active && activeList.current === life) setBusy(false);
+              });
+          }}
+        />
+        <Text style={{ color: colors.muted }}>
+          Sur cet appareil. Les souvenirs enregistrés restent synchronisés.
+        </Text>
+      </SectionCard>
       {error ? (
         <InlineAlert title="Mémoire à vérifier" message={error} />
       ) : null}
@@ -274,7 +329,9 @@ function CopilotMemoryScreenContent() {
             title={
               entry.entity.status === "FORGOTTEN"
                 ? "Oubli à synchroniser"
-                : "Pratique confirmée"
+                : entry.entity.captureMode === "AUTOMATIC"
+                  ? "Mémorisée automatiquement"
+                  : "Pratique confirmée"
             }
           >
             <Text

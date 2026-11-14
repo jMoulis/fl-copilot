@@ -1863,8 +1863,11 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                 );
               }
             },
-            allowMemorySuggestions:
-              request.headers["x-copilot-memory-suggestions"] === "1",
+            allowMemorySuggestions: ["1", "2"].includes(
+              String(request.headers["x-copilot-memory-suggestions"]),
+            ),
+            automaticMemory:
+              request.headers["x-copilot-memory-suggestions"] === "2",
             onGenerationFailure: (failure) => {
               app.log.error(
                 {

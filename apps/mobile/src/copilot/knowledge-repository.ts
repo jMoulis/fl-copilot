@@ -1,3 +1,4 @@
+import { loadKnowledgeSuggestion } from "./knowledge-suggestion-source";
 import {
   copilotKnowledgeSchema,
   copilotMessageSchema,
@@ -12,6 +13,8 @@ import {
   ConflictRepository,
   reviewConflictVersions,
 } from "../sync/conflict-repository";
+export const normalizeKnowledgeStatement = (s: string) =>
+  s.trim().replace(/\s+/g, " ").toLocaleLowerCase("fr-FR");
 type Scope = { storeId: string; ownerId: string };
 type Row = {
   id: string;
@@ -172,7 +175,16 @@ export async function applyKnowledgeRecord(
   );
   if (old) {
     scoped({ storeId: old.store_id, ownerId: old.owner_id }, scope);
-    if (!same(copilotKnowledgeSchema.parse(JSON.parse(old.payload_json)), e))
+    const local = copilotKnowledgeSchema.parse(JSON.parse(old.payload_json));
+    // Another device may have manually confirmed this same source first. Only
+    // an unsent automatic initial creation can accept its canonical timestamp;
+    // owner, store, identity and source remain immutable. Pending edits survive below.
+    const initialAutomatic =
+      old.dirty && local.version === 1 && local.captureMode === "AUTOMATIC";
+    if (
+      !same(local, e) &&
+      !(initialAutomatic && same({ ...local, createdAt: e.createdAt }, e))
+    )
       throw Error("COPILOT_KNOWLEDGE_IDENTITY_INVALID");
   }
   if (
@@ -241,11 +253,18 @@ export class CopilotKnowledgeRepository {
   }
   async save(
     raw: CopilotKnowledge,
-    ctx: { commandId: string; deviceId: string },
+    ctx: {
+      commandId: string;
+      deviceId: string;
+      canWrite?: () => boolean;
+      proposalId?: string;
+    },
   ) {
     const e = copilotKnowledgeSchema.parse(raw);
     scoped(e, this.scope);
     await this.db.withExclusiveTransactionAsync(async (tx) => {
+      if (ctx.canWrite && !ctx.canWrite())
+        throw Error("COPILOT_KNOWLEDGE_CAPTURE_CANCELLED");
       const row = await tx.getFirstAsync<Row>(
         "SELECT * FROM copilot_knowledge WHERE id=?",
         e.id,
@@ -271,6 +290,7 @@ export class CopilotKnowledgeRepository {
         ))!.n >= 200
       )
         throw Error("COPILOT_KNOWLEDGE_LIMIT");
+      let sourceCreatedAt: string | undefined;
       if (e.sourceMessageId && !before) {
         const source = await tx.getFirstAsync<{ payload_json: string }>(
           "SELECT payload_json FROM copilot_messages WHERE id=? AND store_id=? AND owner_id=?",
@@ -283,8 +303,63 @@ export class CopilotKnowledgeRepository {
           JSON.parse(source.payload_json),
         );
         scoped(message, this.scope);
+        sourceCreatedAt = message.createdAt;
         if (message.id !== e.sourceMessageId || message.role !== "USER")
           throw Error("COPILOT_KNOWLEDGE_SOURCE_UNAVAILABLE");
+      }
+      if (e.captureMode === "AUTOMATIC" && !before) {
+        if (!ctx.proposalId) throw Error("COPILOT_KNOWLEDGE_PROPOSAL_INVALID");
+        const artifact = await loadKnowledgeSuggestion(
+          tx,
+          this.scope,
+          ctx.proposalId,
+        );
+        if (
+          e.createdAt !== artifact.message.createdAt ||
+          e.updatedAt !== artifact.message.createdAt ||
+          artifact.content.knowledgeId !== e.id ||
+          artifact.content.suggestion.statement !== e.statement ||
+          artifact.message.replyToMessageId !== e.sourceMessageId
+        )
+          throw Error("COPILOT_KNOWLEDGE_PROPOSAL_INVALID");
+        const preference = await tx.getFirstAsync<{ value: string }>(
+          "SELECT value FROM app_metadata WHERE key=?",
+          `automatic-memory:${e.storeId}:${e.ownerId}`,
+        );
+        if (!preference || JSON.parse(preference.value).enabled !== true)
+          throw Error("COPILOT_KNOWLEDGE_AUTOMATIC_DISABLED");
+        if (
+          !sourceCreatedAt ||
+          Date.parse(sourceCreatedAt) <
+            Date.parse(JSON.parse(preference.value).since)
+        )
+          throw Error("COPILOT_KNOWLEDGE_CAPTURE_SUPERSEDED");
+        const current = await tx.getAllAsync<{ payload_json: string }>(
+          "SELECT payload_json FROM copilot_knowledge WHERE store_id=? AND owner_id=?",
+          e.storeId,
+          e.ownerId,
+        );
+        if (
+          current.some((r) => {
+            const v = copilotKnowledgeSchema.parse(JSON.parse(r.payload_json));
+            return (
+              v.status === "FORGOTTEN" &&
+              Date.parse(v.updatedAt) >= Date.parse(sourceCreatedAt!)
+            );
+          })
+        )
+          throw Error("COPILOT_KNOWLEDGE_CAPTURE_SUPERSEDED");
+        if (
+          current.some((r) => {
+            const v = copilotKnowledgeSchema.parse(JSON.parse(r.payload_json));
+            return (
+              v.status === "ACTIVE" &&
+              normalizeKnowledgeStatement(v.statement) ===
+                normalizeKnowledgeStatement(e.statement)
+            );
+          })
+        )
+          throw Error("COPILOT_KNOWLEDGE_DUPLICATE");
       }
       await tx.runAsync(
         "INSERT INTO copilot_knowledge(id,store_id,owner_id,payload_json,sync_state,dirty) VALUES(?,?,?,?,'PENDING',1) ON CONFLICT(id) DO UPDATE SET payload_json=excluded.payload_json,sync_state='PENDING',dirty=1",
@@ -304,6 +379,8 @@ export class CopilotKnowledgeRepository {
         payload: e,
         createdAt: e.updatedAt,
       });
+      if (ctx.canWrite && !ctx.canWrite())
+        throw Error("COPILOT_KNOWLEDGE_CAPTURE_CANCELLED");
     });
   }
   async resolve(

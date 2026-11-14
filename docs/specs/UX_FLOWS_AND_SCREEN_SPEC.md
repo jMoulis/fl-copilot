@@ -4645,3 +4645,16 @@ other groups are collapsed but remain reachable. User expansion survives a
 refresh and resets on a different selected day. Preserve missing-source messages,
 original dates, source access, settings and manual refresh. Remove generic
 empty-message and empty partial-excerpt paragraphs as previously approved.
+
+## Automatic private memory — owner arbitration, 14 November 2026
+
+Réglages → Mémoire du copilote exposes “Mémoire automatique”, enabled for new
+capture on this device/account/store, with an explicit opt-out. Retain editing
+and forgetting. Mark automatic creation clearly without claiming a separate
+human confirmation. The user does not confirm each new eligible habit; a candidate
+is recorded during synchronization. Missing/invalid sources remain unsaved and
+available for ordinary manual review, without false success wording.
+
+Legacy clients keep the current confirmation flow. Enabling does not analyze old
+conversations or replay pre-forget declarations. No extra agent, onboarding form
+or permission prompt is introduced; this owner arbitration concerns memory only.

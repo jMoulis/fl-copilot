@@ -1922,12 +1922,15 @@ it("requires a natural body in the OpenAI strict schema without breaking legacy 
   expect(result.output.narrative).toBe(answer.narrative);
 });
 it("prepares one source-grounded memory suggestion only for an opted-in client, without writing and within the existing model-loop budget", async () => {
-  for (const mode of ["valid", "invented", "legacy"]) {
+  for (const mode of ["valid", "automatic", "invented", "legacy"]) {
     const f = fixture(),
       id = randomUUID();
     f.request.userQuestion = "La casse est saisie à la date de saisie.";
     if (mode !== "legacy")
-      f.request.memorySuggestion = { currentUserMessageId: id };
+      f.request.memorySuggestion = {
+        currentUserMessageId: id,
+        ...(mode === "automatic" ? { automatic: true } : {}),
+      };
     const input = {
       statement: "La casse est comptabilisée à la date de saisie.",
       sources: [
@@ -1971,7 +1974,7 @@ it("prepares one source-grounded memory suggestion only for an opted-in client, 
       }),
     }).generate(f.request, schema);
     expect(result.knowledgeSuggestions).toEqual(
-      mode === "valid" ? [input] : [],
+      ["valid", "automatic"].includes(mode) ? [input] : [],
     );
     expect(transport).toHaveBeenCalledTimes(mode === "legacy" ? 1 : 2);
   }
@@ -6463,6 +6466,68 @@ function discoverySse(
     { headers: { "content-type": "text/event-stream" } },
   );
 }
+it.each([false, true])(
+  "returns a source-checked automatic memory beside the canonical answer without a tool round (streaming %s)",
+  async (streaming) => {
+    const { copilotResponseSchema } = await import("@fl-copilot/domain");
+    for (const mode of ["valid", "invented", "oversized", "none"] as const) {
+      const f = fixture(),
+        currentUserMessageId = randomUUID();
+      f.request.userQuestion = "Je prépare mes TG chaque mardi.";
+      f.request.memorySuggestion = { currentUserMessageId, automatic: true };
+      const candidate = {
+        statement:
+          mode === "oversized" ? "a".repeat(801) : f.request.userQuestion,
+        sources: [
+          {
+            messageId: currentUserMessageId,
+            quote:
+              mode === "invented"
+                ? "Citation inventée"
+                : f.request.userQuestion,
+          },
+        ],
+      };
+      const partial = vi.fn();
+      const transport = vi.fn<typeof fetch>(async (_url, init) => {
+        const body = JSON.parse(String(init?.body));
+        expect(
+          body.tools.some((t: { name: string }) => t.name === "suggest_memory"),
+        ).toBe(false);
+        expect(body.text.format.schema.properties).toHaveProperty(
+          "memorySuggestion",
+        );
+        const output = JSON.stringify({
+          narrative: "Merci, c’est utile pour nos prochains échanges.",
+          recommendations: [],
+          memorySuggestion: mode === "none" ? null : candidate,
+        });
+        return streaming ? discoverySse(undefined, output) : response(output);
+      });
+      const result = await createCopilotAiProvider(
+        f.config,
+        transport,
+        discoveryReads(),
+      ).generate(
+        f.request,
+        copilotResponseSchema,
+        undefined,
+        streaming ? partial : undefined,
+      );
+      expect(transport).toHaveBeenCalledTimes(1);
+      expect(result.knowledgeSuggestions).toEqual(
+        mode === "valid" ? [candidate] : [],
+      );
+      expect(result.output).not.toHaveProperty("memorySuggestion");
+      expect(result.output.narrative).toBe(
+        "Merci, c’est utile pour nos prochains échanges.",
+      );
+      for (const [value] of partial.mock.calls)
+        expect(value).not.toHaveProperty("memorySuggestion");
+    }
+  },
+);
+
 it.each([false, true])(
   "reads Journal, observations and confirmed alternatives without discovery in a large canonical catalogue (streaming %s)",
   async (streaming) => {

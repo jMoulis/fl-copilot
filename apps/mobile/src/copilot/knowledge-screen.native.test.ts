@@ -26,6 +26,7 @@ vi.mock(
   "@/copilot/knowledge-repository",
   () => import("./knowledge-repository"),
 );
+vi.mock("@/copilot/automatic-memory", () => import("./automatic-memory"));
 vi.mock("@/copilot/knowledge-conflict", () => import("./knowledge-conflict"));
 vi.mock("@/copilot/knowledge-suggestion", () => ({
   loadKnowledgeSuggestion: vi.fn(),
@@ -93,8 +94,13 @@ async function setup() {
   });
   return s;
 }
+const comparisonSwitches = () =>
+  hosts("Switch").filter(
+    (n) =>
+      n.props.accessibilityLabel !== "Mémoire automatique sur cet appareil",
+  );
 async function choose() {
-  await act(async () => hosts("Switch")[0]!.props.onValueChange(true));
+  await act(async () => comparisonSwitches()[0]!.props.onValueChange(true));
   await act(async () =>
     hosts("Button")
       .find((n) => n.props.label === "Conserver ma version locale")!
@@ -121,7 +127,7 @@ it("updates the real memory list immediately, then shows a subsequent server con
     send = deferred();
   runtime.sync.mockReturnValueOnce(send.promise);
   await choose();
-  expect(hosts("Switch")).toHaveLength(0);
+  expect(comparisonSwitches()).toHaveLength(0);
   expect(JSON.stringify(tree!.toJSON())).toContain("À synchroniser");
   const packet = (
       await new OutboxRepository(s.a).listPending(s.scope.storeId)
@@ -152,7 +158,7 @@ it("updates the real memory list immediately, then shows a subsequent server con
     send.resolve();
     await send.promise;
   });
-  expect(hosts("Switch")).toHaveLength(1);
+  expect(comparisonSwitches()).toHaveLength(1);
   expect(JSON.stringify(tree!.toJSON())).toContain(
     "Nouvelle pratique distante",
   );
