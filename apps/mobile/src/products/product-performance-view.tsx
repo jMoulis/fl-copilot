@@ -1,8 +1,4 @@
-import {
-  productMetricDetail,
-  productCoverageLabel,
-} from "./product-performance-presentation";
-import { drillExplorerView } from "../analytics/explorer-state";
+import { useState } from "react";
 import { Text, View, Pressable } from "react-native";
 import {
   explorerLabel,
@@ -10,19 +6,26 @@ import {
   type ExplorerPeriod,
 } from "@fl-copilot/analytics-core";
 import type { AnalyticsExplorerMetric } from "@fl-copilot/domain";
-import {
-  DashboardMetric,
-  DetailsDisclosure,
-  IconButton,
-  SegmentedControl,
-} from "../components/dashboard";
-import { InlineAlert, SecondaryButton } from "../components/ui";
+import { IconButton, SegmentedControl } from "../components/dashboard";
+import { BottomSheet, InlineAlert, SecondaryButton } from "../components/ui";
 import { ExplorerTrendChart } from "../analytics/explorer-trend-chart";
 import type { ExplorerRepository } from "../analytics/explorer-repository";
-import type { ExplorerView } from "../analytics/explorer-state";
+import {
+  drillExplorerView,
+  type ExplorerView,
+} from "../analytics/explorer-state";
 import { colors } from "../design/tokens";
-import { formatCurrency } from "../today/today-priority-presentation";
+import {
+  formatCurrency,
+  formatSignedCurrency,
+  formatSignedPercentage,
+} from "../today/today-priority-presentation";
 import { formatFrenchCalendarDate } from "../dates/calendar";
+import {
+  productMetricDetail,
+  productCoverageLabel,
+} from "./product-performance-presentation";
+
 export type ProductPerformanceData = Partial<
   Record<
     AnalyticsExplorerMetric,
@@ -30,11 +33,19 @@ export type ProductPerformanceData = Partial<
   >
 >;
 const labels = {
-  sales: "CA net",
+  sales: "CA TTC",
   margin: "Marge",
   waste: "Casse PV",
   wasteCost: "Casse PA",
 } as const;
+const titles = {
+  sales: "Chiffre d’affaires TTC",
+  margin: "Marge en euros",
+  waste: "Casse au prix de vente",
+  wasteCost: "Casse au prix d’achat",
+} as const;
+
+/** Display canonical local amounts only; the Explorer owns comparison and coverage. */
 export function ProductPerformanceView({
   view,
   data,
@@ -58,11 +69,38 @@ export function ProductPerformanceView({
   onScroll(offset: number): void;
   onRefresh(): void;
 }) {
+  const [details, setDetails] = useState(false);
   const result = data?.[view.metric],
-    range = explorerRange(view.frame.period);
+    range = explorerRange(view.frame.period),
+    comparison = result?.comparison;
+  const difference =
+    comparison?.percentageDifference != null
+      ? formatSignedPercentage(comparison.percentageDifference)
+      : comparison?.absoluteDifference != null
+        ? formatSignedCurrency(comparison.absoluteDifference)
+        : null;
+  const positive = comparison
+    ? ["waste", "wasteCost"].includes(view.metric)
+      ? comparison.absoluteDifference !== null &&
+        Number(comparison.absoluteDifference) <= 0
+      : comparison.absoluteDifference !== null &&
+        Number(comparison.absoluteDifference) >= 0
+    : true;
+  const summaries = (["sales", "margin", "waste"] as const).filter(
+    (metric) => metric !== view.metric,
+  );
   return (
-    <View style={{ gap: 12 }}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+    <View style={{ gap: 16 }}>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 6,
+          borderTopWidth: 1,
+          borderColor: colors.line,
+          paddingTop: 12,
+        }}
+      >
         <IconButton
           label="Période précédente"
           icon="chevron-back"
@@ -78,11 +116,13 @@ export function ProductPerformanceView({
             minHeight: 48,
             justifyContent: "center",
             alignItems: "center",
+            gap: 4,
           }}
         >
           <Text
             style={{
               color: colors.ink,
+              fontSize: 15,
               fontWeight: "600",
               textAlign: "center",
             }}
@@ -111,43 +151,6 @@ export function ProductPerformanceView({
           Actualisation des chiffres locaux…
         </Text>
       ) : null}
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-        {(["sales", "margin"] as const).map((metric) => {
-          const value = data?.[metric];
-          return (
-            <Pressable
-              key={metric}
-              accessibilityRole="button"
-              accessibilityLabel={`${labels[metric]} : ${value?.total == null ? "indisponible" : formatCurrency(value.total)}. Afficher le graphique.`}
-              onPress={() => onMetric(metric)}
-              style={{ flex: 1, minWidth: 125 }}
-            >
-              <DashboardMetric
-                compact
-                label={
-                  metric === "sales"
-                    ? "Chiffre d’affaires net"
-                    : "Marge en euros"
-                }
-                icon={
-                  metric === "sales" ? "wallet-outline" : "trending-up-outline"
-                }
-                value={
-                  !value
-                    ? "…"
-                    : value.total == null
-                      ? null
-                      : formatCurrency(value.total)
-                }
-                detail={productMetricDetail(value, view.frame.period)}
-              />
-            </Pressable>
-          );
-        })}
-      </View>
-      <Text style={{ color: colors.muted, fontSize: 12 }}>
-        Écarts calculés sur les jours clos comparables uniquement.
-      </Text>
       <SegmentedControl
         label="Chiffres du produit"
         value={view.metric}
@@ -160,66 +163,93 @@ export function ProductPerformanceView({
       <View
         style={{
           gap: 12,
-          borderRadius: 20,
-          borderWidth: 1,
-          borderColor: colors.line,
+          borderRadius: 25,
           backgroundColor: colors.surface,
-          padding: 14,
+          padding: 18,
         }}
       >
-        <View style={{ gap: 4 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
           <Text
             accessibilityRole="header"
-            style={{ color: colors.ink, fontSize: 18, fontWeight: "600" }}
+            style={{ flex: 1, minWidth: 0, color: colors.muted, fontSize: 14 }}
           >
-            {view.metric === "sales"
-              ? "Ventes nettes"
-              : view.metric === "margin"
-                ? "Marge en euros"
-                : view.metric === "waste"
-                  ? "Casse au prix de vente"
-                  : "Casse au prix d’achat"}
+            {titles[view.metric]}
           </Text>
-          {result ? (
-            <>
-              {["waste", "wasteCost"].includes(view.metric) ? (
-                <Text
-                  style={{
-                    color: colors.ink,
-                    fontSize: 26,
-                    fontWeight: "700",
-                    fontVariant: ["tabular-nums"],
-                  }}
-                >
-                  {result.total === null
-                    ? "Indisponible"
-                    : formatCurrency(result.total)}
-                </Text>
-              ) : null}
-              <Text
-                accessibilityLiveRegion="polite"
-                style={{ color: colors.muted, fontSize: 12 }}
-              >
-                {productCoverageLabel(result.coverage)}
-              </Text>
-              {view.frame.period.kind === "range" &&
-              view.frame.period.aggregation === "AVERAGE" ? (
-                <Text style={{ color: colors.warning, fontSize: 12 }}>
-                  Moyenne journalière, pas un cumul.
-                </Text>
-              ) : null}
-            </>
-          ) : (
-            <Text style={{ color: colors.muted }}>
-              Lecture des chiffres locaux…
-            </Text>
-          )}
+          <IconButton
+            label="Comprendre les chiffres du produit"
+            icon="information-circle-outline"
+            onPress={() => setDetails(true)}
+          />
         </View>
+        <Text
+          accessibilityLiveRegion="polite"
+          adjustsFontSizeToFit
+          minimumFontScale={0.65}
+          numberOfLines={1}
+          style={{
+            color: colors.ink,
+            fontSize: result?.total === null ? 28 : 36,
+            fontWeight: "700",
+            letterSpacing: -1.1,
+            fontVariant: ["tabular-nums"],
+          }}
+        >
+          {!result
+            ? "…"
+            : result.total === null
+              ? "Indisponible"
+              : formatCurrency(result.total)}
+        </Text>
+        {result &&
+        result.total !== null &&
+        (result.coverage.partial || result.coverage.missing) ? (
+          <Text style={{ color: colors.warning, fontSize: 12 }}>
+            {view.frame.period.kind === "range" &&
+            view.frame.period.aggregation === "AVERAGE"
+              ? "Moyenne partielle"
+              : "Cumul partiel"}
+          </Text>
+        ) : null}
+        {difference !== null ? (
+          <View
+            style={{
+              alignSelf: "flex-start",
+              borderRadius: 8,
+              backgroundColor: positive
+                ? colors.positiveSoft
+                : colors.criticalSoft,
+              paddingHorizontal: 9,
+              paddingVertical: 6,
+            }}
+          >
+            <Text
+              style={{
+                color: positive ? colors.positive : colors.critical,
+                fontSize: 13,
+                fontWeight: "600",
+              }}
+            >
+              {result?.comparisonStatus === "partial" ? "Indicatif · " : ""}
+              {difference}
+            </Text>
+          </View>
+        ) : result ? (
+          <Text style={{ color: colors.muted, fontSize: 12 }}>
+            Comparaison indisponible
+          </Text>
+        ) : (
+          <Text style={{ color: colors.muted, fontSize: 12 }}>
+            Lecture des chiffres locaux…
+          </Text>
+        )}
+        {view.frame.period.kind === "range" &&
+        view.frame.period.aggregation === "AVERAGE" ? (
+          <Text style={{ color: colors.warning, fontSize: 12 }}>
+            Moyenne journalière, pas un cumul.
+          </Text>
+        ) : null}
         {result && view.frame.period.kind !== "day" ? (
           <>
-            <Text style={{ color: colors.muted, fontSize: 12 }}>
-              Touchez une colonne pour explorer · €
-            </Text>
             <ExplorerTrendChart
               period={view.frame.period}
               points={result.points}
@@ -229,52 +259,86 @@ export function ProductPerformanceView({
                 onExplore(drillExplorerView(view, date).frame.period)
               }
             />
+            <Text style={{ color: colors.muted, fontSize: 12 }}>
+              Touchez une colonne pour explorer · €
+            </Text>
           </>
         ) : null}
         {result?.total === null ? (
-          <Text style={{ color: colors.muted }}>
-            Aucun montant disponible pour ce produit sur cette période. Cela ne
-            signifie pas zéro vente ou zéro casse.
+          <Text style={{ color: colors.muted, fontSize: 13, lineHeight: 19 }}>
+            Aucun montant disponible sur cette période. Cela ne signifie pas
+            zéro vente ou zéro casse.
           </Text>
         ) : null}
         {view.metric === "wasteCost" ? (
-          <Text style={{ color: colors.muted, fontSize: 12 }}>
+          <Text style={{ color: colors.muted, fontSize: 12, lineHeight: 18 }}>
             Les coûts disponibles peuvent inclure des estimations. Consultez
             leur détail dans Analyses.
           </Text>
         ) : null}
-        <DetailsDisclosure title="Couverture et référence">
-          <Text style={{ color: colors.muted }}>
-            Les jours sans donnée ne valent pas zéro. La catégorie actuelle du
-            produit ne modifie pas ses chiffres historiques.
-          </Text>
-          <Text style={{ color: colors.muted }}>
-            {result?.reference
-              ? `Référence : ${explorerLabel(result.reference)}${result.mode === "EXPLICIT" ? " · période explicitement demandée" : view.frame.period.kind === "month" || view.frame.period.kind === "year" ? " · calendrier civil, sans alignement des jours de semaine" : " · mêmes jours de semaine en N−1"}`
-              : "Aucune référence comparable disponible."}
-          </Text>
-          {result?.comparison ? (
-            <Text style={{ color: colors.ink }}>
-              {formatCurrency(result.comparison.currentValue)} contre{" "}
-              {formatCurrency(result.comparison.referenceValue)} sur{" "}
-              {result.comparedDays} jour(s){" "}
-              {result.mode === "EXPLICIT"
-                ? "de la période citée"
-                : "clos comparables"}
-              .
-            </Text>
-          ) : (
-            <Text style={{ color: colors.warning }}>
-              La couverture ne permet pas de conclure à une évolution
-              comparable.
-            </Text>
-          )}
-        </DetailsDisclosure>
-        <SecondaryButton
-          label="Ouvrir dans Analyses"
-          onPress={() => onExplore()}
-        />
       </View>
+      <View
+        style={{
+          flexDirection: "row",
+          flexWrap: "wrap",
+          gap: 14,
+          paddingVertical: 8,
+        }}
+      >
+        {summaries.map((metric) => {
+          const value = data?.[metric];
+          const partial = Boolean(
+            value && (value.coverage.partial || value.coverage.missing),
+          );
+          return (
+            <Pressable
+              key={metric}
+              accessibilityRole="button"
+              accessibilityLabel={`${labels[metric]} : ${value?.total == null ? "indisponible" : formatCurrency(value.total)}. Afficher le graphique.`}
+              accessibilityHint={productMetricDetail(value, view.frame.period)}
+              onPress={() => onMetric(metric)}
+              style={{
+                flex: 1,
+                minWidth: 115,
+                minHeight: 70,
+                gap: 7,
+                paddingVertical: 4,
+              }}
+            >
+              <Text style={{ color: colors.muted, fontSize: 12 }}>
+                {labels[metric]}
+              </Text>
+              <Text
+                adjustsFontSizeToFit
+                minimumFontScale={0.7}
+                numberOfLines={1}
+                style={{
+                  color: colors.ink,
+                  fontSize: value?.total === null ? 18 : 24,
+                  fontWeight: "600",
+                  letterSpacing: -0.6,
+                  fontVariant: ["tabular-nums"],
+                }}
+              >
+                {!value
+                  ? "…"
+                  : value.total === null
+                    ? "Indisponible"
+                    : formatCurrency(value.total)}
+              </Text>
+              {partial && value?.total !== null ? (
+                <Text style={{ color: colors.warning, fontSize: 12 }}>
+                  Partiel
+                </Text>
+              ) : null}
+            </Pressable>
+          );
+        })}
+      </View>
+      <SecondaryButton
+        label="Ouvrir dans Analyses"
+        onPress={() => onExplore()}
+      />
       {error ? (
         <InlineAlert title="Lecture interrompue" message={error} />
       ) : null}
@@ -287,6 +351,52 @@ export function ProductPerformanceView({
           onPress={onRefresh}
         />
       ) : null}
+      <BottomSheet
+        visible={details}
+        title="Comprendre les chiffres"
+        onClose={() => setDetails(false)}
+        swipeToClose
+      >
+        <Text style={{ color: colors.ink, fontSize: 16, fontWeight: "600" }}>
+          {titles[view.metric]}
+        </Text>
+        <Text style={{ color: colors.muted, lineHeight: 22 }}>
+          {productMetricDetail(result, view.frame.period)}
+        </Text>
+        {result ? (
+          <Text style={{ color: colors.muted, lineHeight: 22 }}>
+            {productCoverageLabel(result.coverage)}
+          </Text>
+        ) : null}
+        <Text style={{ color: colors.muted, lineHeight: 22 }}>
+          Les jours sans donnée ne valent pas zéro. La catégorie actuelle du
+          produit ne modifie pas ses chiffres historiques.
+        </Text>
+        <Text style={{ color: colors.muted, lineHeight: 22 }}>
+          {result?.reference
+            ? `Référence : ${explorerLabel(result.reference)}${result.mode === "EXPLICIT" ? " · période explicitement demandée" : view.frame.period.kind === "month" || view.frame.period.kind === "year" ? " · calendrier civil, sans alignement des jours de semaine" : " · mêmes jours de semaine en N−1"}`
+            : "Aucune référence comparable disponible."}
+        </Text>
+        {comparison ? (
+          <Text style={{ color: colors.ink, lineHeight: 22 }}>
+            {formatCurrency(comparison.currentValue)} contre{" "}
+            {formatCurrency(comparison.referenceValue)} sur{" "}
+            {result!.comparedDays} jour(s){" "}
+            {result!.mode === "EXPLICIT"
+              ? "de la période citée"
+              : "clos comparables"}
+            .
+          </Text>
+        ) : (
+          <Text style={{ color: colors.warning, lineHeight: 22 }}>
+            La couverture ne permet pas de conclure à une évolution comparable.
+          </Text>
+        )}
+        <SecondaryButton
+          label="Fermer les explications"
+          onPress={() => setDetails(false)}
+        />
+      </BottomSheet>
     </View>
   );
 }

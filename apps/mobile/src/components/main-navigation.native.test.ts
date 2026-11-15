@@ -40,6 +40,7 @@ vi.mock("react-native", () => ({
   View: "View",
   Pressable: "Pressable",
   Image: "Image",
+  Platform: { OS: "ios" },
   StyleSheet: { create: (styles: object) => styles },
   useWindowDimensions: () => ({ fontScale: 1 }),
 }));
@@ -58,6 +59,18 @@ vi.mock("expo-router", () => ({
       createElement("Tabs", {}, children),
     { Screen: (props: object) => createElement("TabScreen", props) },
   ),
+}));
+vi.mock("../documents/mercalys-import-screen", () => ({
+  MercalysImportScreen: ({
+    header,
+    landing,
+    footer,
+    ...props
+  }: {
+    header: ReactNode;
+    landing: ReactNode;
+    footer: ReactNode;
+  }) => createElement("MercalysReader", props, header, landing, footer),
 }));
 vi.mock("../auth/auth-provider", () => ({
   useAuth: () => ({
@@ -137,33 +150,47 @@ it.each(["Journal", "Analyses", "Copilote", "Imports"])(
     expect(runtime.push).toHaveBeenLastCalledWith("/settings");
   },
 );
-it("keeps four direct intake destinations and routes the shared file chooser into the existing workflows", async () => {
+it("shows one canonical Mercalys history and retains the other intake paths", async () => {
   await mount(createElement(ImportsHub));
+  expect(
+    tree!.root.findAll((n) => String(n.type) === "MercalysReader"),
+  ).toHaveLength(1);
   for (const [title, path] of [
-    ["Mercalys", "/mercalys-imports"],
-    ["Casse", "/waste-tickets"],
+    ["Tickets de casse", "/waste-tickets"],
     ["Documents commerciaux", "/commercial-documents"],
-    ["Emails reçus", "/email-inbox"],
   ]) {
     await act(() => menu(title).props.onPress());
     expect(runtime.push).toHaveBeenLastCalledWith(path);
   }
-  expect(tree!.root.findAll((n) => String(n.type) === "MenuRow")).toHaveLength(
-    4,
-  );
-  await act(() =>
+  const press = (label: string) =>
     tree!.root
       .find(
         (n) =>
-          String(n.type) === "Button" &&
-          n.props.label === "Importer un fichier",
+          String(n.type) === "Pressable" &&
+          n.props.accessibilityLabel === label,
       )
-      .props.onPress(),
-  );
-  expect(tree!.root.findAll((n) => String(n.type) === "Sheet")).toHaveLength(1);
+      .props.onPress();
+  await act(() => press("Documents reçus par email"));
+  expect(runtime.push).toHaveBeenLastCalledWith("/email-inbox");
+  await act(() => press("Synchronisation et envois"));
+  expect(runtime.push).toHaveBeenLastCalledWith("/sync-center");
+  await act(() => press("Importer un fichier"));
+  const sheet = tree!.root.find((n) => String(n.type) === "Sheet");
+  const onDismiss = sheet.props.onDismiss;
   await act(() => menu("Ventes Mercalys").props.onPress());
-  expect(runtime.push).toHaveBeenLastCalledWith("/mercalys-imports");
   expect(tree!.root.findAll((n) => String(n.type) === "Sheet")).toHaveLength(0);
+  expect(
+    tree!.root.find((n) => String(n.type) === "MercalysReader").props.importMenu
+      .visible,
+  ).toBe(false);
+  await act(() => onDismiss());
+  expect(
+    tree!.root.find((n) => String(n.type) === "MercalysReader").props.importMenu
+      .visible,
+  ).toBe(true);
+  expect(
+    tree!.root.findAll((n) => String(n.type) === "MercalysReader"),
+  ).toHaveLength(1);
 });
 it("retains the selected Journal week and reuses existing observation capture", async () => {
   await mount(createElement(JournalScreen));
@@ -172,8 +199,7 @@ it("retains the selected Journal week and reuses existing observation capture", 
       .find(
         (n) =>
           String(n.type) === "Pressable" &&
-          n.props.accessibilityRole === "tab" &&
-          !n.props.accessibilityState.selected,
+          n.props.accessibilityLabel === "Ouvrir Ma semaine",
       )
       .props.onPress(),
   );

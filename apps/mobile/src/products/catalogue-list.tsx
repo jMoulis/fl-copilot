@@ -13,7 +13,6 @@ import { FlatList, Pressable, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import {
-  AppHeader,
   BottomSheet,
   EmptyState,
   InlineAlert,
@@ -91,7 +90,7 @@ export function CatalogueList({
         ref={list}
         data={rows}
         keyExtractor={(item) => item.record.entity.id}
-        contentContainerStyle={{ padding: 16, paddingBottom: 32, gap: 8 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 32, gap: 0 }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         initialNumToRender={20}
@@ -113,21 +112,27 @@ export function CatalogueList({
         scrollEventThrottle={120}
         ListHeaderComponent={
           <View className="gap-4 pb-4">
-            {onBack ? (
-              <SecondaryButton label="Retour" onPress={onBack} />
-            ) : null}
-            <AppHeader
-              compact
-              title="Produits"
-              action={
+            <View className="flex-row items-center gap-3">
+              {onBack ? (
                 <IconButton
-                  label="Ajouter un produit"
-                  icon="add"
-                  disabled={storeMissing}
-                  onPress={onAdd}
+                  label="Retour"
+                  icon="chevron-back"
+                  onPress={onBack}
                 />
-              }
-            />
+              ) : null}
+              <Text
+                accessibilityRole="header"
+                className="flex-1 text-2xl font-bold text-ink"
+              >
+                Produits
+              </Text>
+              <IconButton
+                label="Ajouter un produit"
+                icon="add"
+                disabled={storeMissing}
+                onPress={onAdd}
+              />
+            </View>
             <View className="flex-row items-center gap-2">
               <View className="flex-1 flex-row items-center gap-3 rounded-2xl border border-line bg-surface px-3">
                 <Ionicons
@@ -191,7 +196,7 @@ export function CatalogueList({
                   className="min-h-12 justify-center py-1"
                 >
                   <View
-                    className={`rounded-full border px-4 py-2 ${view.category === category ? "border-forest bg-forest" : "border-line bg-surface"}`}
+                    className={`rounded-full border px-4 py-2 ${view.category === category ? "border-accent bg-accent" : "border-line bg-surface"}`}
                   >
                     <Text
                       className={
@@ -368,7 +373,7 @@ export function CatalogueChoices({
             accessibilityState={{ checked: value === key }}
             accessibilityLabel={`${title} : ${label}`}
             onPress={() => onChange(key!)}
-            className={`min-h-12 justify-center rounded-2xl border px-4 py-3 ${value === key ? "border-forest bg-forest" : "border-line bg-surface"}`}
+            className={`min-h-12 justify-center rounded-2xl border px-4 py-3 ${value === key ? "border-accent bg-accent" : "border-line bg-surface"}`}
           >
             <Text
               className={
@@ -398,19 +403,19 @@ const CatalogueRow = memo(function CatalogueRow({
       accessibilityRole="button"
       accessibilityLabel={`Voir ${p.label}`}
       onPress={() => onOpen(p.id)}
-      className="flex-row items-center gap-3 rounded-2xl border border-line bg-surface px-3 py-3"
+      className="flex-row items-center gap-3 border-b border-line py-4"
       style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
     >
       <ProductVisual
         category={p.category}
-        size={52}
+        size={60}
         resolution={resolveLibraryState(visuals?.state ?? null, p)}
         readUri={visuals?.readUri}
       />
       <View className="flex-1 gap-1.5">
         <Text className="text-base font-semibold text-ink">{p.label}</Text>
         <View className="flex-row flex-wrap items-center gap-2">
-          <Text className="text-xs text-muted">
+          <Text className="text-sm text-muted">
             {natureLabels[p.nature]} · {unitLabels[p.salesUnit]}
           </Text>
           <StatusBadge

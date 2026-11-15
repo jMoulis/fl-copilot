@@ -473,9 +473,15 @@ export function DailyTaskList({
           disabled={busy}
           style={s.checkTarget}
         >
-          <View style={[s.check, done && s.checked]}>
-            {done ? (
-              <Ionicons name="checkmark" size={16} color={c.canvas} />
+          <View style={t ? [s.check, done && s.checked] : s.commercialMark}>
+            {!t ? (
+              <Ionicons
+                name={done ? "checkmark-circle-outline" : "calendar-outline"}
+                size={22}
+                color={c.mint}
+              />
+            ) : done ? (
+              <Ionicons name="checkmark" size={16} color={c.onAccent} />
             ) : null}
           </View>
         </Pressable>
@@ -486,6 +492,7 @@ export function DailyTaskList({
           onPress={activate}
         >
           <Text
+            numberOfLines={2}
             style={[
               s.label,
               closed && { color: c.muted, textDecorationLine: "line-through" },
@@ -541,7 +548,7 @@ export function DailyTaskList({
           style={s.add}
           onPress={() => void edit(null)}
         >
-          <Ionicons name="add" size={19} color={c.canvas} />
+          <Ionicons name="add" size={19} color={c.onAccent} />
           <Text style={s.addText}>Ajouter</Text>
         </Pressable>
       </View>
@@ -813,22 +820,32 @@ const s = StyleSheet.create({
     flexDirection: "row",
     gap: 4,
     alignItems: "center",
-    backgroundColor: c.mint,
+    backgroundColor: c.accent,
     borderRadius: 999,
     paddingHorizontal: 14,
     minHeight: 42,
   },
-  addText: { color: c.canvas, fontSize: 13, fontWeight: "600" },
+  addText: { color: c.onAccent, fontSize: 13, fontWeight: "600" },
   count: { fontSize: 12, color: c.muted, marginTop: 8, marginBottom: 12 },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    minHeight: 82,
-    borderTopWidth: 1,
+    minHeight: 88,
+    backgroundColor: c.surface,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
     borderColor: c.line,
     gap: 4,
   },
-  checkTarget: { width: 37, minHeight: 48, justifyContent: "center" },
+  commercialMark: {
+    width: 32,
+    height: 40,
+    borderRadius: 11,
+    backgroundColor: c.surface,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checkTarget: { width: 40, minHeight: 48, justifyContent: "center" },
   check: {
     width: 22,
     height: 22,
@@ -838,7 +855,7 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  checked: { backgroundColor: c.mint, borderColor: c.mint },
+  checked: { backgroundColor: c.accent, borderColor: c.accent },
   rowBody: { flex: 1, paddingVertical: 15, paddingRight: 8 },
   label: { fontSize: 15, lineHeight: 21, fontWeight: "500", color: c.ink },
   meta: { fontSize: 12, lineHeight: 18, color: c.muted, marginTop: 3 },

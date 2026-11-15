@@ -1,3 +1,15 @@
+## Current direction — Marché solaire, 15 November 2026
+
+The owner validates the current navigation studies and the five-screen light-led
+Marché solaire identity. The native implementation uses warm white, forest KPI
+blocks, lime actions, actual product media and quieter source/coverage details.
+Analyses opens a fiche on the first product tap; explicit filters remain in the
+filter panel. Details keep their origin/back behavior; temporary panels use a
+fixed close and a separate scrolling body. This supersedes the older Dark Premium
+and five-tab visual assumptions below, not the canonical business workflows.
+Implementation/verification and native/iPhone release are tracked separately in
+`../qa/MARCHE_SOLAIRE_NATIVE_2026_11_15.md`.
+
 ## Journal continuation — historical weather, 13 November 2026
 
 Reuse the approved compact weather/banner and source sheet for observed station

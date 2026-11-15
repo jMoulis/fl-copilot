@@ -11,7 +11,16 @@ import {
   localOperationFailureMessage,
 } from "../observability/local-operation-failure";
 import { MercalysImportProductPicker } from "./mercalys-import-product-picker";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
+import { ImportScreenHeader } from "./imports-presentation";
 import {
   Modal,
   Pressable,
@@ -27,7 +36,6 @@ import { Directory, File as ExpoFile, Paths } from "expo-file-system";
 import type { Product, ProductMatchCatalog } from "@fl-copilot/domain";
 import { useAuth } from "../auth/auth-provider";
 import {
-  AppHeader,
   AppScreen,
   InlineAlert,
   PrimaryButton,
@@ -115,7 +123,19 @@ export function MercalysImportScreen({
   retainedAsset,
   initialBatchId,
   closeLabel,
+  header,
+  landing,
+  footer,
+  importMenu,
+  embedded = false,
+  externalScrollRef,
 }: {
+  header?: ReactNode;
+  landing?: ReactNode;
+  footer?: ReactNode;
+  importMenu?: { visible: boolean; onClose(): void };
+  embedded?: boolean;
+  externalScrollRef?: RefObject<ScrollView | null>;
   initialBatchId?: string;
   closeLabel?: string;
   retainedAsset?: NativeDocumentPickerAsset & { expectedChecksum: string };
@@ -125,9 +145,12 @@ export function MercalysImportScreen({
   onBusyChange?(busy: boolean): void;
   onChanged?(): void;
 } = {}) {
-  const fileScroll = useRef<ScrollView>(null);
-  const scrollToStart = () =>
-    fileScroll.current?.scrollTo({ y: 0, animated: true });
+  const localScroll = useRef<ScrollView>(null);
+  const fileScroll = externalScrollRef ?? localScroll;
+  const scrollToStart = useCallback(
+    () => fileScroll.current?.scrollTo({ y: 0, animated: true }),
+    [fileScroll],
+  );
   const [batchBusy, setBatchBusy] = useState(false);
   const [uploadRevision, setUploadRevision] = useState(0);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
@@ -589,6 +612,7 @@ export function MercalysImportScreen({
       setPublishing(false);
     }
   }, [
+    scrollToStart,
     storeId,
     filename,
     summary,
@@ -703,37 +727,34 @@ export function MercalysImportScreen({
     }
   }
 
-  return (
-    <AppScreen scrollRef={fileScroll}>
-      <AppHeader
-        title={
-          retainedAsset
-            ? (filename ?? retainedAsset.name).split("/").at(-1)!
-            : "Imports Mercalys"
-        }
-        subtitle={
-          retainedAsset
-            ? retainedAsset.name.includes("/")
-              ? retainedAsset.name
-              : undefined
-            : "Ajoutez des exports, puis retrouvez chaque lot et ses fichiers."
-        }
-      />
-
-      {onClose ? (
-        <SecondaryButton
-          label={
-            closeLabel ??
-            (retainedAsset ? "Fermer le fichier" : "Retour au chat")
-          }
-          disabled={loading || publishing || resolvingProducts || batchBusy}
-          onPress={onClose}
-        />
-      ) : null}
+  const screenHeader = header ?? (
+    <ImportScreenHeader
+      title={
+        retainedAsset
+          ? (filename ?? retainedAsset.name).split("/").at(-1)!
+          : "Imports Mercalys"
+      }
+      subtitle={
+        retainedAsset && retainedAsset.name.includes("/")
+          ? retainedAsset.name
+          : undefined
+      }
+      onClose={onClose}
+      closeLabel={
+        closeLabel ?? (retainedAsset ? "Fermer le fichier" : "Retour au chat")
+      }
+      disabled={busy}
+      closeIcon={retainedAsset ? "close-outline" : "chevron-back"}
+    />
+  );
+  const content = (
+    <>
+      {landing}
       {!retainedAsset && storeId && actorUserId && hasNativeFilePicker ? (
         <MercalysBatchPanel
           key={`${storeId}/${actorUserId}/${conversationId ?? "manual"}`}
           db={sqlite}
+          importMenu={importMenu}
           storeId={storeId}
           ownerId={actorUserId}
           archiveContext={{
@@ -786,10 +807,18 @@ export function MercalysImportScreen({
             });
             return result.canceled ? undefined : result.assets[0];
           }}
-          renderReview={(asset, close, reportBusy, reportChanged) => (
+          renderReview={(
+            asset,
+            close,
+            reportBusy,
+            reportChanged,
+            reviewScroll,
+          ) => (
             <MercalysImportScreen
               key={asset.uri}
               retainedAsset={asset}
+              embedded
+              externalScrollRef={reviewScroll}
               conversationId={conversationId}
               onClose={close}
               onBusyChange={reportBusy}
@@ -851,7 +880,7 @@ export function MercalysImportScreen({
                     setResolutionKey(undefined);
                     scrollToStart();
                   }}
-                  className={`min-h-12 justify-center rounded-xl border px-3 py-2 ${section === key ? "border-forest bg-forest" : "border-line bg-surface"}`}
+                  className={`min-h-11 justify-center rounded-full border px-3 py-2 ${section === key ? "border-accent bg-accent" : "border-line bg-surface"}`}
                 >
                   <Text
                     className={
@@ -1005,6 +1034,7 @@ export function MercalysImportScreen({
           <DuplicateSummary duplicate={duplicate} onCancel={reset} />
         ) : null}
       </View>
+      {footer}
       <Modal
         visible={recoveryOpen}
         animationType="slide"
@@ -1014,13 +1044,16 @@ export function MercalysImportScreen({
           if (!batchBusy) setRecoveryOpen(false);
         }}
       >
-        <AppScreen>
-          <AppHeader title="Envois des fichiers" />
-          <SecondaryButton
-            label="Retour aux imports"
-            disabled={batchBusy}
-            onPress={() => setRecoveryOpen(false)}
-          />
+        <AppScreen
+          header={
+            <ImportScreenHeader
+              title="Envois des fichiers"
+              closeLabel="Retour aux imports"
+              disabled={batchBusy}
+              onClose={() => setRecoveryOpen(false)}
+            />
+          }
+        >
           {recoveryOpen && storeId && actorUserId ? (
             <SourceUploadRecoveryPanel
               key={`${storeId}/${actorUserId}/${conversationId ?? "manual"}`}
@@ -1044,6 +1077,13 @@ export function MercalysImportScreen({
           ) : null}
         </AppScreen>
       </Modal>
+    </>
+  );
+  return embedded ? (
+    <View className="gap-5">{content}</View>
+  ) : (
+    <AppScreen scrollRef={fileScroll} header={screenHeader}>
+      {content}
     </AppScreen>
   );
 }
@@ -1145,7 +1185,13 @@ function ValidationSummary({
 }) {
   return (
     <>
-      <SectionCard title="Résumé de validation">
+      <View className="gap-4 border-b border-line pb-5">
+        <Text
+          accessibilityRole="header"
+          className="text-xl font-semibold text-ink"
+        >
+          Résumé du fichier
+        </Text>
         <SummaryLine
           label="Source"
           value={
@@ -1161,11 +1207,22 @@ function ValidationSummary({
             summary.businessPeriodEnd,
           )}
         />
-        <Text className="text-xl font-semibold text-ink">
-          {summary.detectedLineCount} ligne
-          {summary.detectedLineCount > 1 ? "s" : ""} détectée
-          {summary.detectedLineCount > 1 ? "s" : ""}
-        </Text>
+        <View className="flex-row gap-3 py-2">
+          <FileMetric value={summary.detectedLineCount} label="lignes lues" />
+          <FileMetric
+            value={
+              publication
+                ? publication.publishedCount
+                : Math.max(0, summary.readyCount - previouslyPublishedCount)
+            }
+            label={publication ? "publiées" : "prêtes"}
+          />
+          <FileMetric
+            value={summary.productReviewCount}
+            label="à confirmer"
+            warning
+          />
+        </View>
         <CountLine
           label="Prêtes à ajouter"
           value={Math.max(0, summary.readyCount - previouslyPublishedCount)}
@@ -1177,7 +1234,7 @@ function ValidationSummary({
           tone="review"
         />
         <CountLine label="Anomalies" value={summary.errorCount} tone="error" />
-      </SectionCard>
+      </View>
 
       {summary.issueCodes.length > 0 ? (
         <InlineAlert
@@ -1186,7 +1243,13 @@ function ValidationSummary({
         />
       ) : null}
 
-      <SectionCard title="Publication">
+      <View className="gap-4">
+        <Text
+          accessibilityRole="header"
+          className="text-xl font-semibold text-ink"
+        >
+          Publication
+        </Text>
         {publication ? (
           <SourceOriginalButton
             sourceDocumentId={publication.sourceDocumentId}
@@ -1237,8 +1300,29 @@ function ValidationSummary({
           label={publication ? "Importer un autre fichier" : "Annuler l’import"}
           onPress={onCancel}
         />
-      </SectionCard>
+      </View>
     </>
+  );
+}
+
+function FileMetric({
+  value,
+  label,
+  warning = false,
+}: {
+  value: number;
+  label: string;
+  warning?: boolean;
+}) {
+  return (
+    <View className="min-w-0 flex-1 gap-2">
+      <Text
+        className={`text-3xl font-semibold tracking-tight ${warning ? "text-warning" : "text-ink"}`}
+      >
+        {value}
+      </Text>
+      <Text className="text-xs leading-5 text-muted">{label}</Text>
+    </View>
   );
 }
 
@@ -1267,6 +1351,7 @@ function ProductResolutionSummary({
 }) {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
+  const [expanded, setExpanded] = useState<string | null>();
   const creatable = resolutions.filter(({ canCreate }) => canCreate);
   const productById = new Map(
     catalog.products.map((product) => [product.id, product]),
@@ -1285,7 +1370,13 @@ function ProductResolutionSummary({
     (currentPage + 1) * 20,
   );
   return (
-    <SectionCard title="Produits à confirmer">
+    <View className="gap-4">
+      <Text
+        accessibilityRole="header"
+        className="text-2xl font-semibold tracking-tight text-ink"
+      >
+        Produits à confirmer
+      </Text>
       <SecondaryButton
         label="Voir tous les produits à confirmer"
         onPress={onShowAll}
@@ -1328,61 +1419,80 @@ function ProductResolutionSummary({
         const candidates = resolution.candidateProductIds
           .map((id) => productById.get(id))
           .filter((product): product is Product => product !== undefined);
+        const isExpanded =
+          expanded === resolution.key ||
+          (expanded === undefined &&
+            resolution.key === visibleResolutions[0]?.key);
         return (
           <View
             key={resolution.key}
             className="gap-2 border-t border-line pt-4"
           >
-            <Text className="text-base font-semibold text-ink">
-              {resolution.label}
-            </Text>
-            <Text className="text-sm text-muted">
-              {resolution.identifiers
-                .map(({ type, value }) => `${type} ${value}`)
-                .join(" · ") || "Aucun identifiant exploitable"}
-            </Text>
-            {candidates.slice(0, 3).map((product) => (
-              <SecondaryButton
-                key={product.id}
-                label={`Associer à ${product.label}`}
-                disabled={loading}
-                onPress={() => onConfirm(resolution, product.id)}
-              />
-            ))}
-            <MercalysImportProductPicker
-              storeId={storeId}
-              source={{
-                label: resolution.label,
-                identifiers: resolution.identifiers,
-              }}
-              catalog={catalog}
-              conflictedProductIds={catalog.conflictedProductIds}
-              busy={loading}
-              onConfirm={(id) => onConfirm(resolution, id)}
-            />
-            {resolution.expectedProductIds ? (
-              <Text className="text-sm text-warning">
-                Cette décision réassocie les codes de cette référence pour les
-                prochains imports. Les autres codes du produit actuel sont
-                conservés.
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Examiner ${resolution.label}`}
+              accessibilityState={{ expanded: isExpanded }}
+              onPress={() => setExpanded(isExpanded ? null : resolution.key)}
+              className="min-h-11 flex-row items-center justify-between gap-3"
+            >
+              <Text className="min-w-0 flex-1 text-base font-semibold leading-6 text-ink">
+                {resolution.label}
               </Text>
-            ) : null}
-            {resolution.canCreate ? (
-              <SecondaryButton
-                label="Créer ce produit"
-                disabled={loading}
-                onPress={() => onCreate([resolution])}
-              />
-            ) : resolution.canCreateAsDistinct ? (
-              <SecondaryButton
-                label="Créer comme nouveau produit"
-                disabled={loading}
-                onPress={() => onCreateDistinct(resolution)}
-              />
-            ) : candidates.length === 0 ? (
               <Text className="text-sm text-warning">
-                Recherchez le produit existant à associer à cette ligne.
+                {isExpanded ? "−" : "+"}
               </Text>
+            </Pressable>
+            {isExpanded ? (
+              <View className="gap-3 border-l-2 border-warning-soft pl-3">
+                <Text className="text-sm text-muted">
+                  {resolution.identifiers
+                    .map(({ type, value }) => `${type} ${value}`)
+                    .join(" · ") || "Aucun identifiant exploitable"}
+                </Text>
+                {candidates.slice(0, 3).map((product) => (
+                  <SecondaryButton
+                    key={product.id}
+                    label={`Associer à ${product.label}`}
+                    disabled={loading}
+                    onPress={() => onConfirm(resolution, product.id)}
+                  />
+                ))}
+                <MercalysImportProductPicker
+                  storeId={storeId}
+                  source={{
+                    label: resolution.label,
+                    identifiers: resolution.identifiers,
+                  }}
+                  catalog={catalog}
+                  conflictedProductIds={catalog.conflictedProductIds}
+                  busy={loading}
+                  onConfirm={(id) => onConfirm(resolution, id)}
+                />
+                {resolution.expectedProductIds ? (
+                  <Text className="text-sm text-warning">
+                    Cette décision réassocie les codes de cette référence pour
+                    les prochains imports. Les autres codes du produit actuel
+                    sont conservés.
+                  </Text>
+                ) : null}
+                {resolution.canCreate ? (
+                  <SecondaryButton
+                    label="Créer ce produit"
+                    disabled={loading}
+                    onPress={() => onCreate([resolution])}
+                  />
+                ) : resolution.canCreateAsDistinct ? (
+                  <SecondaryButton
+                    label="Créer comme nouveau produit"
+                    disabled={loading}
+                    onPress={() => onCreateDistinct(resolution)}
+                  />
+                ) : candidates.length === 0 ? (
+                  <Text className="text-sm text-warning">
+                    Recherchez le produit existant à associer à cette ligne.
+                  </Text>
+                ) : null}
+              </View>
             ) : null}
           </View>
         );
@@ -1407,7 +1517,7 @@ function ProductResolutionSummary({
           />
         </View>
       ) : null}
-    </SectionCard>
+    </View>
   );
 }
 

@@ -309,7 +309,9 @@ export function ExecutionLinkCard({
                   minHeight: 44,
                   padding: 14,
                   borderRadius: 12,
-                  backgroundColor: checked ? colors.forest : colors.muted,
+                  backgroundColor: checked
+                    ? colors.accent
+                    : colors.surfaceMuted,
                 }}
               >
                 <Text

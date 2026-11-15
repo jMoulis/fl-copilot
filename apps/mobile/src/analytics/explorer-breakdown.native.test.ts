@@ -41,7 +41,6 @@ it("uses accessible real controls to select declines, percentage and reverse ord
   const storeId = "00000000-0000-4000-8000-000000000001",
     productId = "00000000-0000-4000-8000-000000000002";
   const changes = vi.fn(),
-    onProduct = vi.fn(),
     onOpenProduct = vi.fn();
   let tree: ReactTestRenderer | undefined;
   let referenceValue = "100";
@@ -95,7 +94,6 @@ it("uses accessible real controls to select declines, percentage and reverse ord
         setList(next);
       },
       onCategory: vi.fn(),
-      onProduct,
       onOpenProduct,
       onPage: vi.fn(),
     });
@@ -137,18 +135,21 @@ it("uses accessible real controls to select declines, percentage and reverse ord
         .findAll(
           (n) =>
             String(n.type) === "Pressable" &&
-            String(n.props.accessibilityLabel).startsWith("Explorer : Poire"),
+            String(n.props.accessibilityLabel).startsWith(
+              "Ouvrir la fiche : Poire",
+            ),
         )[0]
         .props.onPress(),
     );
-    expect(onProduct).toHaveBeenCalledWith(productId);
+    expect(onOpenProduct).toHaveBeenCalledWith(productId);
+    const priorCalls = onOpenProduct.mock.calls.length;
     expect(JSON.stringify(tree!.toJSON())).toContain("Jour");
     expect(JSON.stringify(tree!.toJSON())).not.toContain("jours complets");
     await act(() =>
       find("Informations sur les chiffres : Poire").props.onPress(),
     );
     expect(JSON.stringify(tree!.toJSON())).toContain("jours complets");
-    expect(onOpenProduct).not.toHaveBeenCalled();
+    expect(onOpenProduct).toHaveBeenCalledTimes(priorCalls);
     expect(
       tree!.root.find((node) => String(node.type) === "Sheet").props
         .swipeToClose,
@@ -192,7 +193,9 @@ it("uses accessible real controls to select declines, percentage and reverse ord
     const zeroReferenceRow = tree!.root.findAll(
       (node) =>
         String(node.type) === "Pressable" &&
-        String(node.props.accessibilityLabel).startsWith("Explorer : Poire"),
+        String(node.props.accessibilityLabel).startsWith(
+          "Ouvrir la fiche : Poire",
+        ),
     )[0]!;
     expect(zeroReferenceRow.props.accessibilityLabel).toContain(
       "Évolution : +50",

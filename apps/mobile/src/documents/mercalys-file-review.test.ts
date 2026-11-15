@@ -34,6 +34,12 @@ const p = vi.hoisted(() => ({
   recompute: vi.fn(async () => ({ failedJobs: 0 })),
 }));
 vi.mock("expo-router", () => ({ useIsFocused: () => true }));
+vi.mock("@expo/vector-icons/Ionicons", () => ({ default: "Icon" }));
+vi.mock("react-native-safe-area-context", () => ({
+  SafeAreaProvider: ({ children }: { children: ReactNode }) =>
+    createElement("SafeAreaProvider", {}, children),
+  initialWindowMetrics: null,
+}));
 vi.mock("react-native", () => ({
   StyleSheet: { create: (value: unknown) => value },
   Text: "Text",
@@ -46,12 +52,14 @@ vi.mock("react-native", () => ({
 vi.mock("../components/ui", () => {
   const box = ({
     children,
+    header,
     title,
     label,
     message,
     ...props
   }: {
     children?: ReactNode;
+    header?: ReactNode;
     title?: string;
     label?: string;
     message?: string;
@@ -59,6 +67,7 @@ vi.mock("../components/ui", () => {
     createElement(
       "UI",
       { ...props, title, label, message },
+      header,
       title,
       label,
       message,
@@ -189,7 +198,9 @@ function text(n: ReactTestInstance): string {
 }
 function button(label: string) {
   return renderer!.root.findAll(
-    (n) => n.props.label === label && typeof n.props.onPress === "function",
+    (n) =>
+      (n.props.label === label || n.props.accessibilityLabel === label) &&
+      typeof n.props.onPress === "function",
   )[0]!;
 }
 async function press(label: string) {

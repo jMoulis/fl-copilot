@@ -68,7 +68,6 @@ export function ExplorerBreakdown({
   period,
   metric,
   onCategory,
-  onProduct,
   onOpenProduct,
   onPage,
   visuals,
@@ -82,7 +81,6 @@ export function ExplorerBreakdown({
   productList?: AnalyticsProductList;
   onProductList?: (value: AnalyticsProductList) => void;
   onCategory: (c: NonNullable<AnalyticsExplorerFilters["category"]>) => void;
-  onProduct: (id: string) => void;
   onOpenProduct: (id: string) => void;
   onPage: (offset: number) => void;
   visuals?: SharedProductVisuals;
@@ -357,13 +355,12 @@ export function ExplorerBreakdown({
               <View
                 key={p.productId}
                 style={{
-                  paddingVertical: 10,
-                  paddingLeft: 10,
+                  paddingVertical: 13,
+                  paddingLeft: 9,
                   paddingRight: 2,
                   borderRadius: 20,
                   backgroundColor: colors.surface,
-                  borderWidth: 1,
-                  borderColor: colors.line,
+                  borderWidth: 0,
                   flexDirection: "row",
                   alignItems: "center",
                   gap: 2,
@@ -371,12 +368,8 @@ export function ExplorerBreakdown({
               >
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={`${data.filters.productId ? "Ouvrir la fiche" : "Explorer"} : ${p.label}. ${p.analysis.total === null ? "Montant indisponible" : formatCurrency(p.analysis.total)}${changeLabel !== null ? `. ${p.analysis.comparisonStatus === "partial" ? "Comparaison indicative : " : "Évolution : "}${changeLabel}` : ""}`}
-                  onPress={() =>
-                    data.filters.productId
-                      ? onOpenProduct(p.productId)
-                      : onProduct(p.productId)
-                  }
+                  accessibilityLabel={`Ouvrir la fiche : ${p.label}. ${p.analysis.total === null ? "Montant indisponible" : formatCurrency(p.analysis.total)}${changeLabel !== null ? `. ${p.analysis.comparisonStatus === "partial" ? "Comparaison indicative : " : "Évolution : "}${changeLabel}` : ""}`}
+                  onPress={() => onOpenProduct(p.productId)}
                   style={{
                     flex: 1,
                     minWidth: 0,
@@ -400,8 +393,8 @@ export function ExplorerBreakdown({
                       style={{
                         color: colors.ink,
                         fontWeight: "600",
-                        fontSize: 13,
-                        lineHeight: 18,
+                        fontSize: 15,
+                        lineHeight: 20,
                         letterSpacing: -0.1,
                       }}
                     >
@@ -420,7 +413,7 @@ export function ExplorerBreakdown({
                         style={{
                           color: colors.ink,
                           fontWeight: "700",
-                          fontSize: 14,
+                          fontSize: 16,
                           fontVariant: ["tabular-nums"],
                         }}
                       >
@@ -432,7 +425,7 @@ export function ExplorerBreakdown({
                         <Text
                           style={{
                             color: tone,
-                            fontSize: 11,
+                            fontSize: 12,
                             fontWeight: "600",
                             fontVariant: ["tabular-nums"],
                           }}

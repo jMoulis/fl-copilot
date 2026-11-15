@@ -60,7 +60,7 @@ export function ProductVisual({
       style={{
         width: size,
         height: size,
-        borderRadius: 16,
+        borderRadius: uri ? 0 : 16,
         backgroundColor: uri ? "transparent" : colors.surfaceMuted,
         overflow: "hidden",
         alignItems: "center",

@@ -423,14 +423,6 @@ function StoreExplorer({
                     }),
                   )
                 }
-                onProduct={(productId) =>
-                  change(
-                    drillExplorerScope(current.current!, {
-                      ...current.current!.frame.filters,
-                      productId,
-                    }),
-                  )
-                }
                 onPage={(detailsOffset) =>
                   change({
                     ...current.current!,

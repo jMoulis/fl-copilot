@@ -44,7 +44,7 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
 function RootLayout() {
   return (
     <AppProviders>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
       <Stack
         screenOptions={{
           headerShown: false,

@@ -55,6 +55,7 @@ export function CopilotChatView({
   onConversations,
   onNewConversation,
   creatingConversation = false,
+  headerActions,
   onRemember,
   onDeleteMessage,
   onAttach,
@@ -82,6 +83,7 @@ export function CopilotChatView({
   onConversations(): void;
   onNewConversation?(): void;
   creatingConversation?: boolean;
+  headerActions?: ReactNode;
   onRemember?(message: CopilotMessage): void;
   onDeleteMessage?(message: CopilotMessage): void;
   onAttach?(): void;
@@ -147,7 +149,9 @@ export function CopilotChatView({
         <Text accessibilityRole="header" numberOfLines={1} style={styles.title}>
           {title || "Copilote"}
         </Text>
-        {onNewConversation ? (
+        {headerActions ? (
+          <View style={styles.headerActions}>{headerActions}</View>
+        ) : onNewConversation ? (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Nouvelle conversation"
@@ -234,7 +238,7 @@ export function CopilotChatView({
           }
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Text style={styles.welcome}>De quoi avez-vous besoin ?</Text>
+              <Text style={styles.welcome}>On fait le point ?</Text>
               <Text style={styles.hint}>
                 Préparer la semaine, comprendre les ventes ou faire le point sur
                 le rayon.
@@ -276,15 +280,25 @@ export function CopilotChatView({
                     : styles.assistantMessage
                 }
               >
-                <Text
-                  accessibilityRole="text"
-                  style={styles.author}
-                  onLongPress={
-                    item.role === "ASSISTANT" ? onLongPress : undefined
-                  }
-                >
-                  {item.role === "USER" ? "Vous" : "Copilote"}
-                </Text>
+                <View style={styles.authorLine}>
+                  {item.role === "ASSISTANT" ? (
+                    <Ionicons
+                      name="sparkles-outline"
+                      size={15}
+                      color={colors.forest}
+                      accessible={false}
+                    />
+                  ) : null}
+                  <Text
+                    accessibilityRole="text"
+                    style={styles.author}
+                    onLongPress={
+                      item.role === "ASSISTANT" ? onLongPress : undefined
+                    }
+                  >
+                    {item.role === "USER" ? "Toi" : "Copilote"}
+                  </Text>
+                </View>
                 {item.role === "ASSISTANT" ? (
                   <AssistantAnswer
                     text={item.text}
@@ -465,16 +479,15 @@ export function CopilotChatView({
               onPress={onAttach}
               style={styles.attach}
             >
-              <Text style={styles.menuText}>＋</Text>
-              <Text style={styles.attachCaption}>Fichiers</Text>
+              <Ionicons name="add-outline" size={25} color={colors.ink} />
             </Pressable>
           ) : null}
           <TextInput
             accessibilityLabel="Message au copilote"
-            placeholder="Écrivez au copilote…"
+            placeholder="Écris au copilote…"
             placeholderTextColor={colors.muted}
             selectionColor={colors.forest}
-            keyboardAppearance="dark"
+            keyboardAppearance="light"
             multiline
             maxLength={6000}
             value={draft}
@@ -496,7 +509,7 @@ export function CopilotChatView({
             }}
             style={[styles.send, !canSend && styles.disabled]}
           >
-            <Text style={styles.sendText}>↑</Text>
+            <Ionicons name="arrow-up" size={23} color={colors.onAccent} />
           </Pressable>
         </View>
       </View>
@@ -522,25 +535,30 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 12,
+    minHeight: 62,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderBottomWidth: 1,
     borderBottomColor: colors.line,
   },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 2 },
   menu: {
-    width: 48,
-    height: 48,
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
   },
-  menuText: { fontSize: 25, color: colors.ink },
   title: {
     flex: 1,
-    marginLeft: 8,
-    fontSize: 19,
+    minWidth: 0,
+    marginLeft: 4,
+    marginRight: 8,
+    fontSize: 18,
+    letterSpacing: -0.5,
     fontWeight: "600",
     color: colors.ink,
   },
-  history: { flexGrow: 1, padding: 18, gap: 24 },
+  history: { flexGrow: 1, padding: 20, gap: 24 },
   empty: { flex: 1, justifyContent: "center", paddingVertical: 60 },
   welcome: {
     color: colors.ink,
@@ -551,13 +569,21 @@ const styles = StyleSheet.create({
   hint: { fontSize: 16, lineHeight: 24, color: colors.muted },
   userMessage: {
     alignSelf: "flex-end",
-    maxWidth: "90%",
+    maxWidth: "92%",
+    marginLeft: 20,
     backgroundColor: colors.surfaceMuted,
-    borderRadius: 20,
+    borderRadius: 22,
+    borderBottomRightRadius: 6,
     padding: 16,
   },
   assistantMessage: { alignSelf: "stretch", paddingVertical: 4 },
-  author: { color: colors.muted, fontSize: 12, marginBottom: 8 },
+  authorLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 8,
+  },
+  author: { color: colors.muted, fontSize: 11 },
   messageActions: {
     minWidth: 48,
     minHeight: 48,
@@ -565,9 +591,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   messageActionsLabel: { color: colors.muted, fontSize: 18 },
-  message: { color: colors.ink, fontSize: 17, lineHeight: 26 },
+  message: { color: colors.ink, fontSize: 16, lineHeight: 25 },
   attachment: { color: colors.muted, fontSize: 14, marginTop: 8 },
-  footer: { padding: 12, gap: 10, backgroundColor: colors.canvas },
+  footer: {
+    paddingHorizontal: 14,
+    paddingTop: 8,
+    paddingBottom: 10,
+    gap: 10,
+    backgroundColor: colors.canvas,
+  },
   draftAttachment: {
     width: 240,
     flexDirection: "row",
@@ -577,7 +609,6 @@ const styles = StyleSheet.create({
     paddingLeft: 12,
   },
   draftFilename: { flex: 1, color: colors.ink, fontSize: 14 },
-  attachCaption: { color: colors.muted, fontSize: 11 },
   state: { color: colors.muted, fontSize: 13, lineHeight: 19 },
   error: { color: colors.critical, fontSize: 14, lineHeight: 21 },
   retry: { minHeight: 44, justifyContent: "center" },
@@ -588,7 +619,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.line,
-    borderRadius: 26,
+    borderRadius: 24,
     padding: 6,
   },
   attach: {
@@ -609,11 +640,10 @@ const styles = StyleSheet.create({
   send: {
     width: 44,
     height: 44,
-    backgroundColor: colors.forest,
-    borderRadius: 22,
+    backgroundColor: colors.accent,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
   },
-  sendText: { color: colors.onAccent, fontSize: 25, fontWeight: "600" },
   disabled: { opacity: 0.4 },
 });

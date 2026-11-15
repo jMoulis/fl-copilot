@@ -50,10 +50,12 @@ export function ProductVisualPanel({
   product,
   controller: gallery,
   header,
+  layout = "card",
 }: {
   product: Product;
   controller: VisualLibraryController;
   header?: ReactNode;
+  layout?: "card" | "identity";
 }) {
   const [options, setOptions] = useState(false);
   const [generatorOpen, setGeneratorOpen] = useState(false);
@@ -283,40 +285,65 @@ export function ProductVisualPanel({
     );
   };
   return (
-    <View className="gap-3 rounded-3xl border border-line bg-surface p-4">
-      <View className="relative items-center justify-center rounded-2xl py-2">
-        <ProductVisual
-          category={product.category}
-          resolution={resolution}
-          size={asset ? 156 : 64}
-          readUri={gallery.readDetailUri}
-          onAvailability={setAvailable}
-        />
-        {gallery.canWrite && product.status !== "INACTIVE" ? (
-          <View style={{ position: "absolute", top: 8, right: 8 }}>
-            <IconButton
-              label={
-                asset
-                  ? "Changer l’image du produit"
-                  : "Ajouter une image au produit"
+    <View
+      className={
+        layout === "identity" ? "gap-3" : "gap-3 rounded-3xl bg-surface p-4"
+      }
+    >
+      <View
+        style={
+          layout === "identity"
+            ? {
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 12,
+                paddingVertical: 12,
               }
-              icon="camera-outline"
-              disabled={busy || gallery.loading}
-              onPress={() => {
-                void begin();
-              }}
-            />
-          </View>
+            : undefined
+        }
+      >
+        {layout === "identity" && header ? (
+          <View style={{ flex: 1, minWidth: 0 }}>{header}</View>
         ) : null}
-      </View>
-      {header ?? (
-        <Text
-          accessibilityRole="header"
-          className="text-lg font-semibold text-ink"
+        <View
+          className="relative items-center justify-center py-2"
+          style={layout === "identity" ? { width: 144 } : undefined}
         >
-          Visuel du produit
-        </Text>
-      )}
+          <ProductVisual
+            category={product.category}
+            resolution={resolution}
+            size={asset ? (layout === "identity" ? 144 : 156) : 64}
+            readUri={gallery.readDetailUri}
+            onAvailability={setAvailable}
+          />
+          {gallery.canWrite && product.status !== "INACTIVE" ? (
+            <View style={{ position: "absolute", top: 8, right: 8 }}>
+              <IconButton
+                label={
+                  asset
+                    ? "Changer l’image du produit"
+                    : "Ajouter une image au produit"
+                }
+                icon="camera-outline"
+                disabled={busy || gallery.loading}
+                onPress={() => {
+                  void begin();
+                }}
+              />
+            </View>
+          ) : null}
+        </View>
+      </View>
+      {layout !== "identity"
+        ? (header ?? (
+            <Text
+              accessibilityRole="header"
+              className="text-lg font-semibold text-ink"
+            >
+              Visuel du produit
+            </Text>
+          ))
+        : null}
       <View className="gap-2">
         <Text className="text-xs text-muted">
           {asset
@@ -370,12 +397,20 @@ export function ProductVisualPanel({
         </Text>
       ) : null}
       {asset ? (
-        <SecondaryButton
-          label={
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={
             options ? "Masquer la source et les options" : "Source et options"
           }
+          accessibilityState={{ expanded: options }}
           onPress={() => setOptions(!options)}
-        />
+          className="min-h-12 flex-row items-center justify-between gap-3 border-b border-line py-2"
+        >
+          <Text className="text-sm text-muted">Source et options</Text>
+          <Text accessible={false} className="text-lg text-forest">
+            {options ? "−" : "+"}
+          </Text>
+        </Pressable>
       ) : null}
       {asset && options ? (
         <>

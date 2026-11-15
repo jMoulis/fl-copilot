@@ -16,8 +16,9 @@ export function MainHeader({
     <View
       style={{
         paddingHorizontal: 16,
-        paddingVertical: brand ? 2 : 16,
-        gap: 12,
+        paddingVertical: 9,
+        minHeight: 62,
+        gap: 8,
         flexDirection: "row",
         alignItems: "center",
         borderBottomWidth: 1,
@@ -51,8 +52,8 @@ export function MainHeader({
           style={{
             flex: 1,
             color: colors.ink,
-            fontSize: 28,
-            fontWeight: "700",
+            fontSize: 20,
+            fontWeight: "600",
           }}
         >
           {title}
@@ -87,18 +88,13 @@ function Shortcut({
       onPress={onPress}
       className="active:opacity-70"
       style={{
-        minWidth: 48,
-        minHeight: 48,
+        minWidth: 44,
+        minHeight: 44,
         alignItems: "center",
         justifyContent: "center",
       }}
     >
-      <Ionicons
-        name={icon}
-        color={colors.forest}
-        size={22}
-        accessible={false}
-      />
+      <Ionicons name={icon} color={colors.ink} size={22} accessible={false} />
     </Pressable>
   );
 }

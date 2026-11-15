@@ -89,8 +89,9 @@ export function OfferValidationCard({
       style={{
         padding: 16,
         borderWidth: 1,
-        borderColor: colors.forest,
-        borderRadius: 16,
+        borderColor: colors.line,
+        borderRadius: 22,
+        backgroundColor: colors.surface,
         gap: 10,
       }}
     >
@@ -217,7 +218,7 @@ export function OfferValidationCard({
                 minHeight: 44,
                 padding: 14,
                 borderRadius: 12,
-                backgroundColor: colors.forest,
+                backgroundColor: colors.accent,
                 opacity: saving || !reviewed ? 0.45 : 1,
               }}
             >

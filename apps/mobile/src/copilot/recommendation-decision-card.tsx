@@ -195,8 +195,9 @@ export function RecommendationDecisionCard({
       style={{
         padding: 16,
         borderWidth: 1,
-        borderColor: colors.forest,
-        borderRadius: 16,
+        borderColor: colors.line,
+        borderRadius: 22,
+        backgroundColor: colors.surface,
         gap: 12,
       }}
     >
@@ -275,7 +276,7 @@ export function RecommendationDecisionCard({
                   placeholder="L’action que vous retenez"
                   placeholderTextColor={colors.muted}
                   selectionColor={colors.forest}
-                  keyboardAppearance="dark"
+                  keyboardAppearance="light"
                   multiline
                   maxLength={1200}
                   value={action}
@@ -312,7 +313,7 @@ export function RecommendationDecisionCard({
                     placeholder="Note facultative"
                     placeholderTextColor={colors.muted}
                     selectionColor={colors.forest}
-                    keyboardAppearance="dark"
+                    keyboardAppearance="light"
                     value={reason}
                     editable={!busy}
                     maxLength={600}

@@ -89,8 +89,9 @@ export function ProductProposalCard({
       style={{
         padding: 16,
         borderWidth: 1,
-        borderColor: colors.forest,
-        borderRadius: 16,
+        borderColor: colors.line,
+        borderRadius: 22,
+        backgroundColor: colors.surface,
         gap: 10,
       }}
     >
@@ -145,7 +146,7 @@ export function ProductProposalCard({
                 void confirm();
               }}
               style={{
-                backgroundColor: colors.forest,
+                backgroundColor: colors.accent,
                 padding: 14,
                 borderRadius: 12,
                 minHeight: 44,

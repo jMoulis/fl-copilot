@@ -73,7 +73,7 @@ export function SegmentedControl<K extends string>({
           className="min-h-12 flex-1 justify-center px-1 py-1"
         >
           <View
-            className={`min-h-8 items-center justify-center rounded-full px-2 py-1.5 ${value === option.value ? "bg-forest" : "bg-surface"}`}
+            className={`min-h-8 items-center justify-center rounded-full px-2 py-1.5 ${value === option.value ? "bg-accent" : "bg-surface"}`}
           >
             <Text
               className={`text-center text-sm font-semibold ${value === option.value ? "text-on-accent" : "text-muted"}`}
@@ -89,7 +89,8 @@ export function SegmentedControl<K extends string>({
 export function DetailsDisclosure({
   title,
   children,
-}: PropsWithChildren<{ title: string }>) {
+  inverse = false,
+}: PropsWithChildren<{ title: string; inverse?: boolean }>) {
   const [open, setOpen] = useState(false);
   return (
     <View className="gap-2">
@@ -105,15 +106,23 @@ export function DetailsDisclosure({
           <Ionicons
             name="information-circle-outline"
             size={17}
-            color={colors.muted}
+            color={inverse ? colors.heroMuted : colors.muted}
             accessible={false}
           />
-          <Text className="flex-1 text-sm text-muted">{title}</Text>
+          <Text
+            style={{
+              flex: 1,
+              fontSize: 14,
+              color: inverse ? colors.heroMuted : colors.muted,
+            }}
+          >
+            {title}
+          </Text>
         </View>
         <Ionicons
           name={open ? "chevron-up" : "chevron-down"}
           size={17}
-          color={colors.muted}
+          color={inverse ? colors.heroMuted : colors.muted}
           accessible={false}
         />
       </Pressable>

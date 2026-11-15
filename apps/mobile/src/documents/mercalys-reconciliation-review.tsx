@@ -148,7 +148,7 @@ export function MercalysReconciliationReview({
                 setFilter(key);
                 setPage(0);
               }}
-              className={`min-h-12 justify-center rounded-xl border px-3 py-2 ${filter === key ? "border-forest bg-forest" : "border-line bg-surface"}`}
+              className={`min-h-12 justify-center rounded-xl border px-3 py-2 ${filter === key ? "border-forest bg-accent" : "border-line bg-surface"}`}
             >
               <Text
                 className={

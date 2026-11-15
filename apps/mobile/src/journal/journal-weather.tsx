@@ -117,7 +117,7 @@ export function JournalWeather({
         className="active:opacity-70"
         style={[styles.weather, { backgroundColor: background, opacity: 1 }]}
       >
-        <Ionicons name={presentation.icon} size={31} color={ink} />
+        <Ionicons name={presentation.icon} size={39} color={ink} />
         <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
           <Text style={[styles.eyebrow, { color: ink }]}>
             {observing
@@ -300,10 +300,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 11,
-    paddingHorizontal: 13,
-    paddingVertical: 10,
-    minHeight: 59,
-    borderRadius: 13,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    minHeight: 87,
+    borderRadius: 23,
   },
   eyebrow: {
     fontSize: 10,
@@ -314,8 +314,8 @@ const styles = StyleSheet.create({
   },
   condition: { fontSize: 16, lineHeight: 19, fontWeight: "600" },
   temperature: {
-    fontSize: 24,
-    lineHeight: 27,
+    fontSize: 36,
+    lineHeight: 40,
     fontWeight: "600",
     fontVariant: ["tabular-nums"],
   },
