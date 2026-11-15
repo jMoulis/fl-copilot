@@ -77,6 +77,18 @@ export function ProductVisualPanel({
   const state = gallery.state,
     resolution = resolveLibraryState(state, product),
     asset = resolution.kind === "ASSET" ? resolution.asset : null;
+  const transferNeedsAttention =
+    asset &&
+    (!state!.files.get(asset.id)?.preview ||
+      state!.assets.get(asset.id)?.dirty ||
+      ["CONFLICT", "ERROR"].includes(
+        state!.assets.get(asset.id)?.syncState ?? "",
+      ) ||
+      state!.jobs.get(asset.id)?.some((job) => job.status === "FAILED"));
+  const transferLabel =
+    asset && transferNeedsAttention
+      ? visualTransferLabel(state!, asset.id)
+      : null;
   const selectedAsset =
     choice?.kind === "LIBRARY"
       ? state?.assets.get(choice.identity.entity.primaryAssetId ?? "")?.entity
@@ -344,16 +356,15 @@ export function ProductVisualPanel({
             </Text>
           ))
         : null}
-      <View className="gap-2">
+      {!asset || transferLabel ? (
         <Text className="text-xs text-muted">
           {asset
-            ? (available ? "Copie disponible sur cet appareil. " : "") +
-              visualTransferLabel(state!, asset.id)
+            ? transferLabel
             : gallery.canWrite
               ? "Ajoutez une image pour reconnaître ce produit."
               : "Image du produit non renseignée."}
         </Text>
-      </View>
+      ) : null}
       {notice ? <InlineAlert title="Enregistré" message={notice} /> : null}
       {error ? (
         <InlineAlert title="Image non modifiée" message={error} />

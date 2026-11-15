@@ -30,4 +30,5 @@ export const colors = {
   pending: "#705485",
   pendingSoft: "#EEE7F3",
   overlay: "#10241866",
+  sheetOverlay: "#10241840",
 } as const;

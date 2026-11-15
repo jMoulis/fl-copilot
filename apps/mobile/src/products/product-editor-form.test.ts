@@ -285,20 +285,40 @@ it("keeps Petit Prix changes in the draft until explicit save", async () => {
   expect(save.mock.calls[0]?.[0]).toMatchObject({ isPetitPrix: true });
 });
 
-it("changes a compact identity choice in the form draft without saving until explicit submission", async () => {
+it("changes identity tags directly, preserves optional data and permits clearing each classification only on explicit save", async () => {
   await mount();
-  await press("Choisir catégorie : Légume");
   expect(control("Catégorie : Légume").props.accessibilityState.checked).toBe(
     true,
   );
   await press("Catégorie : Fruit");
-  expect(
-    control("Choisir catégorie : Fruit").props.accessibilityState.expanded,
-  ).toBe(false);
+  await press("Nature : Conditionné");
+  await press("Unité de vente : kg");
+  for (const label of [
+    "Catégorie : Fruit",
+    "Nature : Conditionné",
+    "Unité de vente : kg",
+  ])
+    expect(control(label).props.accessibilityState.checked).toBe(true);
   expect(save).not.toHaveBeenCalled();
   await press("Enregistrer le produit");
   expect(save).toHaveBeenCalledExactlyOnceWith({
     ...draft(),
     category: "FRUIT",
+    nature: "PACKAGED",
+    salesUnit: "KG",
+  });
+  for (const label of [
+    "Catégorie : À préciser",
+    "Nature : À préciser",
+    "Unité de vente : À préciser",
+  ])
+    await press(label);
+  expect(save).toHaveBeenCalledTimes(1);
+  await press("Enregistrer le produit");
+  expect(save).toHaveBeenLastCalledWith({
+    ...draft(),
+    category: "UNKNOWN",
+    nature: "UNKNOWN",
+    salesUnit: "UNKNOWN",
   });
 });
