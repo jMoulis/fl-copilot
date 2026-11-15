@@ -1,3 +1,14 @@
+## Owner-approved weekly TG journey — 15 November 2026
+
+The owner accepts the Marché solaire week/TG/installation prototype. Reuse the
+existing preparation, confirmed plan and execution controllers to show full-width
+TG cards, explicit selected-TG navigation and a concise confirmation sheet with
+optional actuals. Keep canonical local writes, revision matching, conflicts and
+source/history access. Unknown/draft targets never silently select another plan.
+No schema, synchronization or AI change. See
+`../ux/WEEKLY_TG_JOURNEY_2026_11_15.md` and
+`../qa/WEEKLY_TG_JOURNEY_2026_11_15.md`; group this native release with PR 526.
+
 ## Native presentation increment — products and sheet backdrop, 15 November 2026
 
 The owner requests removal of routine local-copy/list-context messages, direct

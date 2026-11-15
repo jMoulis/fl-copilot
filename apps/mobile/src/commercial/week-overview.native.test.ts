@@ -16,6 +16,10 @@ const env = vi.hoisted(() => ({
   sqlite: undefined as unknown,
   session: undefined as unknown,
   weekStart: "",
+  placementId: undefined as string | undefined,
+  draft: undefined as string | undefined,
+  mode: undefined as string | undefined,
+  taskId: undefined as string | undefined,
   focused: true,
   sync: { status: "synced", lastSyncedAt: "initial" },
   push: vi.fn(),
@@ -40,7 +44,13 @@ vi.mock("expo-router", () => ({
     replace: env.replace,
     canGoBack: () => env.canGoBack,
   },
-  useLocalSearchParams: () => ({ weekStart: env.weekStart }),
+  useLocalSearchParams: () => ({
+    weekStart: env.weekStart,
+    placementId: env.placementId,
+    draft: env.draft,
+    mode: env.mode,
+    taskId: env.taskId,
+  }),
   useFocusEffect: (cb: () => void | (() => void)) =>
     useEffect(() => (env.focused ? cb() : undefined), [cb, env.focused]),
 }));
@@ -51,7 +61,13 @@ vi.mock("expo-crypto", () => ({
 }));
 vi.mock("react-native", () => ({ Text: "Text", View: "View" }));
 vi.mock("@/components/ui", () => ({
-  AppScreen: "Screen",
+  AppScreen: ({
+    header,
+    children,
+  }: {
+    header?: ReactNode;
+    children: ReactNode;
+  }) => createElement("Screen", null, header, children),
   AppHeader: "Header",
   SectionCard: "Card",
   SecondaryButton: "Button",
@@ -60,6 +76,7 @@ vi.mock("@/components/ui", () => ({
   EmptyState: "Empty",
 }));
 vi.mock("@/components/dashboard", () => ({
+  IconButton: "IconButton",
   DetailsDisclosure: ({
     title,
     children,
@@ -76,6 +93,7 @@ vi.mock("@/components/dashboard", () => ({
   },
 }));
 vi.mock("@/dates/calendar", () => import("../dates/calendar"));
+vi.mock("@/design/tokens", () => import("../design/tokens"));
 vi.mock(
   "@/commercial/week-plan-repository",
   () => import("./week-plan-repository"),
@@ -104,7 +122,9 @@ vi.mock("@/commercial/plan-validation-view", () => ({
   CommercialPlanValidationView: "Review",
 }));
 vi.mock("@/commercial/execution-view", () => ({
-  CommercialExecutionView: "Execution",
+  CommercialExecutionView: (props: {
+    renderDetail?(content: ReactNode, action: ReactNode): ReactNode;
+  }) => createElement("Execution", props, props.renderDetail?.(null, null)),
 }));
 vi.mock("@/commercial/substitute-view", () => ({
   WeeklySubstitutesView: "Substitutes",
@@ -120,6 +140,11 @@ const hosts = (t: string) =>
   tree!.root.findAll((n) => typeof n.type === "string" && n.type === t);
 const button = (label: string) =>
   hosts("Button").find((n) => n.props.label === label)!;
+const back = () => hosts("IconButton")[0]!;
+const disclosure = (title: string) =>
+  hosts("Disclosure").find((n) => n.props.title === title)!;
+const outboxCount = () =>
+  db.prepare("SELECT COUNT(*) n FROM sync_outbox").get()?.n;
 async function render() {
   await act(async () => {
     if (tree) tree.update(createElement(Screen));
@@ -135,6 +160,10 @@ beforeEach(() => {
   });
   env.focused = true;
   env.canGoBack = true;
+  env.placementId = undefined;
+  env.draft = undefined;
+  env.mode = undefined;
+  env.taskId = undefined;
   env.sync = { status: "synced", lastSyncedAt: "initial" };
   env.push.mockReset();
   env.back.mockReset();
@@ -175,12 +204,18 @@ async function setup(draft = true) {
 it("shows a saved qualitative draft immediately without a form or write; review is explicit and keeps its week", async () => {
   const { preparation } = await setup();
   await render();
-  expect(
-    hosts("Card").some(
-      (n) => n.props.title === preparation.placements[0]!.label,
-    ),
-  ).toBe(true);
-  expect(JSON.stringify(tree!.toJSON())).toContain("Crudités à l’entrée");
+  const cards = hosts("TgPresentation")[0]!;
+  expect(cards.props.layout).toBe("cards");
+  expect(cards.props.placements).toEqual(preparation.placements);
+  await act(() => cards.props.onOpenPlacement(preparation.placements[0]!.id));
+  expect(env.push).toHaveBeenLastCalledWith({
+    pathname: "/commercial-plan",
+    params: {
+      weekStart: preparation.weekStart,
+      placementId: preparation.placements[0]!.id,
+      draft: "1",
+    },
+  });
   expect(JSON.stringify(tree!.toJSON())).not.toContain("Réassort régulier");
   await act(() =>
     hosts("Disclosure")
@@ -198,8 +233,8 @@ it("shows a saved qualitative draft immediately without a form or write; review 
   });
   await act(() => button("Confirmer ces choix").props.onPress());
   expect(hosts("Review")[0]!.props.preparation).toEqual(preparation);
-  expect(db.prepare("SELECT COUNT(*) n FROM sync_outbox").get()?.n).toBe(0);
-  await act(() => button("Retour").props.onPress());
+  expect(outboxCount()).toBe(0);
+  await act(() => back().props.onPress());
   expect(env.back).toHaveBeenCalledOnce();
   expect(env.replace).not.toHaveBeenCalled();
 });
@@ -207,18 +242,138 @@ it("refreshes after returning from chat and keeps current execution separate fro
   const { f, sqlite, preparation } = await setup(false);
   await applyCommercialPlan(sqlite, f.storeId, f.plan);
   await render();
-  expect(hosts("PlanContent")[0]!.props.plan).toEqual(f.plan);
   expect(hosts("Execution")[0]!.props.plan).toEqual(f.plan);
+  expect(hosts("Execution")[0]!.props.presentation).toBe("week");
   env.focused = false;
   await render();
   const newer = { ...preparation, version: f.plan.preparation.version + 1 };
   await applyCommercialPreparation(sqlite, f.storeId, newer);
   env.focused = true;
   await render();
-  expect(JSON.stringify(tree!.toJSON())).toContain("Crudités à l’entrée");
+  expect(hosts("TgPresentation")[0]!.props.placements).toEqual(
+    newer.placements,
+  );
+  expect(hosts("Execution")).toHaveLength(0);
+  await act(() => disclosure("Suivre le plan déjà confirmé").props.onPress());
   expect(hosts("Execution")[0]!.props.plan).toEqual(f.plan);
+  expect(hosts("Execution")[0]!.props.presentation).toBe("week");
   expect(hosts("Substitutes")).toHaveLength(0);
-  expect(db.prepare("SELECT COUNT(*) n FROM sync_outbox").get()?.n).toBe(0);
+  await act(() => disclosure("Voir les choix déjà confirmés").props.onPress());
+  expect(hosts("PlanContent")[0]!.props.plan).toEqual(f.plan);
+  expect(outboxCount()).toBe(0);
+});
+it("opens a draft TG as read-only detail and returns to the same week without recording an installation", async () => {
+  const { preparation } = await setup();
+  env.placementId = preparation.placements[0]!.id;
+  env.draft = "1";
+  await render();
+  expect(hosts("TgPresentation")[0]!.props).toMatchObject({
+    layout: "detail",
+    placements: [preparation.placements[0]],
+  });
+  expect(hosts("Execution")).toHaveLength(0);
+  expect(hosts("Review")).toHaveLength(0);
+  expect(outboxCount()).toBe(0);
+  await act(() => back().props.onPress());
+  expect(env.back).toHaveBeenCalledOnce();
+  env.canGoBack = false;
+  await act(() => back().props.onPress());
+  expect(env.replace).toHaveBeenCalledWith({
+    pathname: "/commercial-plan",
+    params: { weekStart: preparation.weekStart },
+  });
+  expect(outboxCount()).toBe(0);
+});
+it("reports a removed draft TG without falling through to a different placement or an execution editor", async () => {
+  await setup();
+  env.placementId = "removed-placement";
+  env.draft = "1";
+  await render();
+  expect(hosts("Alert")[0]!.props.title).toBe("TG introuvable");
+  expect(hosts("TgPresentation")).toHaveLength(0);
+  expect(hosts("Execution")).toHaveLength(0);
+  expect(outboxCount()).toBe(0);
+});
+it("keeps an expired draft link read-only even when the same placement exists in a confirmed plan", async () => {
+  const { f, sqlite } = await setup(false);
+  await applyCommercialPlan(sqlite, f.storeId, f.plan);
+  env.placementId = f.plan.preparation.placements[0]!.id;
+  env.draft = "1";
+  await render();
+  expect(
+    hosts("Alert").some((node) => node.props.title === "TG introuvable"),
+  ).toBe(true);
+  expect(hosts("Execution")).toHaveLength(0);
+  expect(hosts("TgPresentation")).toHaveLength(0);
+  expect(hosts("Review")).toHaveLength(0);
+  expect(outboxCount()).toBe(0);
+});
+it("opens a confirmed TG from its week and delegates only the exact placement to the existing execution controller", async () => {
+  const { f, sqlite } = await setup(false);
+  await applyCommercialPlan(sqlite, f.storeId, f.plan);
+  await render();
+  const execution = hosts("Execution")[0]!;
+  expect(execution.props.presentation).toBe("week");
+  const placementId = f.plan.preparation.placements[0]!.id;
+  await act(() => execution.props.onOpenPlacement(placementId));
+  expect(env.push).toHaveBeenLastCalledWith({
+    pathname: "/commercial-plan",
+    params: { weekStart: f.plan.weekStart, placementId },
+  });
+  env.placementId = placementId;
+  await render();
+  expect(hosts("Execution")).toHaveLength(1);
+  expect(hosts("Execution")[0]!.props).toMatchObject({
+    plan: f.plan,
+    presentation: "placement",
+    placementId,
+  });
+  expect(hosts("PlanContent")).toHaveLength(0);
+  await act(() => back().props.onPress());
+  expect(env.back).toHaveBeenCalledOnce();
+  env.canGoBack = false;
+  await act(() => back().props.onPress());
+  expect(env.replace).toHaveBeenCalledWith({
+    pathname: "/commercial-plan",
+    params: { weekStart: f.plan.weekStart },
+  });
+  expect(outboxCount()).toBe(0);
+});
+it("keeps an invalid confirmed placement explicit for the controller rather than choosing a different TG", async () => {
+  const { f, sqlite } = await setup(false);
+  await applyCommercialPlan(sqlite, f.storeId, f.plan);
+  env.placementId = "removed-placement";
+  await render();
+  expect(hosts("Execution")[0]!.props).toMatchObject({
+    plan: f.plan,
+    presentation: "placement",
+    placementId: "removed-placement",
+  });
+  expect(outboxCount()).toBe(0);
+});
+it("preserves installation links from chat and explicit task links from Journal when a newer draft exists", async () => {
+  const { f, sqlite, preparation } = await setup(false);
+  await applyCommercialPlan(sqlite, f.storeId, f.plan);
+  env.mode = "installation";
+  await render();
+  expect(hosts("Execution")[0]!.props).toMatchObject({
+    plan: f.plan,
+    presentation: "placement",
+  });
+  await applyCommercialPreparation(sqlite, f.storeId, {
+    ...preparation,
+    version: f.plan.preparation.version + 1,
+  });
+  env.mode = "execution";
+  env.taskId = "requested-task";
+  env.sync.lastSyncedAt = "newer-draft";
+  await render();
+  expect(hosts("Execution")).toHaveLength(1);
+  expect(hosts("Execution")[0]!.props).toMatchObject({
+    plan: f.plan,
+    initialTaskId: "requested-task",
+  });
+  expect(outboxCount()).toBe(0);
 });
 it("offers source selection or manual preparation for an empty week and falls back to Journal on direct entry", async () => {
   const { preparation } = await setup(false);
@@ -230,6 +385,6 @@ it("offers source selection or manual preparation for an empty week and falls ba
     params: { weekStart: preparation.weekStart },
   });
   env.canGoBack = false;
-  await act(() => button("Retour").props.onPress());
+  await act(() => back().props.onPress());
   expect(env.replace).toHaveBeenCalledWith("/(tabs)/today");
 });

@@ -6,7 +6,7 @@ import {
   parseExecutionActualsDraft,
   type ExecutionActualsDraft,
 } from "./execution-actuals-editor";
-import { useCallback, useMemo, useState, useRef } from "react";
+import { useCallback, useMemo, useState, useRef, type ReactNode } from "react";
 import {
   Text,
   TextInput,
@@ -30,6 +30,7 @@ import {
 } from "expo-crypto";
 import {
   commercialExecutionChecklist,
+  commercialExecutionProgress,
   commercialExecutionSameTarget,
   type CommercialExecutionProposal,
 } from "@fl-copilot/commercial-core";
@@ -66,21 +67,28 @@ type Editor = {
   note: string;
   actuals: ExecutionActualsDraft;
   plan: CommercialWeekPlan;
+  installationConfirmation?: boolean;
 };
 export function CommercialExecutionView({
   plan,
   compact = false,
   initialTaskId,
-  installationOnly = false,
   filter: controlledFilter,
   onFilter,
+  presentation = "default",
+  placementId,
+  onOpenPlacement,
+  renderDetail,
 }: {
   plan: CommercialWeekPlan;
   compact?: boolean;
   initialTaskId?: string;
-  installationOnly?: boolean;
   filter?: ExecutionFilter;
   onFilter?(filter: ExecutionFilter): void;
+  presentation?: "default" | "week" | "placement";
+  placementId?: string;
+  onOpenPlacement?(placementId: string): void;
+  renderDetail?(content: ReactNode, action: ReactNode): ReactNode;
 }) {
   const visuals = useVisualLibrary();
   const { sqlite, deviceId } = useLocalDatabase(),
@@ -89,9 +97,6 @@ export function CommercialExecutionView({
       () => new CommercialExecutionRepository(sqlite, digest),
       [sqlite],
     );
-  const [selectedTg, setSelectedTg] = useState(
-    plan.preparation.placements[0]?.id,
-  );
   const autoOpened = useRef<string | undefined>(undefined);
   const saveLock = useRef(false);
   const [loadedRevision, setLoadedRevision] = useState<string>();
@@ -165,6 +170,7 @@ export function CommercialExecutionView({
     p: CommercialExecutionProposal,
     r: LocalCommercialExecution | null,
     sourcePlan: CommercialWeekPlan,
+    installationConfirmation = false,
   ) {
     setNoteError(undefined);
     setActualsError(undefined);
@@ -173,10 +179,11 @@ export function CommercialExecutionView({
     setEditor({
       proposal: p,
       record: r,
-      status: r?.entity.status ?? "TODO",
+      status: installationConfirmation ? "DONE" : (r?.entity.status ?? "TODO"),
       note: r?.entity.note ?? "",
       actuals: executionActualsDraft(r?.entity.actuals),
       plan: sourcePlan,
+      installationConfirmation,
     });
   }
   async function editOther(r: LocalCommercialExecution) {
@@ -273,7 +280,10 @@ export function CommercialExecutionView({
     if (busy) return;
     const changed =
       editor &&
-      (editor.status !== (editor.record?.entity.status ?? "TODO") ||
+      (editor.status !==
+        (editor.installationConfirmation
+          ? "DONE"
+          : (editor.record?.entity.status ?? "TODO")) ||
         editor.note !== (editor.record?.entity.note ?? "") ||
         JSON.stringify(editor.actuals) !==
           JSON.stringify(executionActualsDraft(editor.record?.entity.actuals)));
@@ -308,17 +318,92 @@ export function CommercialExecutionView({
     (r) =>
       !visibleProposals.some((p) => commercialExecutionSameTarget(r.entity, p)),
   );
-  return (
-    <SectionCard
-      title={
-        installationOnly
-          ? "Installer mes TG"
-          : compact
-            ? "Vos tâches"
-            : `Suivi d’exécution · version ${plan.version}`
+  const installationProposals = visibleProposals.filter(
+    (p) => p.kind === "INSTALL_TG",
+  );
+  const progress = commercialExecutionProgress(
+    installationProposals,
+    visibleRecords.map((r) => r.entity),
+  );
+  function target(placement: string) {
+    const proposal = installationProposals.find(
+      (p) => p.targetId === placement,
+    );
+    const record = proposal
+      ? (visibleRecords.find((r) =>
+          commercialExecutionSameTarget(r.entity, proposal),
+        ) ?? null)
+      : null;
+    return { proposal, record };
+  }
+  function installationLabel(record: LocalCommercialExecution | null) {
+    const label =
+      record?.entity.status === "DONE"
+        ? "Installation déclarée"
+        : record?.entity.status === "SKIPPED"
+          ? "Installation ignorée"
+          : record?.entity.status === "NOT_APPLICABLE"
+            ? "Non applicable"
+            : "Préparée";
+    const synchronization = (
+      {
+        PENDING: "À synchroniser",
+        CONFLICT: "À comparer",
+        ERROR: "À reprendre",
+      } as Record<string, string>
+    )[record?.syncState ?? ""];
+    return synchronization ? `${label} · ${synchronization}` : label;
+  }
+  const activePlacement = plan.preparation.placements.find(
+    (p) =>
+      p.id ===
+      (placementId ??
+        (initialTaskId
+          ? installationProposals.find((p) => p.id === initialTaskId)?.targetId
+          : plan.preparation.placements[0]?.id)),
+  );
+  const checklist = (
+    <ExecutionChecklistView
+      plan={plan}
+      proposals={visibleProposals}
+      records={visibleRecords}
+      filter={compact ? filter : undefined}
+      onFilter={setFilter}
+      disabled={busy}
+      visuals={visuals}
+      onOpen={(proposal, record) =>
+        record?.syncState === "CONFLICT"
+          ? router.push("/sync-center")
+          : void edit(proposal, record, plan)
       }
-      description="Affiches et TG du plan validé. Ouvrez une tâche pour déclarer sa réalisation."
-    >
+    />
+  );
+  const activeTarget = activePlacement ? target(activePlacement.id) : null;
+  const detailAction = activeTarget?.proposal ? (
+    <PrimaryButton
+      disabled={busy}
+      label={
+        activeTarget.record?.syncState === "CONFLICT"
+          ? "Comparer dans Synchronisation"
+          : activeTarget.record && activeTarget.record.entity.status !== "TODO"
+            ? "Revoir la déclaration"
+            : "Déclarer l’installation"
+      }
+      onPress={() =>
+        activeTarget.record?.syncState === "CONFLICT"
+          ? router.push("/sync-center")
+          : void edit(
+              activeTarget.proposal!,
+              activeTarget.record,
+              plan,
+              !activeTarget.record ||
+                activeTarget.record.entity.status === "TODO",
+            )
+      }
+    />
+  ) : null;
+  const content = (
+    <>
       {!loaded ? (
         <Text className="text-muted">Lecture des tâches enregistrées…</Text>
       ) : null}
@@ -341,109 +426,102 @@ export function CommercialExecutionView({
           />
         </>
       ) : null}
-      {loaded && installationOnly ? (
+      {loaded && presentation === "week" ? (
         <>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {plan.preparation.placements.map((p) => (
-              <Pressable
-                key={p.id}
-                accessibilityRole="button"
-                accessibilityState={{ selected: selectedTg === p.id }}
-                onPress={() => setSelectedTg(p.id)}
-                style={{
-                  padding: 12,
-                  minHeight: 44,
-                  borderRadius: 12,
-                  backgroundColor:
-                    selectedTg === p.id
-                      ? colors.forestSoft
-                      : colors.surfaceMuted,
-                }}
-              >
-                <Text
+          <View className="flex-row items-center gap-3 border-b border-line pb-4">
+            <View className="flex-row gap-1" accessible={false}>
+              {plan.preparation.placements.map((p, i) => (
+                <View
+                  key={p.id}
                   style={{
-                    color: selectedTg === p.id ? colors.forest : colors.muted,
+                    height: 5,
+                    width: 22,
+                    borderRadius: 3,
+                    backgroundColor:
+                      i < progress.DONE ? colors.forest : colors.line,
                   }}
-                >
-                  {p.label}
-                </Text>
-              </Pressable>
-            ))}
+                />
+              ))}
+            </View>
+            <Text className="flex-1 text-right text-sm text-muted">
+              {progress.DONE} sur {progress.total} installations déclarées
+            </Text>
           </View>
-          {plan.preparation.placements
-            .filter((p) => p.id === selectedTg)
-            .map((placement) => {
-              const proposal = visibleProposals.find(
-                (p) => p.kind === "INSTALL_TG" && p.targetId === placement.id,
-              );
-              const record = proposal
-                ? (visibleRecords.find((r) =>
-                    commercialExecutionSameTarget(r.entity, proposal),
-                  ) ?? null)
-                : null;
+          <TgPresentationView
+            placements={plan.preparation.placements}
+            layout="cards"
+            onOpenPlacement={onOpenPlacement}
+            renderFooter={(p) => {
+              const { record } = target(p.id);
               return (
-                <View key={placement.id} style={{ gap: 12 }}>
-                  <TgPresentationView placements={[placement]} large />
-                  <Text style={{ color: colors.muted }}>
-                    Vérifie la disposition, la fraîcheur et le balisage avant de
-                    déclarer la TG installée.
+                <View className="flex-row items-center justify-between gap-3 border-t border-line pt-3">
+                  <Text className="flex-1 text-sm text-forest">
+                    {installationLabel(record)}
                   </Text>
-                  {record ? (
-                    <Text style={{ color: colors.forest }}>
-                      {executionStatusLabels[record.entity.status]}
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Voir la TG : ${p.label}`}
+                    onPress={() => onOpenPlacement?.(p.id)}
+                    className="min-h-12 justify-center"
+                  >
+                    <Text className="text-sm font-semibold text-forest">
+                      Voir la TG ›
                     </Text>
-                  ) : null}
-                  {proposal ? (
-                    <PrimaryButton
-                      disabled={busy}
-                      label={
-                        record?.syncState === "CONFLICT"
-                          ? "Comparer dans Synchronisation"
-                          : record && record.entity.status !== "TODO"
-                            ? "Revoir la déclaration"
-                            : "Déclarer cette TG installée"
-                      }
-                      onPress={() => {
-                        if (record?.syncState === "CONFLICT") {
-                          router.push("/sync-center");
-                          return;
-                        }
-                        if (record && record.entity.status !== "TODO") {
-                          void edit(proposal, record, plan);
-                          return;
-                        }
-                        void save({
-                          proposal,
-                          record,
-                          status: "DONE",
-                          note: record?.entity.note ?? "",
-                          actuals: executionActualsDraft(
-                            record?.entity.actuals,
-                          ),
-                          plan,
-                        });
-                      }}
-                    />
-                  ) : null}
+                  </Pressable>
                 </View>
               );
-            })}
+            }}
+          />
+          <DetailsDisclosure title="Toutes les tâches et déclarations">
+            {checklist}
+          </DetailsDisclosure>
         </>
+      ) : loaded && presentation === "placement" ? (
+        activePlacement ? (
+          <TgPresentationView
+            placements={[activePlacement]}
+            layout="detail"
+            renderFooter={(p) => {
+              const { record } = target(p.id);
+              return (
+                <View className="gap-4">
+                  <Text className="text-sm font-semibold text-forest">
+                    {installationLabel(record)}
+                  </Text>
+                  {record?.entity.completedAt ? (
+                    <Text className="text-sm text-muted">
+                      Déclaration du{" "}
+                      {new Date(record.entity.completedAt).toLocaleString(
+                        "fr-FR",
+                      )}
+                    </Text>
+                  ) : null}
+                  {record?.entity.note ? (
+                    <Text className="text-sm text-ink">
+                      {record.entity.note}
+                    </Text>
+                  ) : null}
+                  {record?.syncState === "ERROR" ? (
+                    <InlineAlert
+                      title="Déclaration à reprendre"
+                      message={commercialExecutionError(
+                        record.lastErrorCode ?? undefined,
+                      )}
+                    />
+                  ) : null}
+                  {!renderDetail ? detailAction : null}
+                </View>
+              );
+            }}
+          />
+        ) : (
+          <InlineAlert
+            title="TG introuvable"
+            message="Cette TG ne figure plus dans le plan actuel. Reviens à ta semaine pour retrouver tes choix."
+          />
+        )
       ) : loaded ? (
-        <ExecutionChecklistView
-          plan={plan}
-          proposals={visibleProposals}
-          records={visibleRecords}
-          filter={compact ? filter : undefined}
-          onFilter={setFilter}
-          disabled={busy}
-          visuals={visuals}
-          onOpen={(proposal, record) =>
-            record?.syncState === "CONFLICT"
-              ? router.push("/sync-center")
-              : void edit(proposal, record, plan)
-          }
-        />
+        checklist
       ) : null}
       <DetailsDisclosure title="À propos de ce suivi">
         <Text className="text-sm leading-5 text-muted">
@@ -490,7 +568,21 @@ export function CommercialExecutionView({
           onSave={() => void save()}
         />
       ) : null}
+    </>
+  );
+  if (presentation === "placement" && renderDetail)
+    return renderDetail(content, loaded ? detailAction : null);
+  return presentation === "default" ? (
+    <SectionCard
+      title={
+        compact ? "Vos tâches" : `Suivi d’exécution · version ${plan.version}`
+      }
+      description="Affiches et TG du plan validé. Ouvre une tâche pour déclarer sa réalisation."
+    >
+      {content}
     </SectionCard>
+  ) : (
+    <View className="gap-5">{content}</View>
   );
 }
 
@@ -507,7 +599,15 @@ export function ExecutionDeclarationSheet({
   onClose,
   onSave,
 }: {
-  editor: Pick<Editor, "proposal" | "status" | "note" | "actuals" | "plan"> & {
+  editor: Pick<
+    Editor,
+    | "proposal"
+    | "status"
+    | "note"
+    | "actuals"
+    | "plan"
+    | "installationConfirmation"
+  > & {
     record?: LocalCommercialExecution | null;
   };
   busy: boolean;
@@ -520,128 +620,155 @@ export function ExecutionDeclarationSheet({
   onClose(): void;
   onSave(): void;
 }) {
+  const installation =
+    editor.installationConfirmation && editor.proposal.kind === "INSTALL_TG";
+  const placement = editor.plan.preparation.placements.find(
+    (p) => p.id === editor.proposal.targetId,
+  );
+  const note = (
+    <TextInput
+      accessibilityLabel="Note ou motif de la déclaration"
+      value={editor.note}
+      editable={!busy}
+      multiline
+      maxLength={1200}
+      placeholder={
+        installation
+          ? "Une précision, si tu le souhaites"
+          : "Note ; motif requis pour Ignoré ou Non applicable"
+      }
+      placeholderTextColor={colors.muted}
+      onChangeText={(value) => onChange({ note: value })}
+      className={`min-h-20 rounded-xl border p-3 text-ink ${noteError ? "border-danger" : "border-line"}`}
+    />
+  );
   return (
     <BottomSheet
       visible
-      title="Déclarer la tâche"
+      title={installation ? "Déclarer l’installation" : "Revoir la déclaration"}
       onClose={onClose}
       swipeToClose
       avoidKeyboard
-    >
-      <View className="gap-4">
-        <Text className="font-semibold text-ink">{editor.proposal.label}</Text>
-        <Text className="text-sm text-muted">
-          Plan version {editor.proposal.planVersion} · Choisissez le statut
-          constaté. La date de déclaration est distincte des dates réelles
-          facultatives.
-        </Text>
-        <Text className="text-sm leading-5 text-muted">
-          {executionTaskContext(editor.plan, editor.proposal.targetId)}
-        </Text>
-        {editor.record?.entity.completedAt ? (
-          <Text className="text-sm text-muted">
-            Déclaré fait le{" "}
-            {new Date(editor.record.entity.completedAt).toLocaleString("fr-FR")}
-          </Text>
-        ) : null}
-        {error ? (
-          <InlineAlert title="Déclaration non enregistrée" message={error} />
-        ) : null}
-        <View
-          className="flex-row flex-wrap gap-2"
-          accessibilityRole="radiogroup"
-          accessibilityLabel="Statut déclaré de la tâche"
-        >
-          {(
-            Object.keys(
-              executionStatusLabels,
-            ) as CommercialExecutionTask["status"][]
-          ).map((status) => (
-            <Pressable
-              key={status}
-              accessibilityRole="radio"
-              accessibilityLabel={`Statut déclaré : ${executionStatusLabels[status]}`}
-              aria-checked={editor.status === status}
-              accessibilityState={{
-                checked: editor.status === status,
-                disabled: busy,
-              }}
-              disabled={busy}
-              onPress={() => onChange({ status })}
-              className={`min-h-12 justify-center rounded-2xl border px-4 py-3 ${editor.status === status ? "border-forest bg-forest-soft" : "border-line bg-surface"}`}
-            >
-              <Text
-                className={
-                  editor.status === status
-                    ? "font-semibold text-forest"
-                    : "text-ink"
-                }
-              >
-                {editor.status === status ? "✓ " : ""}
-                {executionStatusLabels[status]}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-        <TextInput
-          accessibilityLabel="Note ou motif de la déclaration"
-          value={editor.note}
-          editable={!busy}
-          multiline
-          maxLength={1200}
-          placeholder="Note ; motif requis pour Ignoré ou Non applicable"
-          placeholderTextColor={colors.muted}
-          onChangeText={(note) => onChange({ note })}
-          className={`min-h-20 rounded-xl border p-3 text-ink ${noteError ? "border-danger" : "border-line"}`}
+      footer={
+        <PrimaryButton
+          label={
+            installation
+              ? "Confirmer la déclaration"
+              : "Enregistrer la déclaration"
+          }
+          disabled={busy}
+          loading={busy}
+          onPress={onSave}
         />
-        {Object.values(editor.actuals).some((value) => value.trim()) ? (
-          <Text className="text-sm text-muted">
-            Détails de réalisation renseignés. Vous pouvez les consulter ou les
-            modifier ci-dessous.
+      }
+    >
+      <Text className="font-semibold text-ink">
+        {installation
+          ? (placement?.label ?? editor.proposal.label)
+          : editor.proposal.label}
+      </Text>
+      {installation ? (
+        <Text className="text-sm leading-6 text-muted">
+          Confirme sa mise en place. Tu peux ajouter des précisions si tu les
+          connais.
+        </Text>
+      ) : (
+        <>
+          <Text className="text-sm leading-5 text-muted">
+            {executionTaskContext(editor.plan, editor.proposal.targetId)}
           </Text>
-        ) : null}
-        <View
-          className={`gap-3 rounded-2xl ${actualsError ? "border border-danger p-3" : ""}`}
-        >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Dates, prix et emplacement réels (facultatif)"
-            aria-expanded={actualsOpen}
-            accessibilityState={{ expanded: actualsOpen }}
-            onPress={onToggleActuals}
-            className="min-h-12 flex-row items-center justify-between gap-2"
+          {editor.record?.entity.completedAt ? (
+            <Text className="text-sm text-muted">
+              Déclaration du{" "}
+              {new Date(editor.record.entity.completedAt).toLocaleString(
+                "fr-FR",
+              )}
+            </Text>
+          ) : null}
+          <View
+            className="flex-row flex-wrap gap-2"
+            accessibilityRole="radiogroup"
+            accessibilityLabel="Statut déclaré de la tâche"
           >
-            <Text className="flex-1 text-sm text-muted">
-              Dates, prix et emplacement réels (facultatif)
+            {(
+              Object.keys(
+                executionStatusLabels,
+              ) as CommercialExecutionTask["status"][]
+            ).map((status) => (
+              <Pressable
+                key={status}
+                accessibilityRole="radio"
+                accessibilityLabel={`Statut déclaré : ${executionStatusLabels[status]}`}
+                aria-checked={editor.status === status}
+                accessibilityState={{
+                  checked: editor.status === status,
+                  disabled: busy,
+                }}
+                disabled={busy}
+                onPress={() => onChange({ status })}
+                className={`min-h-12 justify-center rounded-full border px-4 py-3 ${editor.status === status ? "border-accent bg-accent" : "border-line bg-surface"}`}
+              >
+                <Text
+                  className={
+                    editor.status === status
+                      ? "font-semibold text-on-accent"
+                      : "text-ink"
+                  }
+                >
+                  {executionStatusLabels[status]}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          {note}
+        </>
+      )}
+      {error ? (
+        <InlineAlert title="Déclaration non enregistrée" message={error} />
+      ) : null}
+      <View
+        className={`gap-3 rounded-2xl border p-4 ${actualsError ? "border-danger" : "border-line"}`}
+      >
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Ajouter des précisions (facultatif)"
+          aria-expanded={actualsOpen}
+          accessibilityState={{ expanded: actualsOpen, disabled: busy }}
+          disabled={busy}
+          onPress={onToggleActuals}
+          className="min-h-12 flex-row items-center justify-between gap-2"
+        >
+          <View className="flex-1 gap-1">
+            <Text className="text-sm font-semibold text-forest">
+              {Object.values(editor.actuals).some((value) => value.trim())
+                ? "Voir les précisions"
+                : "Ajouter des précisions"}
             </Text>
-            <Text className="text-lg text-muted">
-              {actualsOpen ? "−" : "+"}
-            </Text>
-          </Pressable>
-          {actualsOpen ? (
+            <Text className="text-xs text-muted">Facultatif</Text>
+          </View>
+          <Text className="text-lg text-forest">{actualsOpen ? "−" : "+"}</Text>
+        </Pressable>
+        {actualsOpen ? (
+          <>
             <ExecutionActualsEditor
               value={editor.actuals}
               disabled={busy}
               onChange={(actuals) => onChange({ actuals })}
             />
-          ) : null}
-          {actualsError ? (
-            <Text accessibilityRole="alert" className="text-danger">
-              {actualsError}
-            </Text>
-          ) : null}
-        </View>
-        {noteError ? (
+            {installation ? note : null}
+          </>
+        ) : null}
+        {actualsError ? (
           <Text accessibilityRole="alert" className="text-danger">
-            {noteError}
+            {actualsError}
           </Text>
         ) : null}
-        <PrimaryButton
-          label={busy ? "Enregistrement…" : "Enregistrer la déclaration"}
-          disabled={busy}
-          onPress={onSave}
-        />
       </View>
+      {noteError ? (
+        <Text accessibilityRole="alert" className="text-danger">
+          {noteError}
+        </Text>
+      ) : null}
     </BottomSheet>
   );
 }

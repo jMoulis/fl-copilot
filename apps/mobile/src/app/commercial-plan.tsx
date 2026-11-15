@@ -17,13 +17,13 @@ import { useSync } from "@/sync/sync-provider";
 import {
   AppScreen,
   AppHeader,
-  SectionCard,
   SecondaryButton,
   PrimaryButton,
   InlineAlert,
   EmptyState,
 } from "@/components/ui";
-import { DetailsDisclosure } from "@/components/dashboard";
+import { DetailsDisclosure, IconButton } from "@/components/dashboard";
+import { colors } from "@/design/tokens";
 import { formatFrenchCalendarDate } from "@/dates/calendar";
 import {
   CommercialPlanRepository,
@@ -50,6 +50,8 @@ export default function CommercialPlanScreen() {
       weekStart?: string;
       mode?: string;
       taskId?: string;
+      placementId?: string;
+      draft?: string;
     }>();
   const explicit = contextWeekQuerySchema.safeParse({
     weekStart: params.weekStart,
@@ -65,6 +67,8 @@ export default function CommercialPlanScreen() {
       weekStart={weekStart}
       initialTaskId={params.taskId}
       installationOnly={params.mode === "installation"}
+      placementId={params.placementId}
+      draftDetail={params.draft === "1"}
     />
   ) : (
     <AppScreen>
@@ -81,11 +85,15 @@ function StoreWeek({
   weekStart,
   initialTaskId,
   installationOnly = false,
+  placementId,
+  draftDetail = false,
 }: {
   storeId: string;
   weekStart: string;
   initialTaskId?: string;
   installationOnly?: boolean;
+  placementId?: string;
+  draftDetail?: boolean;
 }) {
   const { sqlite } = useLocalDatabase(),
     { status, lastSyncedAt } = useSync();
@@ -159,39 +167,115 @@ function StoreWeek({
     pathname:
       "/week-preparation" | "/commercial-documents" | "/commercial-plan",
   ) => router.push({ pathname, params: { weekStart } });
-  if (installationOnly && plan && !draftAhead)
-    return (
-      <AppScreen>
-        <AppHeader
-          title={`Installer mes TG · semaine ${week.number}`}
-          subtitle={`${formatFrenchCalendarDate(week.start)} au ${formatFrenchCalendarDate(week.end)}`}
-        />
-        <SecondaryButton
-          label="Retour à ma semaine"
-          onPress={() =>
-            router.canGoBack() ? router.back() : navigate("/commercial-plan")
-          }
-        />
-        <CommercialExecutionView
-          key={plan.entity.revisionId}
-          plan={plan.entity}
-          initialTaskId={initialTaskId}
-          installationOnly
-        />
-      </AppScreen>
-    );
-  return (
-    <AppScreen>
-      <AppHeader
-        title={`Ma semaine ${week.number} · ${week.year}`}
-        subtitle={`Du ${formatFrenchCalendarDate(week.start)} au ${formatFrenchCalendarDate(week.end)}`}
-      />
-      <SecondaryButton
-        label="Retour"
-        onPress={() =>
-          router.canGoBack() ? router.back() : router.replace("/(tabs)/today")
+  const openPlacement = (id: string, draft = false) =>
+    router.push({
+      pathname: "/commercial-plan",
+      params: { weekStart, placementId: id, ...(draft ? { draft: "1" } : {}) },
+    });
+  const returnToWeek = () =>
+    router.canGoBack()
+      ? router.back()
+      : router.replace({ pathname: "/commercial-plan", params: { weekStart } });
+  const detail = Boolean(placementId || installationOnly);
+  const header = (
+    <View className="flex-row items-center gap-3 border-b border-line px-4 py-2">
+      <IconButton
+        label={detail ? "Retour à ma semaine" : "Retour"}
+        icon="chevron-back"
+        onPress={
+          detail
+            ? returnToWeek
+            : () =>
+                router.canGoBack()
+                  ? router.back()
+                  : router.replace("/(tabs)/today")
         }
       />
+      <Text className="flex-1 text-base font-semibold text-ink">
+        {detail ? "Ma semaine" : `Semaine ${week.number}`}
+      </Text>
+    </View>
+  );
+  if (placementId && draftDetail) {
+    const selected = draft?.entity.placements.find((p) => p.id === placementId);
+    return (
+      <AppScreen header={header}>
+        {!snapshot ? (
+          <Text className="text-muted">Lecture de ton brouillon…</Text>
+        ) : selected ? (
+          <>
+            <Text className="text-sm font-semibold text-muted">
+              Aperçu du brouillon
+            </Text>
+            <TgPresentationView placements={[selected]} layout="detail" />
+            <SecondaryButton
+              label="Modifier les choix"
+              onPress={() => navigate("/week-preparation")}
+            />
+          </>
+        ) : (
+          <InlineAlert
+            title="TG introuvable"
+            message="Cette TG ne figure plus dans ton brouillon. Reviens à ta semaine pour retrouver tes choix."
+          />
+        )}
+        {error ? (
+          <InlineAlert title="Lecture interrompue" message={error} />
+        ) : null}
+      </AppScreen>
+    );
+  }
+  if (detail && plan)
+    return (
+      <CommercialExecutionView
+        key={plan.entity.revisionId}
+        plan={plan.entity}
+        initialTaskId={initialTaskId}
+        placementId={placementId}
+        presentation="placement"
+        renderDetail={(content, action) => (
+          <AppScreen header={header} footer={action}>
+            {content}
+            <DetailsDisclosure title="Sources et repères de la semaine">
+              <CommercialPlanContent plan={plan.entity} />
+            </DetailsDisclosure>
+          </AppScreen>
+        )}
+      />
+    );
+  return (
+    <AppScreen header={header}>
+      <View className="flex-row items-center gap-4 py-2">
+        <View className="flex-1 gap-2">
+          <Text className="text-xs uppercase tracking-widest text-muted">
+            Semaine {week.number} · {week.year}
+          </Text>
+          <Text
+            accessibilityRole="header"
+            style={{
+              color: colors.ink,
+              fontSize: 34,
+              fontWeight: "600",
+              letterSpacing: -1.2,
+            }}
+          >
+            Ma semaine.
+          </Text>
+          <Text className="text-sm text-muted">
+            {formatFrenchCalendarDate(week.start)} au{" "}
+            {formatFrenchCalendarDate(week.end)}
+          </Text>
+        </View>
+        <View
+          className="items-center gap-1 rounded-2xl border border-line bg-surface px-4 py-3"
+          style={{ transform: [{ rotate: "5deg" }] }}
+        >
+          <Text style={{ fontSize: 24, color: colors.ink, fontWeight: "600" }}>
+            {week.number}
+          </Text>
+          <Text className="text-xs text-muted">SEM.</Text>
+        </View>
+      </View>
       {error ? (
         <>
           <InlineAlert title="Lecture interrompue" message={error} />
@@ -208,10 +292,6 @@ function StoreWeek({
           <Text className="text-sm font-semibold text-forest">
             Brouillon enregistré{plan ? " · Nouveaux choix à confirmer" : ""}
           </Text>
-          <Text className="text-sm text-muted">
-            Tes choix sont conservés. Confirme-les quand ils sont prêts pour le
-            rayon.
-          </Text>
           {draft.syncState === "CONFLICT" || draft.syncState === "ERROR" ? (
             <InlineAlert
               title="Brouillon à vérifier"
@@ -222,17 +302,14 @@ function StoreWeek({
               }
             />
           ) : null}
-          {draft.entity.placements.some((p) => p.presentation) ? (
-            <TgPresentationView placements={draft.entity.placements} />
-          ) : (
-            draft.entity.placements.map((tg) => (
-              <SectionCard key={tg.id} title={tg.label}>
-                <Text selectable className="text-base text-ink">
-                  {tg.theme || "Thème à préciser"}
-                </Text>
-              </SectionCard>
-            ))
-          )}
+          <TgPresentationView
+            placements={draft.entity.placements}
+            layout="cards"
+            onOpenPlacement={(id) => openPlacement(id, true)}
+            renderFooter={() => (
+              <Text className="text-sm text-muted">Choix à confirmer</Text>
+            )}
+          />
           {draft.entity.note ? (
             <DetailsDisclosure title="Consignes de la semaine">
               <Text selectable className="text-base text-ink">
@@ -278,19 +355,15 @@ function StoreWeek({
         </>
       ) : plan ? (
         <>
-          <Text className="font-semibold text-forest">Choix confirmés</Text>
-          <CommercialPlanContent plan={plan.entity} />
-          {plan.entity.preparation.placements.some((p) => p.presentation) ? (
-            <PrimaryButton
-              label="Installer les TG"
-              onPress={() =>
-                router.push({
-                  pathname: "/commercial-plan",
-                  params: { weekStart, mode: "installation" },
-                })
-              }
-            />
-          ) : null}
+          <CommercialExecutionView
+            plan={plan.entity}
+            initialTaskId={initialTaskId}
+            presentation="week"
+            onOpenPlacement={(id) => openPlacement(id)}
+          />
+          <DetailsDisclosure title="Sources, offres et consignes">
+            <CommercialPlanContent plan={plan.entity} />
+          </DetailsDisclosure>
           <SecondaryButton
             label={
               plan.syncState === "CONFLICT"
@@ -337,10 +410,23 @@ function StoreWeek({
       ) : null}
       {plan ? (
         <>
-          <CommercialExecutionView
-            plan={plan.entity}
-            initialTaskId={initialTaskId}
-          />
+          {draftAhead && initialTaskId ? (
+            <CommercialExecutionView
+              plan={plan.entity}
+              initialTaskId={initialTaskId}
+              presentation="week"
+              onOpenPlacement={(id) => openPlacement(id)}
+            />
+          ) : draftAhead ? (
+            <DetailsDisclosure title="Suivre le plan déjà confirmé">
+              <CommercialExecutionView
+                plan={plan.entity}
+                initialTaskId={initialTaskId}
+                presentation="week"
+                onOpenPlacement={(id) => openPlacement(id)}
+              />
+            </DetailsDisclosure>
+          ) : null}
           <DetailsDisclosure title="Alternatives et contre-promos">
             <WeeklySubstitutesView
               storeId={storeId}

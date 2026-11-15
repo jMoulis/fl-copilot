@@ -29,6 +29,7 @@ import { colors } from "../design/tokens";
 export function AppScreen({
   children,
   header,
+  footer,
   refreshing = false,
   onRefresh,
   scrollRef,
@@ -37,6 +38,7 @@ export function AppScreen({
   backgroundColor,
 }: PropsWithChildren<{
   header?: React.ReactNode;
+  footer?: React.ReactNode;
   scrollRef?: Ref<ScrollView>;
   refreshing?: boolean;
   onRefresh?: () => void;
@@ -79,6 +81,14 @@ export function AppScreen({
       >
         {children}
       </ScrollView>
+      {footer ? (
+        <SafeAreaView
+          edges={["bottom"]}
+          className="border-t border-line bg-canvas px-4 pb-2 pt-3"
+        >
+          {footer}
+        </SafeAreaView>
+      ) : null}
     </SafeAreaView>
   );
 }
