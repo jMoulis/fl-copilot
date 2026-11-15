@@ -522,6 +522,7 @@ export class ApiClient {
         body: JSON.stringify(input),
       },
       devicePushTokenResponseSchema,
+      30_000,
     );
   }
 

@@ -249,7 +249,11 @@ export default function ReminderSettings() {
           <Switch
             accessibilityLabel="Activer les alertes de fin de réponse du copilote"
             value={chatPush.enabled}
-            disabled={!chatPush.available || !chatPush.ready || chatPush.busy}
+            disabled={
+              !chatPush.available ||
+              !chatPush.ready ||
+              (chatPush.busy && chatPush.busyChannel === "chat")
+            }
             onValueChange={(v) => void chatPush.setEnabled(v)}
           />
         </View>
@@ -257,19 +261,6 @@ export default function ReminderSettings() {
           L’alerte peut afficher un aperçu de la réponse lorsque l’app est en
           arrière-plan.
         </Text>
-        {!chatPush.available ? (
-          <Text className="text-muted">
-            Disponible dans l’application iPhone installée, hors Expo Go.
-          </Text>
-        ) : null}
-        {chatPush.error ? (
-          <InlineAlert title="Alertes à vérifier" message={chatPush.error} />
-        ) : null}
-        <SecondaryButton
-          label="Vérifier les alertes du copilote"
-          disabled={!chatPush.available || chatPush.busy}
-          onPress={() => void chatPush.refresh()}
-        />
       </SectionCard>
       <SectionCard title="Documents reçus par email">
         <View className="flex-row items-center justify-between gap-3">
@@ -282,7 +273,7 @@ export default function ReminderSettings() {
             disabled={
               !chatPush.available ||
               !chatPush.ready ||
-              chatPush.busy ||
+              (chatPush.busy && chatPush.busyChannel === "email") ||
               session?.stores[0]?.role !== "MANAGER"
             }
             onValueChange={(v) => void chatPush.setEmailEnabled(v)}
@@ -305,7 +296,7 @@ export default function ReminderSettings() {
             disabled={
               !chatPush.available ||
               !chatPush.ready ||
-              chatPush.busy ||
+              (chatPush.busy && chatPush.busyChannel === "documents") ||
               session?.stores[0]?.role !== "MANAGER"
             }
             onValueChange={(v) => void chatPush.setDocumentsEnabled(v)}
@@ -317,6 +308,19 @@ export default function ReminderSettings() {
           par cette alerte.
         </Text>
       </SectionCard>
+      {!chatPush.available ? (
+        <Text className="text-muted">
+          Disponible dans l’application iPhone installée, hors Expo Go.
+        </Text>
+      ) : null}
+      {chatPush.error ? (
+        <InlineAlert title="Alertes à vérifier" message={chatPush.error} />
+      ) : null}
+      <SecondaryButton
+        label="Vérifier les alertes de ce téléphone"
+        disabled={!chatPush.available || chatPush.busy}
+        onPress={() => void chatPush.refresh()}
+      />
       <SectionCard title="Notifications commerciales">
         <View className="flex-row items-center justify-between gap-3">
           <Text className="flex-1 text-base text-ink">

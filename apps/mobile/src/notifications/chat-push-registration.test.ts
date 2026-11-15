@@ -172,6 +172,29 @@ it("disabling the last channel removes the token", async () => {
   expect(f.save).toHaveBeenCalledWith(null, { chat: false, email: false });
 });
 
+it("identifies only the channel being saved and clears its busy state after failure", async () => {
+  const f = emailFixture("1");
+  let reject!: (error: Error) => void;
+  f.save.mockImplementationOnce(
+    () =>
+      new Promise<void>((_resolve, fail) => {
+        reject = fail;
+      }),
+  );
+  const pending = f.controller.setEmailEnabled(true);
+  await vi.waitFor(() => expect(reject).toBeTypeOf("function"));
+  expect(f.states.at(-1)).toMatchObject({
+    enabled: true,
+    emailEnabled: true,
+    busy: true,
+    busyChannel: "email",
+  });
+  reject(Error("offline"));
+  await pending;
+  expect(f.states.at(-1)).toMatchObject({ busy: false, emailEnabled: true });
+  expect(f.states.at(-1)?.busyChannel).toBeUndefined();
+});
+
 it("keeps document completion opt-in independent and retries a failed disable without enabling other channels", async () => {
   let value: string | null = null;
   const f = fixture();
