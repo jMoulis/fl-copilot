@@ -24,7 +24,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { colors } from "@/design/tokens";
+import { colors } from "../design/tokens";
 
 export function AppScreen({
   children,
@@ -129,10 +129,7 @@ export function SectionCard({
   onLayout?: ViewProps["onLayout"];
 }>) {
   return (
-    <View
-      onLayout={onLayout}
-      className="gap-4 rounded-3xl border border-line bg-surface p-5"
-    >
+    <View onLayout={onLayout} className="gap-4 rounded-3xl bg-surface p-5">
       <Text
         accessibilityRole="header"
         className="text-lg font-semibold text-ink"
@@ -158,7 +155,7 @@ export function MetricCard({
   detail?: string;
 }) {
   return (
-    <View className="gap-2 rounded-2xl border border-line bg-surface p-5">
+    <View className="gap-2 rounded-2xl bg-surface p-5">
       <Text className="text-base text-muted">{label}</Text>
       <Text className="text-3xl font-bold text-ink">
         {value ?? "Indisponible"}
@@ -324,10 +321,12 @@ function Button({
         minHeight: 48,
         opacity: disabled ? 0.45 : pressed ? 0.75 : 1,
       })}
-      className={`flex-row items-center justify-center gap-2 rounded-2xl border px-5 py-3 ${secondary ? "border-forest bg-surface" : "border-forest bg-forest"}`}
+      className={`flex-row items-center justify-center gap-2 rounded-2xl border px-5 py-3 ${secondary ? "border-line bg-surface" : "border-accent bg-accent"}`}
     >
       {loading ? (
-        <ActivityIndicator color={secondary ? colors.forest : colors.surface} />
+        <ActivityIndicator
+          color={secondary ? colors.forest : colors.onAccent}
+        />
       ) : null}
       <Text
         className={`flex-shrink text-center text-base font-semibold ${secondary ? "text-forest" : "text-on-accent"}`}
@@ -435,15 +434,16 @@ export function MenuRow({
     </Pressable>
   );
 }
-/** Native modal wrapper; content scrolls at large text sizes. */
+/** Contextual sheet: fixed close/footer, separately scrollable content and guarded dismissal. */
 export function BottomSheet({
   visible,
   title,
   onClose,
   onDismiss,
-  swipeToClose = false,
+  swipeToClose = true,
   avoidKeyboard = false,
   scrollRef,
+  footer,
   children,
 }: PropsWithChildren<{
   visible: boolean;
@@ -453,6 +453,7 @@ export function BottomSheet({
   swipeToClose?: boolean;
   avoidKeyboard?: boolean;
   scrollRef?: Ref<ScrollView>;
+  footer?: React.ReactNode;
 }>) {
   const heading = useRef<Text>(null);
   const closeRef = useRef(onClose);
@@ -460,10 +461,14 @@ export function BottomSheet({
   const swipe = useMemo(
     () =>
       PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: (_, g) =>
-          g.dy > 8 && g.dy > Math.abs(g.dx),
+          g.dy > 12 && g.dy > Math.abs(g.dx) * 1.2,
+        onMoveShouldSetPanResponderCapture: (_, g) =>
+          g.dy > 12 && g.dy > Math.abs(g.dx) * 1.2,
+        onPanResponderTerminationRequest: () => false,
         onPanResponderRelease: (_, g) => {
-          if (g.dy > 55 && g.dy > Math.abs(g.dx)) closeRef.current();
+          if (g.dy > 70 && g.dy > Math.abs(g.dx) * 1.2) closeRef.current();
         },
       }),
     [],
@@ -493,26 +498,32 @@ export function BottomSheet({
           backgroundColor: colors.overlay,
         }}
       >
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Fermer : ${title}`}
+          onPress={onClose}
+          style={{ position: "absolute", inset: 0 }}
+        />
         <SafeAreaView
           edges={["bottom", "left", "right"]}
           accessibilityViewIsModal
           onAccessibilityEscape={onClose}
           className="rounded-t-3xl bg-surface"
-          style={{ maxHeight: "90%" }}
+          style={{ maxHeight: "90%", overflow: "hidden" }}
         >
           {swipeToClose ? (
             <View
               {...swipe.panHandlers}
               accessibilityLabel="Glisser vers le bas pour fermer"
               style={{
-                height: 32,
+                height: 28,
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
               <View
                 style={{
-                  width: 40,
+                  width: 36,
                   height: 4,
                   borderRadius: 2,
                   backgroundColor: colors.line,
@@ -520,22 +531,80 @@ export function BottomSheet({
               />
             </View>
           ) : null}
-          <ScrollView
-            ref={scrollRef}
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={{ padding: 24, gap: 20 }}
+          <View
+            {...(swipeToClose ? swipe.panHandlers : {})}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 12,
+              paddingHorizontal: 20,
+              paddingTop: swipeToClose ? 0 : 16,
+              paddingBottom: 14,
+              borderBottomWidth: 1,
+              borderColor: colors.line,
+            }}
           >
             <Text
               ref={heading}
               accessible
               accessibilityRole="header"
-              className="text-2xl font-bold text-ink"
+              style={{
+                flex: 1,
+                minWidth: 0,
+                fontSize: 21,
+                fontWeight: "600",
+                letterSpacing: -0.5,
+                color: colors.ink,
+              }}
             >
               {title}
             </Text>
-            {children}
-            <SecondaryButton label="Fermer" onPress={onClose} />
-          </ScrollView>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Fermer le panneau : ${title}`}
+              onPress={onClose}
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 22,
+                borderWidth: 1,
+                borderColor: colors.line,
+                backgroundColor: colors.surfaceMuted,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons
+                name="close"
+                size={22}
+                color={colors.ink}
+                accessible={false}
+              />
+            </Pressable>
+          </View>
+          <View style={{ flexShrink: 1 }}>
+            <ScrollView
+              ref={scrollRef}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode={avoidKeyboard ? "interactive" : "none"}
+              style={{ flexShrink: 1 }}
+              contentContainerStyle={{ padding: 20, gap: 18 }}
+            >
+              {children}
+            </ScrollView>
+          </View>
+          {footer ? (
+            <View
+              style={{
+                paddingHorizontal: 20,
+                paddingVertical: 14,
+                borderTopWidth: 1,
+                borderColor: colors.line,
+              }}
+            >
+              {footer}
+            </View>
+          ) : null}
         </SafeAreaView>
       </KeyboardAvoidingView>
     </Modal>

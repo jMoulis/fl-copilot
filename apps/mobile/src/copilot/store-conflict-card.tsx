@@ -647,7 +647,7 @@ export function StoreConflictCard({
               minHeight: 44,
               padding: 14,
               borderRadius: 12,
-              backgroundColor: colors.forest,
+              backgroundColor: colors.accent,
               opacity:
                 saving ||
                 !reviewed ||

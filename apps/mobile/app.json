@@ -6,7 +6,7 @@
     "icon": "./assets/branding/icon.png",
     "scheme": "flcopilot",
     "orientation": "portrait",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.flcopilot.mobile",
@@ -34,7 +34,7 @@
         "expo-splash-screen",
         {
           "image": "./assets/branding/splash-icon.png",
-          "backgroundColor": "#06251C",
+          "backgroundColor": "#FAFBF5",
           "imageWidth": 200
         }
       ],

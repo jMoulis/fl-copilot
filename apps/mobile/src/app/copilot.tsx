@@ -115,7 +115,8 @@ import { CopilotReceiptPhotoIntake } from "@/copilot/receipt-photo-intake";
 import { resolveWasteReceiptImageExtension } from "@/documents/waste-receipt-capture";
 import { selectCopilotPdfs } from "@/copilot/pdf-selection";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams, useFocusEffect } from "expo-router";
 import {
@@ -1559,13 +1560,15 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
   };
   const topics = (
     <View className="gap-3">
-      <PrimaryButton
-        label="Nouvelle conversation"
-        disabled={creating}
-        onPress={() => {
-          void create();
-        }}
-      />
+      {!active ? (
+        <PrimaryButton
+          label="Nouvelle conversation"
+          disabled={creating}
+          onPress={() => {
+            void create();
+          }}
+        />
+      ) : null}
       {error ? (
         <>
           <InlineAlert title="Conversation indisponible" message={error} />
@@ -1676,7 +1679,6 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       edges={["top", "bottom", "left", "right"]}
       style={{ flex: 1, backgroundColor: colors.canvas }}
     >
-      <MainHeader title="Copilote" />
       {linkError ? (
         <InlineAlert title="Conversation indisponible" message={linkError} />
       ) : null}
@@ -1690,6 +1692,46 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
           void create();
         }}
         creatingConversation={creating}
+        headerActions={
+          <>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Ouvrir les produits"
+              onPress={() => router.push("/catalogue")}
+              style={{
+                minWidth: 44,
+                minHeight: 44,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons
+                name="nutrition-outline"
+                size={22}
+                color={colors.ink}
+                accessible={false}
+              />
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Ouvrir les réglages"
+              onPress={() => router.push("/settings")}
+              style={{
+                minWidth: 44,
+                minHeight: 44,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons
+                name="settings-outline"
+                size={21}
+                color={colors.ink}
+                accessible={false}
+              />
+            </Pressable>
+          </>
+        }
         onRemember={(message) =>
           router.push({
             pathname: "/copilot-memory",
@@ -1728,8 +1770,18 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       ) : null}
       <BottomSheet
         visible={menu}
-        title="Conversations"
+        title="Tes conversations"
+        swipeToClose
         onClose={() => setMenu(false)}
+        footer={
+          <PrimaryButton
+            label="Nouvelle conversation"
+            disabled={creating}
+            onPress={() => {
+              void create();
+            }}
+          />
+        }
       >
         {topics}
         <Text className="text-sm text-muted">

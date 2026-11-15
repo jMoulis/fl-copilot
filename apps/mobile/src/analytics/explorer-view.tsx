@@ -304,23 +304,23 @@ export function ExplorerContent({
       />
       <View
         style={{
-          backgroundColor: colors.surface,
-          borderRadius: 20,
-          padding: 14,
+          backgroundColor: colors.hero,
+          borderRadius: 26,
+          padding: 20,
           gap: 12,
           borderWidth: 1,
-          borderColor: colors.line,
+          borderColor: colors.hero,
         }}
       >
-        <Text style={{ color: colors.muted }}>{metrics[view.metric]}</Text>
+        <Text style={{ color: colors.heroMuted }}>{metrics[view.metric]}</Text>
         {data && !filtered ? (
-          <Text style={{ color: colors.muted, fontSize: 12 }}>
+          <Text style={{ color: colors.heroMuted, fontSize: 12 }}>
             {explorerScopeLabel(data)}
           </Text>
         ) : null}
         {!data ? (
           loadingError ? (
-            <Text style={{ color: colors.muted }}>
+            <Text style={{ color: colors.heroMuted }}>
               Les chiffres ne sont pas disponibles pour le moment.
             </Text>
           ) : (
@@ -330,13 +330,13 @@ export function ExplorerContent({
           <>
             <Text
               accessibilityRole="header"
-              style={{ color: colors.ink, fontSize: 30, fontWeight: "700" }}
+              style={{ color: colors.heroInk, fontSize: 36, fontWeight: "600" }}
             >
               {data.total === null
                 ? "Indisponible"
                 : formatCurrency(data.total)}
             </Text>
-            <Text style={{ color: colors.muted, fontSize: 12 }}>
+            <Text style={{ color: colors.heroMuted, fontSize: 12 }}>
               {period.kind === "range" && period.aggregation === "AVERAGE"
                 ? "Moyenne des jours renseignés"
                 : "Cumul renseigné"}
@@ -352,13 +352,25 @@ export function ExplorerContent({
               >
                 <View
                   style={{
-                    backgroundColor: colors.surfaceMuted,
+                    backgroundColor:
+                      color === colors.critical
+                        ? colors.criticalSoft
+                        : colors.accent,
                     borderRadius: 8,
                     paddingHorizontal: 9,
                     paddingVertical: 5,
                   }}
                 >
-                  <Text style={{ color, fontWeight: "700", fontSize: 13 }}>
+                  <Text
+                    style={{
+                      color:
+                        color === colors.critical
+                          ? colors.critical
+                          : colors.onAccent,
+                      fontWeight: "700",
+                      fontSize: 13,
+                    }}
+                  >
                     {c.status === "PARTIAL" ? "Indicatif · " : ""}
                     {percent !== null
                       ? formatSignedPercentage(percent)
@@ -367,26 +379,19 @@ export function ExplorerContent({
                         : "Écart indisponible"}
                   </Text>
                 </View>
-                <Text style={{ color: colors.muted, fontSize: 12 }}>
+                <Text style={{ color: colors.heroMuted, fontSize: 12 }}>
                   Sur {data.comparedDays} jours{" "}
                   {data.mode === "EXPLICIT"
                     ? "de la période citée"
                     : "clos renseignés équivalents · N−1"}
                 </Text>
-                <Text style={{ color: colors.muted, fontSize: 12 }}>
+                <Text style={{ color: colors.heroMuted, fontSize: 12 }}>
                   {formatCurrency(c.currentValue)} contre{" "}
                   {formatCurrency(c.referenceValue)} en référence
                 </Text>
-                {c.status === "PARTIAL" ? (
-                  <Text style={{ color: colors.warning, fontSize: 12 }}>
-                    Données partielles : l’écart porte uniquement sur les jours
-                    équivalents renseignés des deux côtés, pas nécessairement
-                    sur tout le cumul affiché.
-                  </Text>
-                ) : null}
               </View>
             ) : (
-              <Text style={{ color: colors.warning, fontSize: 12 }}>
+              <Text style={{ color: colors.heroWarning, fontSize: 12 }}>
                 {data.reference === null
                   ? "Aucune période équivalente disponible en N−1"
                   : "Pas de journée close renseignée des deux côtés pour comparer"}
@@ -399,7 +404,7 @@ export function ExplorerContent({
         data.points.some((point) => point.value !== null) ? (
           <View style={{ gap: 12 }}>
             <Text
-              style={{ color: colors.ink, fontSize: 18, fontWeight: "700" }}
+              style={{ color: colors.heroInk, fontSize: 18, fontWeight: "700" }}
             >
               {period.kind === "year" ||
               (period.kind === "range" &&
@@ -407,10 +412,11 @@ export function ExplorerContent({
                 ? "Détail par mois"
                 : "Détail par jour"}
             </Text>
-            <Text style={{ color: colors.muted, fontSize: 12 }}>
+            <Text style={{ color: colors.heroMuted, fontSize: 12 }}>
               Touchez une colonne pour explorer · €
             </Text>
             <ExplorerTrendChart
+              inverse
               period={period}
               points={data.points}
               scrollOffset={view.frame.chartScroll}
@@ -420,13 +426,26 @@ export function ExplorerContent({
           </View>
         ) : null}
         {data ? (
-          <DetailsDisclosure title="Couverture et comparaison">
+          <DetailsDisclosure title="Couverture et comparaison" inverse>
+            {c?.status === "PARTIAL" ? (
+              <Text
+                style={{
+                  color: colors.heroWarning,
+                  fontSize: 12,
+                  lineHeight: 18,
+                }}
+              >
+                Données partielles : l’écart porte uniquement sur les jours
+                équivalents renseignés des deux côtés, pas nécessairement sur
+                tout le cumul affiché.
+              </Text>
+            ) : null}
             <Text
               style={{
                 color:
                   data.coverage.partial || data.coverage.missing
-                    ? colors.warning
-                    : colors.muted,
+                    ? colors.heroWarning
+                    : colors.heroMuted,
                 fontSize: 12,
                 lineHeight: 18,
               }}
@@ -453,7 +472,7 @@ export function ExplorerContent({
                   paddingTop: 12,
                 }}
               >
-                <Text style={{ color: colors.ink, fontWeight: "600" }}>
+                <Text style={{ color: colors.heroInk, fontWeight: "600" }}>
                   {data.mode === "EXPLICIT"
                     ? "Comparaison explicite · "
                     : "Comparaison de "}
@@ -464,11 +483,21 @@ export function ExplorerContent({
                     : " clos renseigné équivalent"}
                   {data.mode !== "EXPLICIT" && data.comparedDays > 1 ? "s" : ""}
                 </Text>
-                <Text style={{ color: colors.ink }}>
+                <Text style={{ color: colors.heroInk }}>
                   {formatCurrency(c.currentValue)} contre{" "}
                   {formatCurrency(c.referenceValue)}
                 </Text>
-                <Text style={{ color, fontWeight: "700" }}>
+                <Text
+                  style={{
+                    color:
+                      sign === 0
+                        ? colors.heroMuted
+                        : color === colors.positive
+                          ? colors.accent
+                          : colors.heroCritical,
+                    fontWeight: "700",
+                  }}
+                >
                   {c.absoluteDifference === null
                     ? "Écart indisponible"
                     : formatSignedCurrency(c.absoluteDifference)}
@@ -478,7 +507,7 @@ export function ExplorerContent({
                 </Text>
               </View>
             ) : (
-              <Text style={{ color: colors.warning }}>
+              <Text style={{ color: colors.heroWarning }}>
                 {data.reference === null
                   ? data.mode === "EXPLICIT"
                     ? "Aucune période de référence demandée pour cette source."
@@ -489,7 +518,7 @@ export function ExplorerContent({
               </Text>
             )}
             {data.reference ? (
-              <Text style={{ color: colors.muted }}>
+              <Text style={{ color: colors.heroMuted }}>
                 Référence :{" "}
                 {data.mode === "EXPLICIT"
                   ? "période explicitement demandée"
@@ -500,7 +529,7 @@ export function ExplorerContent({
               </Text>
             ) : null}
             {data.mode === "EXPLICIT" ? (
-              <Text style={{ color: colors.muted }}>
+              <Text style={{ color: colors.heroMuted }}>
                 Données locales actuelles ; la valeur citée reste conservée dans
                 la discussion.{" "}
                 {period.kind === "range" && period.aggregation === "AVERAGE"
@@ -512,7 +541,7 @@ export function ExplorerContent({
               </Text>
             ) : null}
             {data.referenceRange ? (
-              <Text style={{ color: colors.muted, fontSize: 12 }}>
+              <Text style={{ color: colors.heroMuted, fontSize: 12 }}>
                 {formatFrenchCalendarDate(
                   c?.referencePeriod?.start ?? data.referenceRange.start,
                 )}{" "}
@@ -523,19 +552,19 @@ export function ExplorerContent({
               </Text>
             ) : null}
             {data.warnings.includes("NO_ISO_EQUIVALENT") ? (
-              <Text style={{ color: colors.warning }}>
+              <Text style={{ color: colors.heroWarning }}>
                 Certaines journées n’ont pas d’équivalent de même semaine ISO en
                 N−1. Elles ne sont pas incluses dans l’écart.
               </Text>
             ) : null}
             {view.metric === "wasteCost" ? (
-              <Text style={{ color: colors.muted }}>
+              <Text style={{ color: colors.heroMuted }}>
                 Coût d’achat connu et estimé selon les données disponibles,
                 distinct de la valeur au prix de vente.
               </Text>
             ) : null}
             {view.metric === "waste" || view.metric === "wasteCost" ? (
-              <Text style={{ color: colors.muted }}>
+              <Text style={{ color: colors.heroMuted }}>
                 Casse enregistrée sur la période. Les dates Mercalys peuvent
                 correspondre au déchargement de l’appareil plutôt qu’au jour du
                 bipage. Une journée sans enregistrement ne signifie pas une

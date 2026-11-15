@@ -1,6 +1,6 @@
 import { Redirect, Tabs, type Href } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { useWindowDimensions } from "react-native";
+import { View, useWindowDimensions } from "react-native";
 import { useAuth } from "../../auth/auth-provider";
 import { colors } from "../../design/tokens";
 export default function TabLayout() {
@@ -12,13 +12,19 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.forest,
-        tabBarInactiveTintColor: colors.muted,
+        tabBarActiveTintColor: colors.navigationInk,
+        tabBarInactiveTintColor: colors.navigationMuted,
         tabBarShowLabel: true,
         tabBarLabelPosition: "below-icon",
+        tabBarIconStyle: { width: 48, height: 30 },
         tabBarStyle: {
-          backgroundColor: colors.canvas,
-          borderTopColor: colors.line,
+          backgroundColor: colors.navigation,
+          borderTopWidth: 0,
+          borderRadius: 24,
+          marginHorizontal: 12,
+          marginBottom: 10,
+          paddingTop: 8,
+          paddingBottom: 10,
           minHeight: 64 + Math.max(0, fontScale - 1) * 32,
         },
         tabBarLabelStyle: { fontSize: 11 },
@@ -30,11 +36,23 @@ export default function TabLayout() {
           title: "Journal",
           tabBarAccessibilityLabel: "Journal",
           tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons
-              name={focused ? "journal" : "journal-outline"}
-              color={color}
-              size={size}
-            />
+            <View
+              style={{
+                width: 48,
+                height: 30,
+                flexShrink: 0,
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: 12,
+                backgroundColor: focused ? colors.accent : "transparent",
+              }}
+            >
+              <Ionicons
+                name={focused ? "journal" : "journal-outline"}
+                color={focused ? colors.onAccent : color}
+                size={Math.min(size, 22)}
+              />
+            </View>
           ),
         }}
       />
@@ -44,11 +62,23 @@ export default function TabLayout() {
           title: "Analyses",
           tabBarAccessibilityLabel: "Analyses",
           tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons
-              name={focused ? "bar-chart" : "bar-chart-outline"}
-              color={color}
-              size={size}
-            />
+            <View
+              style={{
+                width: 48,
+                height: 30,
+                flexShrink: 0,
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: 12,
+                backgroundColor: focused ? colors.accent : "transparent",
+              }}
+            >
+              <Ionicons
+                name={focused ? "bar-chart" : "bar-chart-outline"}
+                color={focused ? colors.onAccent : color}
+                size={Math.min(size, 22)}
+              />
+            </View>
           ),
         }}
       />
@@ -58,11 +88,23 @@ export default function TabLayout() {
           title: "Copilote",
           tabBarAccessibilityLabel: "Copilote",
           tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons
-              name={focused ? "sparkles" : "sparkles-outline"}
-              color={color}
-              size={size}
-            />
+            <View
+              style={{
+                width: 48,
+                height: 30,
+                flexShrink: 0,
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: 12,
+                backgroundColor: focused ? colors.accent : "transparent",
+              }}
+            >
+              <Ionicons
+                name={focused ? "sparkles" : "sparkles-outline"}
+                color={focused ? colors.onAccent : color}
+                size={Math.min(size, 22)}
+              />
+            </View>
           ),
         }}
       />
@@ -72,11 +114,23 @@ export default function TabLayout() {
           title: "Imports",
           tabBarAccessibilityLabel: "Imports",
           tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons
-              name={focused ? "folder" : "folder-outline"}
-              color={color}
-              size={size}
-            />
+            <View
+              style={{
+                width: 48,
+                height: 30,
+                flexShrink: 0,
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: 12,
+                backgroundColor: focused ? colors.accent : "transparent",
+              }}
+            >
+              <Ionicons
+                name={focused ? "folder" : "folder-outline"}
+                color={focused ? colors.onAccent : color}
+                size={Math.min(size, 22)}
+              />
+            </View>
           ),
         }}
       />

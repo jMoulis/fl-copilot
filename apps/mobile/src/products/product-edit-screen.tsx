@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Text } from "react-native";
+import { Alert, Text, View } from "react-native";
 import { router, type Href } from "expo-router";
 import { catalogueSnapshotIdentity } from "@fl-copilot/domain";
 import {
@@ -8,6 +8,8 @@ import {
   InlineAlert,
   SecondaryButton,
 } from "../components/ui";
+import { IconButton } from "../components/dashboard";
+import { colors } from "../design/tokens";
 import { ProductEditorForm } from "./product-editor-form";
 import {
   productSnapshotToDraft,
@@ -148,30 +150,68 @@ function LoadedProductEditor({
     else apply();
   }
   return (
-    <AppScreen keyboardAware>
-      <AppHeader
-        title={id === "new" ? "Nouveau produit" : "Modifier le produit"}
-        subtitle={
-          base?.product.entity.label ??
-          "Enregistré sur cet appareil, même hors connexion."
-        }
-      />
-      <SecondaryButton
-        disabled={form.saving}
-        label={
-          backLabel ??
-          (id === "new" ? "Retour aux produits" : "Retour à la fiche")
-        }
-        onPress={() =>
-          onBack
-            ? onBack()
-            : router.canGoBack()
-              ? router.back()
-              : id === "new"
-                ? returnToProducts(router)
-                : returnToProduct(router, id, true)
-        }
-      />
+    <AppScreen
+      keyboardAware
+      header={
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 12,
+            paddingHorizontal: 16,
+            paddingVertical: 8,
+            borderBottomWidth: 1,
+            borderColor: colors.line,
+          }}
+        >
+          <IconButton
+            disabled={form.saving}
+            label={
+              backLabel ??
+              (id === "new" ? "Retour aux produits" : "Retour à la fiche")
+            }
+            icon="chevron-back"
+            onPress={() =>
+              onBack
+                ? onBack()
+                : router.canGoBack()
+                  ? router.back()
+                  : id === "new"
+                    ? returnToProducts(router)
+                    : returnToProduct(router, id, true)
+            }
+          />
+          <Text
+            style={{
+              flex: 1,
+              color: colors.ink,
+              fontSize: 16,
+              fontWeight: "600",
+            }}
+          >
+            {id === "new" ? "Nouveau produit" : "Modifier le produit"}
+          </Text>
+        </View>
+      }
+    >
+      <View style={{ gap: 6, paddingVertical: 8 }}>
+        <Text style={{ color: colors.muted, fontSize: 12 }}>FICHE PRODUIT</Text>
+        <Text
+          accessibilityRole="header"
+          style={{
+            color: colors.ink,
+            fontSize: 26,
+            lineHeight: 30,
+            fontWeight: "600",
+            letterSpacing: -0.7,
+          }}
+        >
+          {base?.product.entity.label ?? "Nouveau produit"}
+        </Text>
+        <Text style={{ color: colors.muted, fontSize: 13, lineHeight: 19 }}>
+          Enregistré sur cet appareil, même hors connexion.
+        </Text>
+      </View>
       {state.error ? (
         <InlineAlert title="Actualisation interrompue" message={state.error} />
       ) : null}

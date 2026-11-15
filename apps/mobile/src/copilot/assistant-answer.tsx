@@ -130,7 +130,7 @@ export function AssistantAnswer({
               nestedScrollEnabled
               canCancelContentTouches
               keyboardShouldPersistTaps="handled"
-              indicatorStyle="white"
+              indicatorStyle="black"
               showsHorizontalScrollIndicator
               accessibilityLabel="Tableau de chiffres, faites défiler horizontalement"
               style={styles.tableScroll}
@@ -294,31 +294,37 @@ export function AssistantAnswer({
 const styles = StyleSheet.create({
   answer: { gap: 14, minWidth: 0, maxWidth: "100%" },
   externalLink: { minHeight: 44, paddingVertical: 10, gap: 4 },
-  text: { fontSize: 17, lineHeight: 26, color: colors.ink },
-  heading: { fontSize: 19, fontWeight: "600" },
+  text: { fontSize: 16, lineHeight: 25, color: colors.ink },
+  heading: { fontSize: 20, fontWeight: "600", letterSpacing: -0.4 },
   bold: { fontWeight: "600" },
   link: { fontSize: 13, color: colors.forest, textDecorationLine: "underline" },
-  tableScroll: { marginVertical: 4, width: "100%", flexGrow: 0 },
+  tableScroll: {
+    marginVertical: 6,
+    width: "100%",
+    flexGrow: 0,
+    paddingBottom: 5,
+  },
   table: {
     alignSelf: "flex-start",
-    borderWidth: 1,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
     borderColor: colors.line,
-    borderRadius: 12,
-    overflow: "hidden",
+    backgroundColor: colors.surface,
   },
   row: {
     flexDirection: "row",
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderColor: colors.line,
   },
-  header: { backgroundColor: colors.surface },
+  header: { backgroundColor: colors.surfaceMuted },
   cell: {
     width: 156,
     flexShrink: 0,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
+    paddingVertical: 13,
+    fontSize: 14,
     lineHeight: 22,
     color: colors.ink,
+    fontVariant: ["tabular-nums"],
   },
 });

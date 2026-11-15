@@ -10,9 +10,14 @@ import { colors } from "../design/tokens";
 
 type Placement = CommercialWeekPreparation["placements"][number];
 const fill = {
-  ACCROCHE: colors.forestSoft,
-  RELAIS: colors.infoSoft,
+  ACCROCHE: colors.hero,
+  RELAIS: colors.accent,
   GAMME: colors.warningSoft,
+};
+const fillInk = {
+  ACCROCHE: colors.heroInk,
+  RELAIS: colors.onAccent,
+  GAMME: colors.ink,
 };
 const role = {
   ACCROCHE: "Accroche",
@@ -47,12 +52,20 @@ export function TgPresentationView({
               flexGrow: 1,
               flexBasis: large ? "100%" : "46%",
               minWidth: 125,
-              gap: 8,
+              gap: 9,
+              padding: 14,
+              borderRadius: 20,
+              backgroundColor: colors.surface,
             }}
           >
             <Text style={{ color: colors.muted, fontSize: 12 }}>{p.label}</Text>
             <Text
-              style={{ color: colors.ink, fontSize: 18, fontWeight: "700" }}
+              style={{
+                color: colors.ink,
+                fontSize: 18,
+                lineHeight: 24,
+                fontWeight: "700",
+              }}
             >
               {p.theme || "Thème à préciser"}
             </Text>
@@ -94,7 +107,7 @@ export function TgPresentationView({
                       flexDirection: "row",
                       alignItems: "center",
                       gap: 6,
-                      minHeight: 36,
+                      minHeight: onSharesChange ? 44 : 36,
                     }}
                   >
                     <View
@@ -277,7 +290,7 @@ function TgSurfaceMap({
         <>
           <Text
             style={{
-              color: colors.ink,
+              color: fillInk[zones[i]!.role],
               fontSize: large ? 22 : 15,
               fontWeight: "700",
             }}
@@ -287,7 +300,7 @@ function TgSurfaceMap({
           <Text
             numberOfLines={2}
             style={{
-              color: colors.ink,
+              color: fillInk[zones[i]!.role],
               fontSize: large ? 14 : 11,
               textAlign: "center",
             }}
@@ -301,7 +314,7 @@ function TgSurfaceMap({
   return (
     <View
       accessibilityLabel="Répartition proposée, total 100 pour cent de surface"
-      style={{ height: large ? 260 : 210, flexDirection: "row", gap: 3 }}
+      style={{ height: large ? 260 : 154, flexDirection: "row", gap: 3 }}
     >
       {block(first)}
       {zones.length > 1 ? (

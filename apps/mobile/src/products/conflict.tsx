@@ -353,7 +353,7 @@ function CatalogueReview({
               minHeight: 44,
               padding: 12,
               borderRadius: 12,
-              backgroundColor: colors.forest,
+              backgroundColor: colors.accent,
               opacity: disabled ? 0.45 : 1,
             }}
           >

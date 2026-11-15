@@ -143,7 +143,12 @@ function ScopedProductPerformance({
       let active = true;
       setError(undefined);
       const metrics = [
-        ...new Set<AnalyticsExplorerMetric>(["sales", "margin", view.metric]),
+        ...new Set<AnalyticsExplorerMetric>([
+          "sales",
+          "margin",
+          "waste",
+          view.metric,
+        ]),
       ];
       void Promise.all(
         metrics.map(

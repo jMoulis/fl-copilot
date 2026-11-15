@@ -403,7 +403,7 @@ function VisualMutationCard({
               minHeight: 44,
               justifyContent: "center",
               borderRadius: 12,
-              backgroundColor: colors.forest,
+              backgroundColor: colors.accent,
               opacity: allowed ? 1 : 0.5,
             }}
           >

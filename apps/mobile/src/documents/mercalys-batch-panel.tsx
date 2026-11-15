@@ -1,4 +1,9 @@
 import { colors } from "../design/tokens";
+import {
+  SafeAreaProvider,
+  initialWindowMetrics,
+} from "react-native-safe-area-context";
+import { ImportDocumentRow, ImportScreenHeader } from "./imports-presentation";
 import { DocumentArchiveRepository } from "./document-archive-repository";
 import {
   DocumentArchiveControl,
@@ -27,6 +32,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type RefObject,
 } from "react";
 import {
   Modal,
@@ -35,6 +41,7 @@ import {
   Text,
   TextInput,
   View,
+  type ScrollView,
 } from "react-native";
 import {
   randomUUID,
@@ -49,9 +56,9 @@ import type {
   MercalysBatchPublicationPlan,
 } from "@fl-copilot/domain";
 import {
-  AppHeader,
   AppScreen,
-  SectionCard,
+  BottomSheet,
+  PrimaryButton,
   SecondaryButton,
   InlineAlert,
 } from "../components/ui";
@@ -81,7 +88,9 @@ export function MercalysBatchPanel({
   archiveContext,
   initialBatchId,
   onCloseInitialBatch,
+  importMenu,
 }: {
+  importMenu?: { visible: boolean; onClose(): void };
   initialBatchId?: string;
   onCloseInitialBatch?(): void;
   archiveContext?: DocumentArchiveAccess;
@@ -99,6 +108,7 @@ export function MercalysBatchPanel({
     close: () => void,
     onBusyChange: (busy: boolean) => void,
     onChanged: () => void,
+    scrollRef: RefObject<ScrollView | null>,
   ): ReactNode;
   disabled?: boolean;
 }) {
@@ -202,6 +212,24 @@ export function MercalysBatchPanel({
       ),
     [repo, service, db],
   );
+  const [importMenuOpen, setImportMenuOpen] = useState(false);
+  const reviewScroll = useRef<ScrollView>(null);
+  const pendingIntake = useRef<(() => void) | undefined>(undefined);
+  function closeImportMenu() {
+    setImportMenuOpen(false);
+    importMenu?.onClose();
+  }
+  function finishIntake() {
+    const start = pendingIntake.current;
+    pendingIntake.current = undefined;
+    if (alive.current) start?.();
+  }
+  function queueIntake(work: (signal: AbortSignal) => Promise<void>) {
+    if (pendingIntake.current || busy || disabled) return;
+    pendingIntake.current = () => void run(work);
+    closeImportMenu();
+    if (Platform.OS !== "ios") finishIntake();
+  }
   const [historyQuery, setHistoryQuery] = useState("");
   const [reviewAsset, setReviewAsset] = useState<
     MercalysSelectedFile & { expectedChecksum: string }
@@ -381,6 +409,7 @@ export function MercalysBatchPanel({
       opening.abort();
       alive.current = false;
       abort.current?.abort();
+      pendingIntake.current = undefined;
       reviewDone.current?.();
     };
   }, [repo, archiveRepo, archiveEnabled, initialBatchId, load]);
@@ -508,7 +537,20 @@ export function MercalysBatchPanel({
   );
   return (
     <>
-      <SectionCard title="Ajouter des exports">
+      {!importMenu ? (
+        <PrimaryButton
+          label="Importer un fichier"
+          disabled={busy || disabled}
+          onPress={() => setImportMenuOpen(true)}
+        />
+      ) : null}
+      <BottomSheet
+        visible={importMenu?.visible ?? importMenuOpen}
+        title="Importer dans Mercalys"
+        onClose={closeImportMenu}
+        onDismiss={finishIntake}
+        swipeToClose
+      >
         <Text className="text-sm text-muted">
           Ventes ou casse, XLSX ou ZIP. Les fichiers prêts sont publiés
           automatiquement ; les autres restent à examiner.
@@ -518,7 +560,7 @@ export function MercalysBatchPanel({
           disabled={busy || disabled}
           loading={busy}
           onPress={() =>
-            void run(async (signal) => {
+            queueIntake(async (signal) => {
               const files = await pick();
               if (!files?.length || signal.aborted) return;
               const captured = await captureMercalysBatch(
@@ -551,7 +593,7 @@ export function MercalysBatchPanel({
             label="Choisir une archive ZIP"
             disabled={busy || disabled}
             onPress={() =>
-              void run(async (signal) => {
+              queueIntake(async (signal) => {
                 const asset = await pickZip();
                 if (!asset || signal.aborted) return;
                 const id = await retainMercalysZip(
@@ -567,16 +609,34 @@ export function MercalysBatchPanel({
             }
           />
         ) : null}
-        {!active && busy ? (
-          <Text accessibilityLiveRegion="polite" className="text-sm text-muted">
-            {progress ?? "Préparation du lot…"}
+      </BottomSheet>
+      {!active && busy ? (
+        <Text accessibilityLiveRegion="polite" className="text-sm text-muted">
+          {progress ?? "Préparation du lot…"}
+        </Text>
+      ) : null}
+      {!active && error ? (
+        <InlineAlert title="Import à reprendre" message={error} />
+      ) : null}
+      <View className="gap-4">
+        <View className="flex-row items-baseline justify-between gap-3">
+          <Text
+            accessibilityRole="header"
+            className="text-2xl font-semibold tracking-tight text-ink"
+          >
+            Historique
           </Text>
-        ) : null}
-        {!active && error ? (
-          <InlineAlert title="Import à reprendre" message={error} />
-        ) : null}
-      </SectionCard>
-      <SectionCard title="Imports récents">
+          <Text className="text-sm text-muted">Imports conservés</Text>
+        </View>
+        <TextInput
+          accessibilityLabel="Rechercher un import par nom ou date"
+          placeholder="Nom du ZIP, du fichier ou date d’import"
+          placeholderTextColor={colors.muted}
+          value={historyQuery}
+          onChangeText={setHistoryQuery}
+          maxLength={200}
+          className="min-h-12 rounded-xl border border-line bg-surface px-4 py-3 text-base text-ink"
+        />
         {archiveContext ? (
           <>
             <ArchiveViewFilter
@@ -595,10 +655,6 @@ export function MercalysBatchPanel({
                 });
               }}
             />
-            <Text className="text-sm text-muted">
-              Le rangement est personnel. Archiver conserve les fichiers, les
-              chiffres publiés et les traitements demandés.
-            </Text>
             {visibilityError ? (
               <>
                 <InlineAlert
@@ -613,22 +669,23 @@ export function MercalysBatchPanel({
             ) : null}
           </>
         ) : null}
-        <TextInput
-          accessibilityLabel="Rechercher un import par nom ou date"
-          placeholder="Nom du ZIP, du fichier ou date d’import"
-          placeholderTextColor={colors.muted}
-          value={historyQuery}
-          onChangeText={setHistoryQuery}
-          maxLength={200}
-          className="min-h-12 rounded-xl border border-line bg-surface px-4 py-3 text-base text-ink"
-        />
-        {visibleArchives.map((a) => (
-          <View key={a.id} className="gap-2">
-            <Pressable
+        <View>
+          {visibleArchives.map((a) => (
+            <ImportDocumentRow
               key={a.id}
-              accessibilityRole="button"
+              title={a.filename}
+              format="ZIP"
+              date={new Date(a.createdAt).toLocaleString("fr-FR")}
+              detail={
+                a.outcome.status === "PROCESSED"
+                  ? `${a.outcome.retainedCount} fichiers conservés${a.outcome.failures.length ? ` · ${a.outcome.failures.length} erreurs d’extraction` : ""}${a.outcome.ignored.length ? ` · ${a.outcome.ignored.length} ignorés` : ""}`
+                  : a.outcome.status === "FAILED"
+                    ? archiveError(a.outcome.code)
+                    : "Archive conservée · lecture à reprendre"
+              }
               accessibilityLabel={`Ouvrir ${a.filename}, importé le ${new Date(a.createdAt).toLocaleString("fr-FR")}`}
               disabled={busy || disabled}
+              archiveAction={control(a.batchId, "MERCALYS_BATCH", a.filename)}
               onPress={() =>
                 void run(async (signal) => {
                   if (
@@ -639,49 +696,29 @@ export function MercalysBatchPanel({
                   else await processArchive(a.id, signal);
                 })
               }
-              className="min-h-16 gap-1 rounded-xl border border-line p-4"
-            >
-              <Text className="font-semibold text-ink">{a.filename} ›</Text>
-              <Text className="text-sm text-muted">
-                Importé le {new Date(a.createdAt).toLocaleString("fr-FR")}
-              </Text>
-              <Text className="text-sm text-muted">
-                {a.outcome.status === "PROCESSED"
-                  ? `${a.outcome.retainedCount} fichiers · ${a.outcome.failures.length} erreurs d’extraction${a.outcome.ignored.length ? ` · ${a.outcome.ignored.length} ignorés` : ""}`
-                  : a.outcome.status === "FAILED"
-                    ? archiveError(a.outcome.code)
-                    : "Archive conservée · lecture à reprendre"}
-              </Text>
-            </Pressable>
-            {control(a.batchId, "MERCALYS_BATCH", a.filename)}
-          </View>
-        ))}
-        {visibleBatches.map((batch) => (
-          <View key={batch.id} className="gap-2">
-            <Pressable
+            />
+          ))}
+          {visibleBatches.map((batch) => (
+            <ImportDocumentRow
               key={batch.id}
-              accessibilityRole="button"
-              disabled={busy || disabled}
-              onPress={() => void run(async () => load(batch.id))}
-              className="min-h-16 gap-1 rounded-xl border border-line p-4"
-            >
-              <Text className="font-semibold text-ink">
-                {batch.files.length === 1
+              title={
+                batch.files.length === 1
                   ? batch.files[0]!.filename
-                  : `${batch.files.length} fichiers XLSX`}{" "}
-                ›
-              </Text>
-              <Text className="text-sm text-muted">
-                Importé le {new Date(batch.createdAt).toLocaleString("fr-FR")}
-              </Text>
-            </Pressable>
-            {control(
-              batch.id,
-              "MERCALYS_BATCH",
-              batch.files.length === 1 ? batch.files[0]!.filename : "ce lot",
-            )}
-          </View>
-        ))}
+                  : `${batch.files.length} fichiers XLSX`
+              }
+              format="XLSX"
+              date={new Date(batch.createdAt).toLocaleString("fr-FR")}
+              detail={`${batch.files.length} fichier${batch.files.length > 1 ? "s" : ""} conservé${batch.files.length > 1 ? "s" : ""}`}
+              disabled={busy || disabled}
+              archiveAction={control(
+                batch.id,
+                "MERCALYS_BATCH",
+                batch.files.length === 1 ? batch.files[0]!.filename : "ce lot",
+              )}
+              onPress={() => void run(async () => load(batch.id))}
+            />
+          ))}
+        </View>
         {!visibleArchives.length && !visibleBatches.length ? (
           <Text className="text-sm text-muted">
             {historyTerm
@@ -689,6 +726,12 @@ export function MercalysBatchPanel({
               : historyArchived
                 ? "Aucun import archivé."
                 : "Vos prochains imports apparaîtront ici. Les imports rangés restent accessibles dans Archivés."}
+          </Text>
+        ) : null}
+        {archiveContext ? (
+          <Text className="text-xs leading-5 text-muted">
+            Le rangement est personnel. Archiver conserve les originaux et les
+            chiffres publiés.
           </Text>
         ) : null}
         {moreArchives ? (
@@ -705,281 +748,315 @@ export function MercalysBatchPanel({
             onPress={() => void run(async () => loadRecent(true))}
           />
         ) : null}
-      </SectionCard>
+      </View>
       <Modal
         visible={!!active}
         animationType="slide"
-        presentationStyle="pageSheet"
-        allowSwipeDismissal={!busy}
+        presentationStyle="fullScreen"
         onRequestClose={closeBatch}
       >
-        <AppScreen>
-          <AppHeader
-            title={batchTitle}
-            subtitle={
-              importedAt
-                ? `${fileCount === undefined ? "Lot" : `${fileCount} fichiers`} · importé le ${new Date(importedAt).toLocaleString("fr-FR")}`
-                : "Les originaux et les publications restent conservés."
-            }
-          />
-          <SecondaryButton
-            label={
-              initialBatchId === active && onCloseInitialBatch
-                ? "Retour aux documents reçus"
-                : "Retour aux imports"
-            }
-            disabled={busy}
-            onPress={closeBatch}
-          />
-          {busy ? (
-            <Text
-              accessibilityLiveRegion="polite"
-              className="text-sm text-muted"
-            >
-              {progress ??
-                (reviewAsset ? "Examen du fichier" : "Traitement du lot…")}
-            </Text>
-          ) : null}
-          {busy && !reviewAsset ? (
-            <SecondaryButton
-              label="Interrompre le traitement"
-              onPress={() => abort.current?.abort()}
-            />
-          ) : null}
-          {error ? (
-            <InlineAlert title="Lot à reprendre" message={error} />
-          ) : null}
-          {activeArchive &&
-          (activeArchive.outcome.status !== "PROCESSED" ||
-            activeArchive.outcome.failures.length > 0) ? (
-            <SecondaryButton
-              label="Reprendre l’extraction de l’archive"
-              disabled={busy || disabled}
-              onPress={() =>
-                void run((signal) => processArchive(activeArchive.id, signal))
-              }
-            />
-          ) : null}
-          <SecondaryButton
-            label={toolsOpen ? "Fermer les actions du lot" : "Actions du lot"}
-            expanded={toolsOpen}
-            disabled={busy || disabled}
-            onPress={() => setToolsOpen((value) => !value)}
-          />
-          {toolsOpen ? (
-            <View className="gap-3">
-              {activeArchive?.outcome.status === "PROCESSED" &&
-              activeArchive.outcome.failures.length ? (
-                <InlineAlert
-                  title="Fichiers non extraits"
-                  message={activeArchive.outcome.failures
-                    .map(
-                      (f) =>
-                        `${f.path} : extraction impossible. Reprenez l’archive ou sélectionnez ce fichier original.`,
-                    )
-                    .join("\n")}
-                />
-              ) : null}
-              {activeArchive?.outcome.status === "PROCESSED" &&
-              activeArchive.outcome.ignored.length ? (
-                <Text className="text-sm text-muted">
-                  {activeArchive.outcome.ignored.length} fichiers système
-                  ignorés.
-                </Text>
-              ) : null}
-              {active ? (
-                <SecondaryButton
-                  label="Reprendre les fichiers en attente"
-                  disabled={busy || disabled}
-                  onPress={() =>
-                    void run(async (signal) => {
-                      if (alive.current)
-                        setProgress("Vérification des fichiers en attente…");
-                      await service.preparePending(active, signal);
-                      await load(active);
-                    })
-                  }
-                />
-              ) : null}
-              {active ? (
-                <SecondaryButton
-                  label="Préparer la publication du lot"
-                  disabled={busy || disabled}
-                  onPress={() =>
-                    void run(async (signal) => {
-                      setPublicationReport(undefined);
-                      setProgress("Vérification des lignes à publier…");
-                      const plan = await publisher.preview(active, signal);
-                      if (alive.current) setPublicationPlan(plan);
-                    })
-                  }
-                />
-              ) : null}
-            </View>
-          ) : null}
-          {publicationPlan ? (
-            <View className="gap-2 rounded-xl border border-line p-3">
-              <Text className="font-semibold text-ink">Publication du lot</Text>
-              <Text>
-                {
-                  publicationPlan.items.filter((i) => i.status === "READY")
-                    .length
-                }{" "}
-                fichiers ·{" "}
-                {publicationPlan.items
-                  .filter((i) => i.status === "READY")
-                  .reduce((n, i) => n + i.readyCount, 0)}{" "}
-                lignes prêtes
-              </Text>
-              <Text>
-                {
-                  publicationPlan.items.filter((i) => i.status === "DUPLICATE")
-                    .length
-                }{" "}
-                fichiers déjà publiés ·{" "}
-                {
-                  publicationPlan.items.filter(
-                    (i) => i.status === "BLOCKED" || i.status === "FAILED",
-                  ).length
-                }{" "}
-                fichiers à examiner
-              </Text>
-              <Text className="text-sm text-muted">
-                Seules les lignes prêtes seront publiées. Les produits à
-                confirmer et les fichiers nécessitant un rapprochement restent à
-                examiner.
-              </Text>
-              <SecondaryButton
-                label="Publier les lignes prêtes du lot"
-                disabled={
-                  busy ||
-                  disabled ||
-                  !publicationPlan.items.some((i) => i.status === "READY")
+        <SafeAreaProvider
+          initialMetrics={initialWindowMetrics}
+          style={{ flex: 1, backgroundColor: colors.canvas }}
+        >
+          <AppScreen
+            header={
+              <ImportScreenHeader
+                title="Lot d’import"
+                closeLabel={
+                  initialBatchId === active && onCloseInitialBatch
+                    ? "Retour aux documents reçus"
+                    : "Retour aux imports"
                 }
-                onPress={() =>
-                  void run(async (signal) => {
-                    const plan = publicationPlan;
-                    setPublicationPlan(undefined);
-                    setProgress("Publication des fichiers en cours…");
-                    const report = await publisher.confirm(plan, signal);
-                    await load(plan.batchId);
-                    if (alive.current) setPublicationReport(report);
-                    if (report.some((item) => item.status === "PUBLISHED"))
-                      await onPublished?.();
-                  })
-                }
-              />
-              <SecondaryButton
-                label="Annuler la publication"
-                disabled={busy || disabled}
-                onPress={() => setPublicationPlan(undefined)}
-              />
-            </View>
-          ) : null}
-          {publicationReport ? (
-            <InlineAlert
-              title="Résultat du lot"
-              message={`${publicationReport.filter((i) => i.status === "PUBLISHED").length} fichiers publiés · ${publicationReport.reduce((n, i) => n + i.publishedCount, 0)} lignes publiées. ${publicationReport.filter((i) => i.status === "DUPLICATE").length} fichiers déjà publiés. ${publicationReport.filter((i) => i.status === "BLOCKED" || i.status === "FAILED").length} fichiers restent à examiner. Les lignes non publiées restent visibles dans le détail des fichiers.`}
-            />
-          ) : null}
-          {active && publications.length && onDiscuss ? (
-            <SecondaryButton
-              label="Préparer l’analyse dans le chat"
-              disabled={busy || disabled}
-              onPress={() => void run(async () => onDiscuss(active))}
-            />
-          ) : null}
-          {active ? (
-            <View className="gap-3">
-              {control(active, "MERCALYS_BATCH", batchTitle)}
-              {archiveContext ? (
-                <ArchiveViewFilter
-                  label="Fichiers"
-                  archived={itemsArchived}
-                  disabled={busy || disabled}
-                  onChange={(value) => {
-                    if (locked.current || disabled) return;
-                    itemsArchivedRef.current = value;
-                    setItemsArchived(value);
-                    void run(async () => load(active, false, value));
-                  }}
-                />
-              ) : null}
-              <TextInput
-                accessibilityLabel="Rechercher un fichier du lot par nom"
-                placeholder="Rechercher un fichier"
-                placeholderTextColor={colors.muted}
-                value={query}
-                maxLength={200}
-                editable={!busy && !disabled}
-                onChangeText={setQuery}
-                className="min-h-12 rounded-xl border border-line bg-surface px-4 py-3 text-base text-ink"
-              />
-              <View className="flex-row flex-wrap gap-2">
-                {(
-                  [
-                    ["ALL", "Tous"],
-                    ["REVIEW", "À examiner"],
-                    ["PUBLISHED", "Avec lignes publiées"],
-                    ["QUEUED", "À lire"],
-                  ] as const
-                ).map(([key, label]) => (
+                closeIcon="chevron-back"
+                disabled={busy}
+                onClose={closeBatch}
+                action={
                   <Pressable
-                    key={key}
-                    accessibilityRole="radio"
-                    aria-checked={itemFilter === key}
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      toolsOpen ? "Fermer les actions du lot" : "Actions du lot"
+                    }
                     accessibilityState={{
-                      checked: itemFilter === key,
+                      expanded: toolsOpen,
                       disabled: busy || disabled,
                     }}
-                    accessibilityLabel={`Fichiers : ${label}`}
                     disabled={busy || disabled}
-                    onPress={() => setItemFilter(key)}
-                    className={`min-h-12 justify-center rounded-xl border px-3 py-2 ${itemFilter === key ? "border-forest bg-forest" : "border-line bg-surface"}`}
+                    onPress={() => setToolsOpen((value) => !value)}
+                    className="h-11 w-11 items-center justify-center rounded-full"
                   >
-                    <Text
-                      className={
-                        itemFilter === key
-                          ? "font-semibold text-on-accent"
-                          : "text-ink"
-                      }
-                    >
-                      {label}
+                    <Text className="text-xl font-semibold text-muted">
+                      ···
                     </Text>
                   </Pressable>
-                ))}
-              </View>
+                }
+              />
+            }
+          >
+            <View className="gap-3">
+              <Text className="text-xs font-semibold uppercase tracking-widest text-muted">
+                Fichiers du lot
+              </Text>
+              <Text
+                accessibilityRole="header"
+                className="text-3xl font-semibold tracking-tight text-ink"
+              >
+                {batchTitle}
+              </Text>
+              <Text className="text-sm leading-5 text-muted">
+                {importedAt
+                  ? `${fileCount === undefined ? "Lot" : `${fileCount} fichiers`} · importé le ${new Date(importedAt).toLocaleString("fr-FR")}`
+                  : "Les originaux et les publications restent conservés."}
+              </Text>
+            </View>
+            {busy ? (
               <Text
                 accessibilityLiveRegion="polite"
                 className="text-sm text-muted"
               >
-                {visibleItems.length} sur {items.length} fichiers chargés
-                {more ? " · d’autres fichiers restent à charger" : ""}
+                {progress ??
+                  (reviewAsset ? "Examen du fichier" : "Traitement du lot…")}
               </Text>
-            </View>
-          ) : null}
-          {active && items.length > 0 && visibleItems.length === 0 ? (
-            <View className="gap-2">
-              <Text className="text-sm text-muted">
-                Aucun fichier chargé ne correspond à cette sélection.
-              </Text>
+            ) : null}
+            {busy && !reviewAsset ? (
               <SecondaryButton
-                label="Effacer la recherche et les filtres"
-                disabled={busy || disabled}
-                onPress={() => {
-                  setQuery("");
-                  setItemFilter("ALL");
-                }}
+                label="Interrompre le traitement"
+                onPress={() => abort.current?.abort()}
               />
-            </View>
-          ) : null}
-          {visibleItems.map((item) => (
-            <View key={item.id} className="gap-2">
-              <Pressable
-                key={item.id}
-                accessibilityRole="button"
-                accessibilityLabel={`Ouvrir le fichier ${item.filename}`}
+            ) : null}
+            {error ? (
+              <InlineAlert title="Lot à reprendre" message={error} />
+            ) : null}
+            {activeArchive &&
+            (activeArchive.outcome.status !== "PROCESSED" ||
+              activeArchive.outcome.failures.length > 0) ? (
+              <SecondaryButton
+                label="Reprendre l’extraction de l’archive"
                 disabled={busy || disabled}
+                onPress={() =>
+                  void run((signal) => processArchive(activeArchive.id, signal))
+                }
+              />
+            ) : null}
+
+            {toolsOpen ? (
+              <View className="gap-3">
+                {active ? control(active, "MERCALYS_BATCH", batchTitle) : null}
+                {activeArchive?.outcome.status === "PROCESSED" &&
+                activeArchive.outcome.failures.length ? (
+                  <InlineAlert
+                    title="Fichiers non extraits"
+                    message={activeArchive.outcome.failures
+                      .map(
+                        (f) =>
+                          `${f.path} : extraction impossible. Reprenez l’archive ou sélectionnez ce fichier original.`,
+                      )
+                      .join("\n")}
+                  />
+                ) : null}
+                {activeArchive?.outcome.status === "PROCESSED" &&
+                activeArchive.outcome.ignored.length ? (
+                  <Text className="text-sm text-muted">
+                    {activeArchive.outcome.ignored.length} fichiers système
+                    ignorés.
+                  </Text>
+                ) : null}
+                {active ? (
+                  <SecondaryButton
+                    label="Reprendre les fichiers en attente"
+                    disabled={busy || disabled}
+                    onPress={() =>
+                      void run(async (signal) => {
+                        if (alive.current)
+                          setProgress("Vérification des fichiers en attente…");
+                        await service.preparePending(active, signal);
+                        await load(active);
+                      })
+                    }
+                  />
+                ) : null}
+                {active ? (
+                  <SecondaryButton
+                    label="Préparer la publication du lot"
+                    disabled={busy || disabled}
+                    onPress={() =>
+                      void run(async (signal) => {
+                        setPublicationReport(undefined);
+                        setProgress("Vérification des lignes à publier…");
+                        const plan = await publisher.preview(active, signal);
+                        if (alive.current) setPublicationPlan(plan);
+                      })
+                    }
+                  />
+                ) : null}
+              </View>
+            ) : null}
+            {publicationPlan ? (
+              <View className="gap-2 rounded-xl border border-line p-3">
+                <Text className="font-semibold text-ink">
+                  Publication du lot
+                </Text>
+                <Text>
+                  {
+                    publicationPlan.items.filter((i) => i.status === "READY")
+                      .length
+                  }{" "}
+                  fichiers ·{" "}
+                  {publicationPlan.items
+                    .filter((i) => i.status === "READY")
+                    .reduce((n, i) => n + i.readyCount, 0)}{" "}
+                  lignes prêtes
+                </Text>
+                <Text>
+                  {
+                    publicationPlan.items.filter(
+                      (i) => i.status === "DUPLICATE",
+                    ).length
+                  }{" "}
+                  fichiers déjà publiés ·{" "}
+                  {
+                    publicationPlan.items.filter(
+                      (i) => i.status === "BLOCKED" || i.status === "FAILED",
+                    ).length
+                  }{" "}
+                  fichiers à examiner
+                </Text>
+                <Text className="text-sm text-muted">
+                  Seules les lignes prêtes seront publiées. Les produits à
+                  confirmer et les fichiers nécessitant un rapprochement restent
+                  à examiner.
+                </Text>
+                <SecondaryButton
+                  label="Publier les lignes prêtes du lot"
+                  disabled={
+                    busy ||
+                    disabled ||
+                    !publicationPlan.items.some((i) => i.status === "READY")
+                  }
+                  onPress={() =>
+                    void run(async (signal) => {
+                      const plan = publicationPlan;
+                      setPublicationPlan(undefined);
+                      setProgress("Publication des fichiers en cours…");
+                      const report = await publisher.confirm(plan, signal);
+                      await load(plan.batchId);
+                      if (alive.current) setPublicationReport(report);
+                      if (report.some((item) => item.status === "PUBLISHED"))
+                        await onPublished?.();
+                    })
+                  }
+                />
+                <SecondaryButton
+                  label="Annuler la publication"
+                  disabled={busy || disabled}
+                  onPress={() => setPublicationPlan(undefined)}
+                />
+              </View>
+            ) : null}
+            {publicationReport ? (
+              <InlineAlert
+                title="Résultat du lot"
+                message={`${publicationReport.filter((i) => i.status === "PUBLISHED").length} fichiers publiés · ${publicationReport.reduce((n, i) => n + i.publishedCount, 0)} lignes publiées. ${publicationReport.filter((i) => i.status === "DUPLICATE").length} fichiers déjà publiés. ${publicationReport.filter((i) => i.status === "BLOCKED" || i.status === "FAILED").length} fichiers restent à examiner. Les lignes non publiées restent visibles dans le détail des fichiers.`}
+              />
+            ) : null}
+            {active && publications.length && onDiscuss ? (
+              <SecondaryButton
+                label="Préparer l’analyse dans le chat"
+                disabled={busy || disabled}
+                onPress={() => void run(async () => onDiscuss(active))}
+              />
+            ) : null}
+            {active ? (
+              <View className="gap-3">
+                {archiveContext ? (
+                  <ArchiveViewFilter
+                    label="Fichiers"
+                    archived={itemsArchived}
+                    disabled={busy || disabled}
+                    onChange={(value) => {
+                      if (locked.current || disabled) return;
+                      itemsArchivedRef.current = value;
+                      setItemsArchived(value);
+                      void run(async () => load(active, false, value));
+                    }}
+                  />
+                ) : null}
+                <TextInput
+                  accessibilityLabel="Rechercher un fichier du lot par nom"
+                  placeholder="Rechercher un fichier"
+                  placeholderTextColor={colors.muted}
+                  value={query}
+                  maxLength={200}
+                  editable={!busy && !disabled}
+                  onChangeText={setQuery}
+                  className="min-h-12 rounded-xl border border-line bg-surface px-4 py-3 text-base text-ink"
+                />
+                <View className="flex-row flex-wrap gap-2">
+                  {(
+                    [
+                      ["ALL", "Tous"],
+                      ["REVIEW", "À examiner"],
+                      ["PUBLISHED", "Avec lignes publiées"],
+                      ["QUEUED", "À lire"],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <Pressable
+                      key={key}
+                      accessibilityRole="radio"
+                      aria-checked={itemFilter === key}
+                      accessibilityState={{
+                        checked: itemFilter === key,
+                        disabled: busy || disabled,
+                      }}
+                      accessibilityLabel={`Fichiers : ${label}`}
+                      disabled={busy || disabled}
+                      onPress={() => setItemFilter(key)}
+                      className={`min-h-11 justify-center rounded-full border px-3 py-2 ${itemFilter === key ? "border-accent bg-accent" : "border-line bg-surface"}`}
+                    >
+                      <Text
+                        className={
+                          itemFilter === key
+                            ? "font-semibold text-on-accent"
+                            : "text-ink"
+                        }
+                      >
+                        {label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Text
+                  accessibilityLiveRegion="polite"
+                  className="text-sm text-muted"
+                >
+                  {visibleItems.length} sur {items.length} fichiers chargés
+                  {more ? " · d’autres fichiers restent à charger" : ""}
+                </Text>
+              </View>
+            ) : null}
+            {active && items.length > 0 && visibleItems.length === 0 ? (
+              <View className="gap-2">
+                <Text className="text-sm text-muted">
+                  Aucun fichier chargé ne correspond à cette sélection.
+                </Text>
+                <SecondaryButton
+                  label="Effacer la recherche et les filtres"
+                  disabled={busy || disabled}
+                  onPress={() => {
+                    setQuery("");
+                    setItemFilter("ALL");
+                  }}
+                />
+              </View>
+            ) : null}
+            {visibleItems.map((item) => (
+              <ImportDocumentRow
+                key={item.id}
+                title={item.filename}
+                accessibilityLabel={`Ouvrir le fichier ${item.filename}`}
+                detail={publicationStatus(item, publications) ?? status(item)}
+                disabled={busy || disabled}
+                archiveAction={control(item.id, "MERCALYS_ITEM", item.filename)}
                 onPress={() =>
                   void run(async (signal) => {
                     const asset = {
@@ -1022,20 +1099,7 @@ export function MercalysBatchPanel({
                     );
                   })
                 }
-                className="min-h-16 gap-2 rounded-xl border border-line p-4"
               >
-                <Text className="font-semibold text-ink">
-                  {item.filename} ›
-                </Text>
-                <Text
-                  className={
-                    publicationStatus(item, publications)
-                      ? "font-semibold text-forest"
-                      : "text-muted"
-                  }
-                >
-                  {publicationStatus(item, publications) ?? status(item)}
-                </Text>
                 {(publicationReport ?? publicationPlan?.items)?.find(
                   (r) =>
                     r.itemId === item.id &&
@@ -1049,32 +1113,38 @@ export function MercalysBatchPanel({
                     )}
                   </Text>
                 ) : null}
-              </Pressable>
-              {control(item.id, "MERCALYS_ITEM", item.filename)}
-            </View>
-          ))}
-          {active && more ? (
-            <SecondaryButton
-              label="Afficher les fichiers suivants"
-              disabled={busy || disabled}
-              onPress={() => void run(async () => load(active, true))}
-            />
-          ) : null}
-        </AppScreen>
-        <Modal
-          visible={!!reviewAsset}
-          animationType="slide"
-          presentationStyle="pageSheet"
-          allowSwipeDismissal={!reviewBusy}
-          onRequestClose={closeReview}
-          onDismiss={finishReview}
-        >
-          {reviewAsset
-            ? renderReview(reviewAsset, closeReview, setReviewBusy, () => {
-                reviewChanged.current = true;
-              })
-            : null}
-        </Modal>
+              </ImportDocumentRow>
+            ))}
+            {active && more ? (
+              <SecondaryButton
+                label="Afficher les fichiers suivants"
+                disabled={busy || disabled}
+                onPress={() => void run(async () => load(active, true))}
+              />
+            ) : null}
+          </AppScreen>
+          <BottomSheet
+            visible={!!reviewAsset}
+            title={reviewAsset?.name.split("/").at(-1) ?? "Fichier Mercalys"}
+            swipeToClose={!reviewBusy}
+            onClose={closeReview}
+            onDismiss={finishReview}
+            scrollRef={reviewScroll}
+            avoidKeyboard
+          >
+            {reviewAsset
+              ? renderReview(
+                  reviewAsset,
+                  closeReview,
+                  setReviewBusy,
+                  () => {
+                    reviewChanged.current = true;
+                  },
+                  reviewScroll,
+                )
+              : null}
+          </BottomSheet>
+        </SafeAreaProvider>
       </Modal>
     </>
   );

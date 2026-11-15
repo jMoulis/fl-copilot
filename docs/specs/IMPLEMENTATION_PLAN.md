@@ -1,3 +1,17 @@
+## Owner-approved Marché solaire native batch — 15 November 2026
+
+The owner accepts the four navigation journeys, then the light-led five-screen
+Marché solaire visual study. Implement the existing Journal, Analyses, Copilote,
+Imports and product detail/editor with common roles and native components. The
+first product tap in Analyses opens its fiche; product filtering remains explicit.
+Temporary panels gain a fixed close, a separate scrolling body and controlled
+swipe, retaining original dirty/busy checks and native onDismiss sequencing.
+Reuse actual SQLite data, imports and private visual files; no schema, AI prompt,
+provider, model, catalogue writer or API deployment. This supersedes historical
+Dark Premium visual directions only. See
+`../ux/MARCHE_SOLAIRE_IMPLEMENTATION_2026_11_15.md` and
+`../qa/MARCHE_SOLAIRE_NATIVE_2026_11_15.md` for evidence and delivery boundaries.
+
 ## Owner-approved daily piloting implementation — 14 November 2026
 
 The owner approves the Journal task-list mockup, private personal tasks and optional

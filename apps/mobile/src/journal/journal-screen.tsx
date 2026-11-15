@@ -3,7 +3,7 @@ import { copilotBusinessDateSchema } from "@fl-copilot/domain";
 import { JournalTransports } from "./journal-transports";
 import { JournalExternalContext } from "./journal-context";
 import { JournalNotes } from "./journal-notes";
-import clementineArt from "../../assets/journal/clementinier.webp";
+import journalArt from "../../assets/journal/banana.png";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
@@ -28,6 +28,7 @@ import {
 } from "../components/ui";
 import { MainHeader } from "../components/main-header";
 import { tradingToday } from "../dates/calendar";
+import { colors } from "../design/tokens";
 import { journalColors as c } from "./journal-theme";
 import { SeverityBars } from "../needs/event-severity";
 import { storeEventSyncState } from "../needs/store-event-presentation";
@@ -183,10 +184,10 @@ function StoreJournal({
     >
       <View style={styles.mast}>
         <Image
-          source={clementineArt}
+          source={journalArt}
           accessible={false}
           style={styles.art}
-          resizeMode="cover"
+          resizeMode="contain"
         />
         <View style={styles.place}>
           <Ionicons name="location-outline" size={13} color={c.muted} />
@@ -195,33 +196,20 @@ function StoreJournal({
           </Text>
         </View>
         <Text accessibilityRole="header" style={styles.title}>
-          Journal
+          Ton carnet{"\n"}de rayon.
         </Text>
-        <View style={styles.tabs}>
-          <Pressable
-            accessibilityRole="tab"
-            accessibilityState={{ selected: true }}
-            style={[styles.tab, styles.activeTab]}
-          >
-            <Text style={styles.activeLabel}>Au quotidien</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="tab"
-            accessibilityState={{ selected: false }}
-            onPress={() =>
-              router.push({ pathname: "/my-week", params: { weekStart } })
-            }
-            style={styles.tab}
-          >
-            <Text style={styles.tabLabel}>Ma semaine</Text>
-          </Pressable>
-        </View>
       </View>
       <View style={styles.dateHeading}>
         <Text accessibilityRole="header" style={styles.date}>
           {journalDateLabel(date)}
         </Text>
         <View style={{ flexDirection: "row" }}>
+          <JournalArrow
+            label="Actualiser maintenant"
+            icon="refresh-outline"
+            disabled={busy || settings?.syncState !== "SYNCED"}
+            onPress={() => void refresh()}
+          />
           <JournalArrow
             label="Semaine précédente"
             icon="chevron-back"
@@ -242,7 +230,7 @@ function StoreJournal({
             accessibilityLabel={`${journalDateLabel(d)}${d === today ? ", aujourd’hui" : ""}`}
             accessibilityState={{ selected: d === date }}
             onPress={() => setDate(d)}
-            style={[styles.day, d === date && { backgroundColor: c.mint }]}
+            style={[styles.day, d === date && { backgroundColor: c.accent }]}
           >
             <Text style={[styles.weekday, d === date && styles.selectedText]}>
               {journalDateLabel(d, true).replace(".", "")}
@@ -254,7 +242,7 @@ function StoreJournal({
               <View
                 style={[
                   styles.todayDot,
-                  { backgroundColor: d === date ? c.canvas : c.mint },
+                  { backgroundColor: d === date ? c.onAccent : c.mint },
                 ]}
               />
             ) : null}
@@ -267,20 +255,9 @@ function StoreJournal({
           onPress={() => setDate(today)}
           style={styles.today}
         >
-          <Text style={styles.activeLabel}>Revenir à aujourd’hui</Text>
+          <Text style={styles.todayLabel}>Revenir à aujourd’hui</Text>
         </Pressable>
       ) : null}
-      <View style={{ marginTop: 12, gap: 8 }}>
-        <SecondaryButton
-          label={busy ? "Actualisation…" : "Actualiser maintenant"}
-          disabled={busy || settings?.syncState !== "SYNCED"}
-          onPress={() => void refresh()}
-        />
-        <Text style={{ color: c.muted, fontSize: 12 }}>
-          Enregistre un relevé du contexte maintenant, sans attendre la collecte
-          automatique.
-        </Text>
-      </View>
       <View style={{ marginTop: 12 }}>
         <JournalWeather
           date={date}
@@ -304,6 +281,25 @@ function StoreJournal({
         openTaskId={params.personalTaskId}
         onTaskOpened={consumeTask}
       />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Ouvrir Ma semaine"
+        onPress={() =>
+          router.push({ pathname: "/my-week", params: { weekStart } })
+        }
+        className="active:opacity-70"
+        style={styles.week}
+      >
+        <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
+          <Text style={styles.weekEyebrow}>Les choix du rayon</Text>
+          <Text style={styles.weekTitle}>Ma semaine</Text>
+          <Text style={styles.weekCaption}>
+            Préparation, TG et installations
+          </Text>
+        </View>
+        <Ionicons name="calendar-outline" size={32} color={c.accent} />
+        <Ionicons name="chevron-forward" size={18} color={c.accent} />
+      </Pressable>
       <JournalExternalContext
         date={date}
         context={context?.journal}
@@ -336,7 +332,7 @@ function StoreJournal({
             className="active:opacity-70"
             style={[styles.report, { opacity: date > today ? 0.4 : 1 }]}
           >
-            <Ionicons name="add" size={19} color={c.canvas} />
+            <Ionicons name="add" size={19} color={c.onAccent} />
             <Text style={styles.reportLabel}>Signaler</Text>
           </Pressable>
         </View>
@@ -494,17 +490,21 @@ function JournalArrow({
   label,
   icon,
   onPress,
+  disabled = false,
 }: {
   label: string;
-  icon: "chevron-back" | "chevron-forward";
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+  disabled?: boolean;
   onPress(): void;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
       onPress={onPress}
-      style={styles.arrow}
+      style={[styles.arrow, disabled && { opacity: 0.5 }]}
     >
       <Ionicons name={icon} size={21} color={c.muted} />
     </Pressable>
@@ -556,39 +556,29 @@ function JournalLink({
   );
 }
 const styles = StyleSheet.create({
-  mast: { paddingTop: 17, overflow: "hidden" },
+  mast: { paddingTop: 18, overflow: "hidden", minHeight: 145 },
   art: {
     position: "absolute",
-    right: -48,
-    top: -24,
-    width: 195,
-    height: 145,
+    right: -7,
+    top: 27,
+    width: "34%",
+    maxWidth: 132,
+    height: 106,
     transform: [{ rotate: "-9deg" }],
   },
   place: { flexDirection: "row", alignItems: "center", gap: 5 },
   location: { fontSize: 11, letterSpacing: 0.35, color: c.muted },
   title: {
-    fontSize: 28,
-    fontWeight: "700",
+    fontSize: 38,
+    lineHeight: 39,
+    letterSpacing: -1.8,
+    fontWeight: "600",
     color: c.ink,
-    marginTop: 4,
-    marginBottom: 19,
+    marginTop: 13,
+    marginBottom: 17,
+    maxWidth: "67%",
   },
-  tabs: {
-    flexDirection: "row",
-    gap: 22,
-    borderBottomWidth: 1,
-    borderColor: c.line,
-  },
-  tab: {
-    minHeight: 44,
-    justifyContent: "center",
-    borderBottomWidth: 2,
-    borderColor: "transparent",
-  },
-  activeTab: { borderColor: c.mint },
-  activeLabel: { color: c.mint, fontSize: 13, fontWeight: "600" },
-  tabLabel: { color: c.muted, fontSize: 13, fontWeight: "600" },
+  todayLabel: { color: c.mint, fontSize: 13, fontWeight: "600" },
   dateHeading: {
     flexDirection: "row",
     alignItems: "center",
@@ -632,7 +622,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontVariant: ["tabular-nums"],
   },
-  selectedText: { color: c.canvas },
+  selectedText: { color: c.onAccent },
   todayDot: {
     position: "absolute",
     bottom: 3,
@@ -641,6 +631,29 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   today: { minHeight: 44, justifyContent: "center" },
+  week: {
+    marginTop: 22,
+    marginBottom: 6,
+    padding: 20,
+    borderRadius: 24,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: colors.hero,
+  },
+  weekEyebrow: {
+    color: colors.heroMuted,
+    fontSize: 10,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  weekTitle: {
+    color: colors.heroInk,
+    fontSize: 24,
+    fontWeight: "600",
+    letterSpacing: -0.7,
+  },
+  weekCaption: { color: colors.heroMuted, fontSize: 12, lineHeight: 18 },
   terrain: { marginTop: 18 },
   sectionHead: {
     flexDirection: "row",
@@ -651,7 +664,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { color: c.ink, fontSize: 18, fontWeight: "600" },
   report: {
-    backgroundColor: c.mint,
+    backgroundColor: c.accent,
     borderRadius: 99,
     paddingHorizontal: 14,
     minHeight: 44,
@@ -660,7 +673,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 5,
   },
-  reportLabel: { fontSize: 13, fontWeight: "700", color: c.canvas },
+  reportLabel: { fontSize: 13, fontWeight: "700", color: c.onAccent },
   entry: {
     flexDirection: "row",
     alignItems: "center",

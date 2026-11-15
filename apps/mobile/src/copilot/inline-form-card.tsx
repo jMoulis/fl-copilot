@@ -116,7 +116,7 @@ export function CopilotInlineFormCard({
                     <TextInput
                       placeholderTextColor={colors.muted}
                       selectionColor={colors.forest}
-                      keyboardAppearance="dark"
+                      keyboardAppearance="light"
                       value={text}
                       editable={!busy}
                       onChangeText={(v) => onAnswer(field.key, v)}

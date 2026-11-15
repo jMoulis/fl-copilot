@@ -29,6 +29,12 @@ const ports = vi.hoisted(() => ({
   preview: vi.fn(),
   confirm: vi.fn(),
 }));
+vi.mock("@expo/vector-icons/Ionicons", () => ({ default: "Icon" }));
+vi.mock("react-native-safe-area-context", () => ({
+  SafeAreaProvider: ({ children }: { children: ReactNode }) =>
+    createElement("SafeAreaProvider", {}, children),
+  initialWindowMetrics: null,
+}));
 vi.mock("react-native", () => ({
   Text: "Text",
   View: "View",
@@ -48,12 +54,14 @@ vi.mock("react-native", () => ({
 vi.mock("../components/ui", () => {
   const box = ({
     children,
+    header,
     title,
     label,
     message,
     ...props
   }: {
     children?: ReactNode;
+    header?: ReactNode;
     title?: string;
     label?: string;
     message?: string;
@@ -61,6 +69,7 @@ vi.mock("../components/ui", () => {
     createElement(
       "UI",
       { ...props, title, label, message },
+      header,
       title,
       label,
       message,
@@ -68,6 +77,19 @@ vi.mock("../components/ui", () => {
     );
   return {
     AppScreen: box,
+    BottomSheet: ({
+      visible,
+      children,
+      title,
+      ...props
+    }: {
+      visible: boolean;
+      children?: ReactNode;
+      title: string;
+    }) =>
+      visible
+        ? createElement("Sheet", { ...props, visible, title }, title, children)
+        : null,
     AppHeader: box,
     SectionCard: box,
     InlineAlert: box,
@@ -482,13 +504,8 @@ it("opens an email-linked batch outside the recent page without processing and r
       panel({ initialBatchId: "batch", onCloseInitialBatch: back }),
     );
   });
-  const title = renderer!.root.findAll(
-    (n) =>
-      n.props.title === "Fichiers du lot" &&
-      typeof n.props.subtitle === "string",
-  )[0]!;
-  expect(title.props.subtitle).toContain("40 fichiers");
-  expect(title.props.subtitle).toContain("23/10/2026");
+  expect(text(renderer!.root)).toContain("40 fichiers");
+  expect(text(renderer!.root)).toContain("23/10/2026");
   expect(renderer!.root.findByType("Modal" as ElementType).props.visible).toBe(
     true,
   );
@@ -497,7 +514,7 @@ it("opens an email-linked batch outside the recent page without processing and r
   await press("Retour aux documents reçus");
   expect(back).toHaveBeenCalledTimes(1);
 });
-it("closes an email-linked batch with the sheet gesture and keeps a missing target unavailable", async () => {
+it("closes an email-linked batch through its native close request and keeps a missing target unavailable", async () => {
   batchFixture();
   const back = vi.fn();
   await act(async () => {
@@ -546,7 +563,7 @@ it("keeps archives and batch files on separate levels, labels the import date, a
   const file = renderer!.root.findByType("FileReview" as ElementType);
   expect(file.props.asset.expectedChecksum).toMatch(/^sha256:/);
   const nestedModal = file.parent!;
-  expect(nestedModal.type).toBe("Modal");
+  expect(nestedModal.type).toBe("Sheet");
   let ancestor: ReactTestInstance | null = nestedModal;
   while (ancestor && ancestor !== batchModal) ancestor = ancestor.parent;
   expect(ancestor === batchModal).toBe(true);
@@ -572,11 +589,9 @@ it("allows opening retained failed files and protects dismissal during a file mu
   await openBatch();
   await press("Ouvrir le fichier export-0.xlsx");
   await act(async () => fileBusy!(true));
-  const fileModal = renderer!.root
-    .findAllByType("Modal" as ElementType)
-    .at(-1)!;
-  expect(fileModal.props.allowSwipeDismissal).toBe(false);
-  await act(async () => fileModal.props.onRequestClose());
+  const fileModal = renderer!.root.findByType("Sheet" as ElementType);
+  expect(fileModal.props.swipeToClose).toBe(false);
+  await act(async () => fileModal.props.onClose());
   expect(
     renderer!.root.findAllByType("FileReview" as ElementType),
   ).toHaveLength(1);
@@ -627,11 +642,8 @@ it("retains extraction failures under batch actions and the archive timestamp wh
   });
   expect(text(renderer!.root)).not.toContain("Ventes/fichier-absent.xlsx");
   await openBatch();
-  const header = renderer!.root.findAll(
-    (n) => n.type === ("UI" as ElementType) && n.props.title === "21102026.zip",
-  )[0]!;
-  expect(header.props.subtitle).toContain("40 fichiers");
-  expect(header.props.subtitle).toContain("23/10/2026");
+  expect(text(renderer!.root)).toContain("40 fichiers");
+  expect(text(renderer!.root)).toContain("23/10/2026");
   await press("Actions du lot");
   expect(text(renderer!.root)).toContain("Ventes/fichier-absent.xlsx");
   expect(text(renderer!.root)).toContain("fichiers système ignorés");
@@ -682,14 +694,16 @@ it("archives and restores lots/files through the retained list without publishin
       panel({ archiveContext: { deviceId: "device", canWrite: () => true } }),
     );
   });
-  const action = async (label: string) =>
-    act(async () => {
+  const action = async (label: string) => {
+    await press("Actions pour " + label.replace(/^(Archiver|Restaurer) /, ""));
+    await act(async () => {
       const n = renderer!.root.findAll(
         (node) =>
           String(node.type) === "UI" && node.props.accessibilityLabel === label,
       )[0]!;
       n.props.onPress();
     });
+  };
   const filter = async (label: string) =>
     act(async () => {
       const n = renderer!.root.findAll(
@@ -718,5 +732,43 @@ it("archives and restores lots/files through the retained list without publishin
   await filter("Fichiers : Actifs");
   expect(text(renderer!.root)).toContain("export-0.xlsx");
   expect(ports.confirm).not.toHaveBeenCalled();
+  expect(ports.prepare).not.toHaveBeenCalled();
+});
+
+it("opens a full-screen lot and starts the file picker only after its menu has actually dismissed", async () => {
+  batchFixture();
+  const pick = vi.fn().mockResolvedValue(undefined);
+  await act(async () => {
+    renderer = create(panel({ pick }));
+  });
+  await press("Importer un fichier");
+  const dismiss = renderer!.root.findByType("Sheet" as ElementType).props
+    .onDismiss;
+  await press("Choisir des fichiers XLSX");
+  expect(pick).not.toHaveBeenCalled();
+  await act(async () => dismiss());
+  expect(pick).toHaveBeenCalledTimes(1);
+  expect(ports.prepare).not.toHaveBeenCalled();
+  expect(ports.confirm).not.toHaveBeenCalled();
+  await openBatch();
+  expect(
+    renderer!.root.findByType("Modal" as ElementType).props.presentationStyle,
+  ).toBe("fullScreen");
+});
+
+it("does not start a queued picker after the import view has unmounted", async () => {
+  batchFixture();
+  const pick = vi.fn().mockResolvedValue(undefined);
+  await act(async () => {
+    renderer = create(panel({ pick }));
+  });
+  await press("Importer un fichier");
+  const dismiss = renderer!.root.findByType("Sheet" as ElementType).props
+    .onDismiss;
+  await press("Choisir des fichiers XLSX");
+  await act(async () => renderer!.unmount());
+  renderer = undefined;
+  await act(async () => dismiss());
+  expect(pick).not.toHaveBeenCalled();
   expect(ports.prepare).not.toHaveBeenCalled();
 });

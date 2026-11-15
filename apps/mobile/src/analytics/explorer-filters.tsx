@@ -67,7 +67,7 @@ export function ExplorerFilters({
           minHeight: 48,
           padding: 12,
           borderRadius: 12,
-          backgroundColor: active ? colors.forest : colors.surfaceMuted,
+          backgroundColor: active ? colors.accent : colors.surfaceMuted,
         }}
       >
         <Text style={{ color: active ? colors.onAccent : colors.ink }}>

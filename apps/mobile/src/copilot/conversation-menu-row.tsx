@@ -236,7 +236,7 @@ export function ConversationMenuRow({
             <Ionicons
               name="chatbubble-outline"
               size={22}
-              color={colors.forest}
+              color={colors.muted}
               accessible={false}
             />
             <View style={styles.titleBlock}>
@@ -299,22 +299,24 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: 16,
-    paddingRight: 4,
+    backgroundColor: colors.surface,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.line,
   },
   open: {
     flex: 1,
     minWidth: 0,
     minHeight: 64,
-    padding: 16,
-    gap: 12,
+    paddingVertical: 16,
+    paddingLeft: 0,
+    paddingRight: 8,
+    gap: 10,
     flexDirection: "row",
     alignItems: "center",
   },
   titleBlock: { flex: 1, minWidth: 0, gap: 4 },
-  title: { color: colors.ink, fontSize: 16, fontWeight: "600", lineHeight: 24 },
-  date: { color: colors.muted, fontSize: 14, lineHeight: 20 },
+  title: { color: colors.ink, fontSize: 15, fontWeight: "600", lineHeight: 21 },
+  date: { color: colors.muted, fontSize: 12, lineHeight: 18 },
   visibleDelete: {
     minWidth: 48,
     minHeight: 48,
@@ -330,6 +332,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     marginLeft: 8,
   },
-  swipeLabel: { color: colors.onAccent, fontWeight: "600" },
+  swipeLabel: { color: colors.heroInk, fontWeight: "600" },
   error: { color: colors.critical, lineHeight: 22 },
 });

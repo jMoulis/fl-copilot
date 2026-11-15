@@ -1,18 +1,22 @@
-/** Palette of the approved “Carnet de rayon” prototype, scoped to these screens. */
+import { colors } from "../design/tokens";
+
+/** The Journal shares Marché solaire roles with the rest of the native app. */
 export const journalColors = {
-  canvas: "#0C1915",
-  surface: "#162720",
-  ink: "#F0F2E5",
-  muted: "#AFC0B3",
-  mint: "#AEE9B6",
-  line: "#32443B",
-  low: "#AEE9B6",
-  medium: "#EFB961",
-  high: "#EF9683",
-  sun: "#EBD2A6",
-  sunInk: "#362B1C",
-  rain: "#C3D7D8",
-  rainInk: "#1C353B",
-  neutral: "#CBD7C7",
-  neutralInk: "#25372A",
+  canvas: colors.canvas,
+  surface: colors.surface,
+  ink: colors.ink,
+  muted: colors.muted,
+  mint: colors.forest,
+  accent: colors.accent,
+  onAccent: colors.onAccent,
+  line: colors.line,
+  low: colors.positive,
+  medium: colors.warning,
+  high: colors.critical,
+  sun: "#F6E3BF",
+  sunInk: "#654322",
+  rain: "#DCEBF0",
+  rainInk: "#285061",
+  neutral: "#E5EBD9",
+  neutralInk: "#3E5235",
 } as const;

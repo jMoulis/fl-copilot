@@ -13,8 +13,9 @@ import {
   InlineAlert,
   PrimaryButton,
   SecondaryButton,
-  SectionCard,
+  BottomSheet,
 } from "../components/ui";
+import { colors } from "../design/tokens";
 import {
   emptyProductDraft,
   type ProductEditorDraft,
@@ -234,23 +235,7 @@ export function ProductEditorForm({
         />
       ) : null}
 
-      <SectionCard title="Identité">
-        <Controller
-          control={control}
-          name="isPetitPrix"
-          render={({ field: { value, onChange } }) => (
-            <View className="flex-row items-center justify-between gap-3">
-              <Text className="text-base text-ink">Gamme Petit Prix</Text>
-              <Switch
-                accessibilityLabel="Gamme Petit Prix"
-                disabled={isSubmitting}
-                value={value ?? false}
-                onValueChange={onChange}
-              />
-            </View>
-          )}
-        />
-
+      <View className="gap-4">
         <FormLabel label="Libellé" />
         <Controller
           control={control}
@@ -293,7 +278,36 @@ export function ProductEditorForm({
           label="Unité de vente"
           choices={salesUnits}
         />
-      </SectionCard>
+        <Controller
+          control={control}
+          name="isPetitPrix"
+          render={({ field: { value, onChange } }) => (
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                borderBottomWidth: 1,
+                borderColor: colors.line,
+                paddingVertical: 12,
+              }}
+            >
+              <Text style={{ color: colors.ink, fontSize: 16 }}>
+                Gamme Petit Prix
+              </Text>
+              <Switch
+                accessibilityLabel="Gamme Petit Prix"
+                disabled={isSubmitting}
+                value={value ?? false}
+                onValueChange={onChange}
+                trackColor={{ false: colors.line, true: colors.accent }}
+                thumbColor={colors.onAccent}
+              />
+            </View>
+          )}
+        />
+      </View>
 
       <ProductFormSection
         title="Conditionnement"
@@ -488,7 +502,7 @@ function ProductFormSection({
   children: ReactNode;
 }) {
   return (
-    <View className="gap-4 rounded-3xl border border-line bg-surface p-5">
+    <View className="gap-4 border-b border-line py-3">
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${expanded ? "Replier" : "Afficher"} ${title.toLowerCase()}`}
@@ -518,7 +532,7 @@ function ProductFormSection({
 
 function FormLabel({ label, optional }: { label: string; optional?: boolean }) {
   return (
-    <Text className="text-base font-semibold text-ink">
+    <Text className="text-sm font-semibold text-muted">
       {label}
       {optional ? " (facultatif)" : ""}
     </Text>
@@ -551,37 +565,77 @@ function ChoiceController({
   choices: readonly (readonly [string, string])[];
   disabled?: boolean;
 }) {
+  const [opened, setOpened] = useState(false);
+  const compact =
+    name === "category" || name === "nature" || name === "salesUnit";
   return (
     <View className="gap-2">
       <FormLabel label={label} />
       <Controller
         control={control}
         name={name}
-        render={({ field: { onChange, value } }) => (
-          <View className="flex-row flex-wrap gap-2">
-            {choices.map(([choice, choiceLabel]) => {
-              const selected = value === choice;
-              return (
-                <Pressable
-                  key={choice}
-                  accessibilityRole="radio"
-                  aria-checked={selected}
-                  accessibilityState={{ checked: selected, disabled }}
-                  disabled={disabled}
-                  accessibilityLabel={`${label} : ${choiceLabel}`}
-                  onPress={() => onChange(choice)}
-                  className={`min-h-12 justify-center rounded-2xl border px-4 py-3 ${selected ? "border-forest bg-forest" : "border-line bg-surface"}`}
-                >
-                  <Text
-                    className={`text-sm font-semibold ${selected ? "text-on-accent" : "text-ink"}`}
+        render={({ field: { onChange, value } }) => {
+          const options = (
+            <View className={compact ? "gap-2" : "flex-row flex-wrap gap-2"}>
+              {choices.map(([choice, choiceLabel]) => {
+                const selected = value === choice;
+                return (
+                  <Pressable
+                    key={choice}
+                    accessibilityRole="radio"
+                    aria-checked={selected}
+                    accessibilityState={{ checked: selected, disabled }}
+                    disabled={disabled}
+                    accessibilityLabel={`${label} : ${choiceLabel}`}
+                    onPress={() => {
+                      onChange(choice);
+                      if (compact) setOpened(false);
+                    }}
+                    className={`min-h-12 flex-row items-center justify-between gap-3 rounded-2xl border px-4 py-3 ${selected ? "border-accent bg-accent" : "border-line bg-surface"}`}
                   >
-                    {choiceLabel}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        )}
+                    <Text
+                      className={`text-base ${selected ? "font-semibold text-on-accent" : "text-ink"}`}
+                    >
+                      {choiceLabel}
+                    </Text>
+                    {compact && selected ? (
+                      <Text accessible={false} className="text-on-accent">
+                        ✓
+                      </Text>
+                    ) : null}
+                  </Pressable>
+                );
+              })}
+            </View>
+          );
+          if (!compact) return options;
+          const selectedLabel =
+            choices.find(([choice]) => value === choice)?.[1] ?? "À préciser";
+          return (
+            <>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Choisir ${label.toLowerCase()} : ${selectedLabel}`}
+                accessibilityState={{ expanded: opened, disabled }}
+                disabled={disabled}
+                onPress={() => setOpened(true)}
+                className="min-h-12 flex-row items-center justify-between gap-3 rounded-2xl border border-line bg-surface px-4 py-3"
+              >
+                <Text className="text-base text-ink">{selectedLabel}</Text>
+                <Text accessible={false} className="text-lg text-forest">
+                  ⌄
+                </Text>
+              </Pressable>
+              <BottomSheet
+                visible={opened}
+                title={label}
+                onClose={() => setOpened(false)}
+              >
+                {options}
+              </BottomSheet>
+            </>
+          );
+        }}
       />
     </View>
   );

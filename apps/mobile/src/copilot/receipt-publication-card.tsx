@@ -104,8 +104,9 @@ export function ReceiptPublicationCard({
       style={{
         padding: 16,
         borderWidth: 1,
-        borderColor: colors.forest,
-        borderRadius: 16,
+        borderColor: colors.line,
+        borderRadius: 22,
+        backgroundColor: colors.surface,
         gap: 12,
       }}
     >
@@ -247,7 +248,7 @@ export function ReceiptPublicationCard({
                   minHeight: 44,
                   padding: 14,
                   borderRadius: 12,
-                  backgroundColor: colors.forest,
+                  backgroundColor: colors.accent,
                   opacity: saving || !reviewed ? 0.45 : 1,
                 }}
                 onPress={() => {

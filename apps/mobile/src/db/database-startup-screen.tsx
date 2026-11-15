@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
   },
   explanation: { gap: 16, maxWidth: 560 },
   button: {
-    backgroundColor: colors.forest,
+    backgroundColor: colors.accent,
     borderRadius: 12,
     minHeight: 48,
     justifyContent: "center",

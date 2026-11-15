@@ -121,7 +121,7 @@ export function ReceiptList({
                       animated: false,
                     });
                   }}
-                  className={`min-h-12 justify-center rounded-2xl border px-3 py-3 ${filter === key ? "border-forest bg-forest" : "border-line bg-surface"}`}
+                  className={`min-h-12 justify-center rounded-2xl border px-3 py-3 ${filter === key ? "border-forest bg-accent" : "border-line bg-surface"}`}
                 >
                   <Text
                     className={

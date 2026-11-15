@@ -16,12 +16,14 @@ export function ExplorerTrendChart({
   scrollOffset = 0,
   onChartScroll,
   onDrill,
+  inverse = false,
 }: {
   period: ExplorerPeriod;
   points: readonly DatedKpiValue[];
   scrollOffset?: number;
   onChartScroll?(offset: number): void;
   onDrill(date: string): void;
+  inverse?: boolean;
 }) {
   const chart = useRef<ScrollView>(null);
   useEffect(() => {
@@ -55,7 +57,7 @@ export function ExplorerTrendChart({
           style={{
             position: "absolute",
             top: zero,
-            color: colors.muted,
+            color: inverse ? colors.heroMuted : colors.muted,
             fontSize: 10,
           }}
         >
@@ -69,7 +71,7 @@ export function ExplorerTrendChart({
         }
         scrollEventThrottle={120}
         horizontal
-        indicatorStyle="white"
+        indicatorStyle={inverse ? "white" : "black"}
         showsHorizontalScrollIndicator
         keyboardShouldPersistTaps="handled"
         directionalLockEnabled
@@ -138,7 +140,7 @@ export function ExplorerTrendChart({
                     top: zero,
                     width: 48,
                     height: 1,
-                    backgroundColor: colors.muted,
+                    backgroundColor: inverse ? colors.heroMuted : colors.muted,
                   }}
                 />
                 {b.value !== null ? (
@@ -158,11 +160,21 @@ export function ExplorerTrendChart({
                       borderBottomLeftRadius: negative ? 4 : 0,
                       borderBottomRightRadius: negative ? 4 : 0,
                       backgroundColor: negative
-                        ? colors.critical
-                        : colors.forest,
+                        ? inverse
+                          ? colors.heroCritical
+                          : colors.critical
+                        : inverse
+                          ? colors.accent
+                          : colors.forest,
                       opacity: b.complete ? 1 : 0.5,
                       borderTopWidth: 2,
-                      borderColor: negative ? colors.critical : colors.positive,
+                      borderColor: negative
+                        ? inverse
+                          ? colors.heroCritical
+                          : colors.critical
+                        : inverse
+                          ? colors.accent
+                          : colors.positive,
                     }}
                   />
                 ) : (
@@ -175,20 +187,27 @@ export function ExplorerTrendChart({
                       width: 26,
                       borderWidth: 1,
                       borderStyle: "dashed",
-                      borderColor: colors.muted,
+                      borderColor: inverse ? colors.heroMuted : colors.muted,
                       borderRadius: 4,
                     }}
                   />
                 )}
               </View>
-              <Text style={{ color: colors.ink, fontSize: 12 }}>{label}</Text>
+              <Text
+                style={{
+                  color: inverse ? colors.heroInk : colors.ink,
+                  fontSize: 12,
+                }}
+              >
+                {label}
+              </Text>
               <Text
                 style={{
                   fontSize: 10,
                   lineHeight: 13,
                   minHeight: 26,
                   textAlign: "center",
-                  color: colors.warning,
+                  color: inverse ? colors.heroWarning : colors.warning,
                 }}
               >
                 {!b.complete

@@ -213,7 +213,7 @@ export function TranscriptionReviewCard({
               padding: 12,
               borderRadius: 12,
               justifyContent: "center",
-              backgroundColor: colors.forest,
+              backgroundColor: colors.accent,
               opacity: ready && state.compared ? 1 : 0.5,
             }}
           >

@@ -10,5 +10,5 @@ export const ChatText = forwardRef<Text, TextProps>(function ChatText(
   return <Text ref={ref} {...props} style={[styles.body, style]} />;
 });
 const styles = StyleSheet.create({
-  body: { color: colors.ink, fontSize: 15, lineHeight: 22 },
+  body: { color: colors.ink, fontSize: 16, lineHeight: 24 },
 });

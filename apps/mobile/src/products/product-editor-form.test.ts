@@ -15,7 +15,13 @@ vi.mock("react-native", () => ({
   Pressable: "Pressable",
 }));
 vi.mock("../components/ui", () => ({
-  SectionCard: ({ children }: { children: ReactNode }) => children,
+  BottomSheet: ({
+    children,
+    visible,
+  }: {
+    children: ReactNode;
+    visible: boolean;
+  }) => (visible ? children : null),
   InlineAlert: "Alert",
   PrimaryButton: "Button",
   SecondaryButton: "Button",
@@ -277,4 +283,22 @@ it("keeps Petit Prix changes in the draft until explicit save", async () => {
   expect(toggle().props.value).toBe(true);
   await press("Enregistrer le produit");
   expect(save.mock.calls[0]?.[0]).toMatchObject({ isPetitPrix: true });
+});
+
+it("changes a compact identity choice in the form draft without saving until explicit submission", async () => {
+  await mount();
+  await press("Choisir catégorie : Légume");
+  expect(control("Catégorie : Légume").props.accessibilityState.checked).toBe(
+    true,
+  );
+  await press("Catégorie : Fruit");
+  expect(
+    control("Choisir catégorie : Fruit").props.accessibilityState.expanded,
+  ).toBe(false);
+  expect(save).not.toHaveBeenCalled();
+  await press("Enregistrer le produit");
+  expect(save).toHaveBeenCalledExactlyOnceWith({
+    ...draft(),
+    category: "FRUIT",
+  });
 });

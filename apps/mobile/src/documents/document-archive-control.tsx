@@ -130,7 +130,7 @@ export function ArchiveViewFilter({
           className={
             "min-h-12 justify-center rounded-xl border px-3 py-2 " +
             (archived === value
-              ? "border-forest bg-forest"
+              ? "border-forest bg-accent"
               : "border-line bg-surface")
           }
         >

@@ -5,6 +5,7 @@ import { useVisualLibrary } from "./use-visual-library";
 import { ProductVisualPanel } from "./product-visual-panel";
 import { useState } from "react";
 import { Text, View } from "react-native";
+import { colors } from "../design/tokens";
 import { router, type Href } from "expo-router";
 import { StoreEventsView } from "../needs/store-events-view";
 import { SubstitutionView } from "../needs/substitution-view";
@@ -50,27 +51,38 @@ function ScopedProductDetailScreen({
   const gallery = useVisualLibrary();
   const p = snapshot?.product.entity;
   return (
-    <AppScreen>
-      <View className="flex-row items-center justify-between gap-3">
-        <IconButton
-          label="Revenir à l’écran précédent"
-          icon="chevron-back"
-          onPress={() => returnToProducts(router)}
-        />
-        <Text className="flex-1 text-center text-sm text-muted">
-          Fiche produit
-        </Text>
-        {p ? (
+    <AppScreen
+      header={
+        <View
+          style={{
+            paddingHorizontal: 16,
+            paddingVertical: 8,
+            borderBottomWidth: 1,
+            borderColor: colors.line,
+          }}
+          className="flex-row items-center justify-between gap-3"
+        >
           <IconButton
-            label="Modifier la fiche produit"
-            icon="create-outline"
-            disabled={Boolean(conflictId) || !gallery.canWrite}
-            onPress={() => router.push(`/product/edit/${id}` as Href)}
+            label="Revenir à l’écran précédent"
+            icon="chevron-back"
+            onPress={() => returnToProducts(router)}
           />
-        ) : (
-          <View style={{ width: 48 }} />
-        )}
-      </View>
+          <Text className="flex-1 text-base font-semibold text-ink">
+            Fiche produit
+          </Text>
+          {p ? (
+            <IconButton
+              label="Modifier la fiche produit"
+              icon="create-outline"
+              disabled={Boolean(conflictId) || !gallery.canWrite}
+              onPress={() => router.push(`/product/edit/${id}` as Href)}
+            />
+          ) : (
+            <View style={{ width: 48 }} />
+          )}
+        </View>
+      }
+    >
       {error ? (
         <InlineAlert title="Actualisation interrompue" message={error} />
       ) : null}
@@ -87,11 +99,18 @@ function ScopedProductDetailScreen({
             key={`${p.storeId}:${p.id}:${gallery.context?.actorId}`}
             product={p}
             controller={gallery}
+            layout="identity"
             header={
               <View className="gap-2">
                 <Text
                   accessibilityRole="header"
-                  className="text-2xl font-bold text-ink"
+                  style={{
+                    color: colors.ink,
+                    fontSize: 30,
+                    lineHeight: 33,
+                    fontWeight: "600",
+                    letterSpacing: -0.9,
+                  }}
                 >
                   {p.label}
                 </Text>

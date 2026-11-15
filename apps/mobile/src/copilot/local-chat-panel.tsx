@@ -38,6 +38,7 @@ type PanelProps = {
   onConversations(): void;
   onNewConversation?(): void;
   creatingConversation?: boolean;
+  headerActions?: ReactNode;
   onRemember?(message: CopilotMessage): void;
   renderToolMessage?(
     message: CopilotMessage,
@@ -86,6 +87,7 @@ function LocalChatPanel({
   onConversations,
   onNewConversation,
   creatingConversation,
+  headerActions,
   onRemember,
   delivery,
   onAttachPdf,
@@ -622,6 +624,7 @@ function LocalChatPanel({
         onConversations={onConversations}
         onNewConversation={onNewConversation}
         creatingConversation={creatingConversation}
+        headerActions={headerActions}
         onRemember={onRemember}
         onDeleteMessage={(message) => {
           if (sending || locked.current) return;
