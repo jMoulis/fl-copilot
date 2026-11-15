@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 import {
   commercialTgPresentationSchema,
@@ -29,10 +29,16 @@ export function TgPresentationView({
   placements,
   onSharesChange,
   large = false,
+  layout = "compact",
+  onOpenPlacement,
+  renderFooter,
 }: {
   placements: readonly Placement[];
   onSharesChange?(placementId: string, shares: number[]): void;
   large?: boolean;
+  layout?: "compact" | "cards" | "detail";
+  onOpenPlacement?(placementId: string): void;
+  renderFooter?(placement: Placement): ReactNode;
 }) {
   const [editor, setEditor] = useState<{
     id: string;
@@ -42,6 +48,15 @@ export function TgPresentationView({
   const [error, setError] = useState<string>();
   const current = placements.find((p) => p.id === editor?.id);
   const presentation = current?.presentation;
+  if (layout !== "compact")
+    return (
+      <TgJourneyPresentation
+        placements={placements}
+        layout={layout}
+        onOpenPlacement={onOpenPlacement}
+        renderFooter={renderFooter}
+      />
+    );
   return (
     <View style={{ gap: 12 }}>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
@@ -168,6 +183,7 @@ export function TgPresentationView({
                 Répartition non précisée
               </Text>
             )}
+            {renderFooter?.(p)}
           </View>
         ))}
       </View>
@@ -254,67 +270,340 @@ export function TgPresentationView({
   );
 }
 
+/** Read-only journey views: the host owns opening a TG and declaring its execution. */
+function TgJourneyPresentation({
+  placements,
+  layout,
+  onOpenPlacement,
+  renderFooter,
+}: {
+  placements: readonly Placement[];
+  layout: "cards" | "detail";
+  onOpenPlacement?(placementId: string): void;
+  renderFooter?(placement: Placement): ReactNode;
+}) {
+  const [explainedId, setExplainedId] = useState<string>();
+  const explained = placements.find((p) => p.id === explainedId);
+  const detail = layout === "detail";
+  return (
+    <View style={{ gap: 20, width: "100%", minWidth: 0 }}>
+      {placements.map((p) => {
+        const heading = (
+          <Text
+            accessibilityRole="header"
+            style={{
+              flex: !detail && onOpenPlacement ? 1 : undefined,
+              minWidth: 0,
+              color: colors.ink,
+              fontSize: detail ? 26 : 23,
+              lineHeight: detail ? 31 : 28,
+              letterSpacing: -0.6,
+              fontWeight: "600",
+            }}
+          >
+            {p.label}
+          </Text>
+        );
+        const map = p.presentation ? (
+          <TgSurfaceMap
+            presentation={p.presentation}
+            large={detail}
+            percentageOnly
+          />
+        ) : null;
+        return (
+          <View
+            key={p.id}
+            style={{
+              width: "100%",
+              minWidth: 0,
+              padding: detail ? 16 : 18,
+              gap: 14,
+              borderRadius: 24,
+              backgroundColor: colors.surface,
+            }}
+          >
+            {!detail && onOpenPlacement ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Ouvrir la TG ${p.label}`}
+                onPress={() => onOpenPlacement(p.id)}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  minHeight: 44,
+                  gap: 12,
+                }}
+              >
+                {heading}
+                <Text
+                  accessible={false}
+                  style={{ color: colors.forest, fontSize: 28 }}
+                >
+                  ›
+                </Text>
+              </Pressable>
+            ) : (
+              heading
+            )}
+            {map ? (
+              <>
+                {!detail && onOpenPlacement ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Ouvrir la répartition de la TG ${p.label}`}
+                    onPress={() => onOpenPlacement(p.id)}
+                    style={{ minHeight: 44 }}
+                  >
+                    {map}
+                  </Pressable>
+                ) : (
+                  map
+                )}
+                <Text style={{ color: colors.muted, fontSize: 11 }}>
+                  Surface proposée · schéma indicatif
+                </Text>
+                <View style={{ gap: 12 }}>
+                  {p.presentation!.zones.map((z, i) => (
+                    <View
+                      key={i}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "flex-start",
+                        gap: 9,
+                        minWidth: 0,
+                      }}
+                    >
+                      <View
+                        accessible={false}
+                        style={{
+                          width: 8,
+                          height: 8,
+                          marginTop: 6,
+                          borderRadius: 2,
+                          backgroundColor: fill[z.role],
+                        }}
+                      />
+                      <Text
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          color: colors.ink,
+                          fontSize: detail ? 16 : 14,
+                          lineHeight: detail ? 24 : 21,
+                        }}
+                      >
+                        {z.label}
+                      </Text>
+                      <Text
+                        style={{
+                          color: colors.ink,
+                          fontSize: detail ? 16 : 14,
+                          lineHeight: detail ? 24 : 21,
+                          fontWeight: "600",
+                          fontVariant: ["tabular-nums"],
+                        }}
+                      >
+                        {z.sharePct} %
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+                {detail && p.presentation!.counterPromotion ? (
+                  <View
+                    style={{
+                      gap: 6,
+                      paddingTop: 14,
+                      borderTopWidth: 1,
+                      borderTopColor: colors.line,
+                    }}
+                  >
+                    <Text style={{ color: colors.forest, fontSize: 12 }}>
+                      À proximité, hors TG
+                    </Text>
+                    <Text
+                      style={{
+                        color: colors.ink,
+                        fontSize: 16,
+                        lineHeight: 24,
+                      }}
+                    >
+                      {p.presentation!.counterPromotion.label}
+                    </Text>
+                  </View>
+                ) : null}
+              </>
+            ) : (
+              <Text style={{ color: colors.muted, fontSize: 14 }}>
+                Répartition non précisée
+              </Text>
+            )}
+            {(detail || !onOpenPlacement) &&
+            (p.theme ||
+              p.presentation?.reason ||
+              p.presentation?.counterPromotion) ? (
+              <SecondaryButton
+                label="Pourquoi cette présentation ?"
+                onPress={() => setExplainedId(p.id)}
+              />
+            ) : null}
+            {renderFooter?.(p)}
+          </View>
+        );
+      })}
+      <BottomSheet
+        visible={!!explained}
+        title={explained?.label ?? "Présentation de la TG"}
+        onClose={() => setExplainedId(undefined)}
+        swipeToClose
+      >
+        {explained?.theme ? (
+          <Text style={{ color: colors.ink, fontSize: 16, lineHeight: 25 }}>
+            {explained.theme}
+          </Text>
+        ) : null}
+        {explained?.presentation?.reason &&
+        explained.presentation.reason.trim() !== explained.theme?.trim() ? (
+          <Text style={{ color: colors.ink, fontSize: 16, lineHeight: 25 }}>
+            {explained.presentation.reason}
+          </Text>
+        ) : null}
+        {explained?.presentation?.counterPromotion ? (
+          <Text style={{ color: colors.ink, fontSize: 16, lineHeight: 25 }}>
+            Contre-promo hors TG :{" "}
+            {explained.presentation.counterPromotion.label}.{" "}
+            {explained.presentation.counterPromotion.reason}
+          </Text>
+        ) : null}
+      </BottomSheet>
+    </View>
+  );
+}
+
 function TgSurfaceMap({
   presentation,
   large,
   onChoose,
+  percentageOnly = false,
 }: {
   presentation: NonNullable<Placement["presentation"]>;
   large: boolean;
   onChoose?(i: number): void;
+  percentageOnly?: boolean;
 }) {
+  const [width, setWidth] = useState(0);
   const zones = presentation.zones;
   const first = zones.reduce(
     (best, z, i) => (z.sharePct > zones[best]!.sharePct ? i : best),
     0,
   );
-  const block = (i: number) => (
-    <Pressable
-      key={i}
-      disabled={!onChoose}
-      accessibilityRole={onChoose ? "button" : "text"}
-      accessibilityLabel={`${zones[i]!.label}, ${zones[i]!.sharePct} pour cent de surface proposée, ${role[zones[i]!.role]}`}
-      onPress={() => onChoose?.(i)}
-      style={{
-        flex: zones[i]!.sharePct,
-        backgroundColor: fill[zones[i]!.role],
-        borderRadius: 10,
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 5,
-        paddingHorizontal: 3,
-        overflow: "hidden",
-      }}
-    >
-      {zones.length <= 3 || zones[i]!.sharePct >= 20 ? (
-        <>
-          <Text
-            style={{
-              color: fillInk[zones[i]!.role],
-              fontSize: large ? 22 : 15,
-              fontWeight: "700",
-            }}
-          >
-            {zones[i]!.sharePct}%
-          </Text>
-          <Text
-            numberOfLines={2}
-            style={{
-              color: fillInk[zones[i]!.role],
-              fontSize: large ? 14 : 11,
-              textAlign: "center",
-            }}
-          >
-            {zones[i]!.label}
-          </Text>
-        </>
-      ) : null}
-    </Pressable>
-  );
+  const height = percentageOnly ? (large ? 216 : 136) : large ? 260 : 154;
+  const mapWidth = Math.max(0, width - (zones.length > 1 ? 3 : 0));
+  const block = (i: number) => {
+    if (percentageOnly) {
+      const firstBlock = i === first;
+      const zoneWidth =
+        (mapWidth *
+          (firstBlock
+            ? zones[first]!.sharePct
+            : 100 - zones[first]!.sharePct)) /
+        100;
+      const zoneHeight = firstBlock
+        ? height
+        : ((height - Math.max(0, zones.length - 2) * 3) * zones[i]!.sharePct) /
+          (100 - zones[first]!.sharePct);
+      return (
+        <View
+          key={i}
+          accessible={false}
+          style={{
+            flex: zones[i]!.sharePct,
+            minWidth: 0,
+            backgroundColor: fill[zones[i]!.role],
+            borderRadius: 10,
+            alignItems: "center",
+            justifyContent: "center",
+            overflow: "hidden",
+          }}
+        >
+          {zoneWidth >= 32 && zoneHeight >= 25 ? (
+            <Text
+              accessible={false}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.6}
+              style={{
+                maxWidth: "100%",
+                paddingHorizontal: 3,
+                color: fillInk[zones[i]!.role],
+                fontSize: large ? 32 : 26,
+                fontWeight: "600",
+                fontVariant: ["tabular-nums"],
+              }}
+            >
+              {zones[i]!.sharePct}%
+            </Text>
+          ) : null}
+        </View>
+      );
+    }
+    return (
+      <Pressable
+        key={i}
+        disabled={!onChoose}
+        accessibilityRole={onChoose ? "button" : "text"}
+        accessibilityLabel={`${zones[i]!.label}, ${zones[i]!.sharePct} pour cent de surface proposée, ${role[zones[i]!.role]}`}
+        onPress={() => onChoose?.(i)}
+        style={{
+          flex: zones[i]!.sharePct,
+          backgroundColor: fill[zones[i]!.role],
+          borderRadius: 10,
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 5,
+          paddingHorizontal: 3,
+          overflow: "hidden",
+        }}
+      >
+        {zones.length <= 3 || zones[i]!.sharePct >= 20 ? (
+          <>
+            <Text
+              style={{
+                color: fillInk[zones[i]!.role],
+                fontSize: large ? 22 : 15,
+                fontWeight: "700",
+              }}
+            >
+              {zones[i]!.sharePct}%
+            </Text>
+            <Text
+              numberOfLines={2}
+              style={{
+                color: fillInk[zones[i]!.role],
+                fontSize: large ? 14 : 11,
+                textAlign: "center",
+              }}
+            >
+              {zones[i]!.label}
+            </Text>
+          </>
+        ) : null}
+      </Pressable>
+    );
+  };
   return (
     <View
-      accessibilityLabel="Répartition proposée, total 100 pour cent de surface"
-      style={{ height: large ? 260 : 154, flexDirection: "row", gap: 3 }}
+      accessibilityLabel={
+        percentageOnly
+          ? `Répartition proposée, total 100 pour cent de surface. ${zones.map((z) => `${z.label} : ${z.sharePct} pour cent`).join(". ")}`
+          : "Répartition proposée, total 100 pour cent de surface"
+      }
+      onLayout={
+        percentageOnly
+          ? (event) => setWidth(event.nativeEvent.layout.width)
+          : undefined
+      }
+      style={{ height, flexDirection: "row", gap: 3 }}
     >
       {block(first)}
       {zones.length > 1 ? (
