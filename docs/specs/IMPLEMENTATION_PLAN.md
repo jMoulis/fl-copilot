@@ -1,3 +1,14 @@
+## Native corrective increment — notification settings resume, 15 November 2026
+
+Owner reports coupled notification switch loading and a freeze after foreground
+return. Bound the push-token PUT with the existing 30-second API-client deadline,
+retain the serialized registration writer and independent consents, and expose
+only the changed channel as busy. Put shared verification below the three channels
+with an explicit common label. Preserve session retirement and pending disables;
+no new provider, queue, schema, automatic opt-in or API deployment. See
+`../qa/NOTIFICATION_SETTINGS_RESUME_2026_11_15.md` for reproduced failures, mounted
+foreground coverage and the physical TestFlight acceptance boundary.
+
 ## Native corrective increment — email notification Back, 15 November 2026
 
 Owner reports that Documents received by email cannot return after notification

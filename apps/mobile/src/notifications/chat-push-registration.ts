@@ -5,6 +5,7 @@ export type ChatPushState = {
   documentsEnabled?: boolean;
   ready: boolean;
   busy: boolean;
+  busyChannel?: keyof PushChannels;
   error?: string;
 };
 /** Serializes device preference/registration so a late enable cannot undo disable. */
@@ -70,6 +71,7 @@ export class ChatPushRegistration {
     },
     busy: boolean,
     error?: string,
+    busyChannel?: keyof PushChannels,
   ) {
     if (this.ports.current())
       this.ports.publish({
@@ -80,6 +82,7 @@ export class ChatPushRegistration {
           : {}),
         ready: true,
         busy,
+        ...(busy && busyChannel ? { busyChannel } : {}),
         error,
       });
   }
@@ -138,14 +141,14 @@ export class ChatPushRegistration {
       if (!port) return;
       const values = await this.read();
       if (!this.ports.current()) return;
-      this.publish(values, true);
+      this.publish(values, true, undefined, channel);
       if (enabled && !(await this.ports.permission(true)))
         throw Error("PUSH_PERMISSION_DENIED");
       if (!this.ports.current()) return;
       values[channel] = enabled ? "1" : "pending-disable";
       await port.write(values[channel]);
       if (!this.ports.current()) return;
-      this.publish(values, true);
+      this.publish(values, true, undefined, channel);
       await this.register(values);
       if (!this.ports.current()) return;
       if (!enabled) await port.write("0");

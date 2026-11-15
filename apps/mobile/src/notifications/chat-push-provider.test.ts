@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { ChatPushProvider } from "./chat-push-provider";
+import { ChatPushProvider, useChatPush } from "./chat-push-provider";
 const runtime = vi.hoisted(() => ({
   state: "background",
   generation: 0,
@@ -17,10 +17,10 @@ const runtime = vi.hoisted(() => ({
   },
   states: new Set<(state: string) => void>(),
   tokens: new Set<(token: { type: "ios"; data: string }) => void>(),
-  read: vi.fn(async (key: string) =>
+  read: vi.fn<(key: string) => Promise<string | null>>(async (key) =>
     key.startsWith("fl.email-push.") ? null : "1",
   ),
-  write: vi.fn(async () => {}),
+  write: vi.fn<(key: string, value: string) => Promise<void>>(async () => {}),
   save: vi.fn(async () => ({ enabled: true })),
   permission: vi.fn(async () => ({ granted: true })),
   token: vi.fn(async () => ({ data: "ExpoPushToken[aaaaaaaaaaaaaaaaaaaaaa]" })),
@@ -99,10 +99,16 @@ vi.mock("@/reminders/native", () => ({
   }),
 }));
 let renderer: ReactTestRenderer | undefined;
+let push: ReturnType<typeof useChatPush>;
+function Probe() {
+  push = useChatPush();
+  return null;
+}
 async function render() {
   await act(async () => {
-    if (renderer) renderer.update(createElement(ChatPushProvider, {}, null));
-    else renderer = create(createElement(ChatPushProvider, {}, null));
+    const element = createElement(ChatPushProvider, {}, createElement(Probe));
+    if (renderer) renderer.update(element);
+    else renderer = create(element);
   });
 }
 beforeEach(() => {
@@ -113,8 +119,13 @@ beforeEach(() => {
       original(...a);
   });
   runtime.state = "background";
-  runtime.read.mockClear();
-  runtime.save.mockClear();
+  runtime.read
+    .mockReset()
+    .mockImplementation(async (key: string) =>
+      key.startsWith("fl.email-push.") ? null : "1",
+    );
+  runtime.write.mockReset().mockResolvedValue(undefined);
+  runtime.save.mockReset().mockResolvedValue({ enabled: true });
   runtime.token
     .mockReset()
     .mockImplementation(async (options?: { devicePushToken?: unknown }) => {
@@ -136,6 +147,7 @@ afterEach(async () => {
   runtime.states.clear();
   runtime.tokens.clear();
   vi.restoreAllMocks();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 it("does not register from background mount/token events, then reconciles once on foreground", async () => {
@@ -308,4 +320,83 @@ it("does not reuse an unsolicited old native event as proof of registration for 
       devicePushToken: { type: "ios", data: "native-token-a" },
     }),
   );
+});
+
+it("recovers the settings and registration after a suspended save and foreground return", async () => {
+  vi.useFakeTimers();
+  const values = new Map<string, string>();
+  runtime.read.mockImplementation(async (key) =>
+    values.has(key)
+      ? values.get(key)!
+      : key.startsWith("fl.chat-push.")
+        ? "1"
+        : null,
+  );
+  runtime.write.mockImplementation(async (key, value) => {
+    values.set(key, value);
+  });
+  runtime.state = "active";
+  await render();
+  const { ApiClient } = await vi.importActual<
+    typeof import("@fl-copilot/api-client")
+  >("@fl-copilot/api-client");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => new Promise(() => {})),
+  );
+  const api = new ApiClient("https://fixture.invalid");
+  runtime.save.mockImplementationOnce(async () =>
+    api.updateDevicePushToken(
+      "access",
+      runtime.deviceId,
+      runtime.session.stores[0]!.storeId,
+      "ExpoPushToken[aaaaaaaaaaaaaaaaaaaaaa]",
+      { chat: true, email: true, documents: false },
+    ),
+  );
+  let changing!: Promise<void>;
+  await act(async () => {
+    changing = push.setEmailEnabled(true);
+  });
+  expect(push).toMatchObject({
+    ready: true,
+    busy: true,
+    busyChannel: "email",
+    emailEnabled: true,
+  });
+  await act(async () => {
+    runtime.state = "background";
+    for (const cb of runtime.states) cb("background");
+    runtime.state = "active";
+    for (const cb of runtime.states) cb("active");
+    await vi.advanceTimersByTimeAsync(30_000);
+    await changing;
+  });
+  expect(push).toMatchObject({
+    ready: true,
+    busy: false,
+    enabled: true,
+    emailEnabled: true,
+  });
+  expect(push.error).toBeUndefined();
+  await act(async () => {
+    await push.setDocumentsEnabled(true);
+    await push.setEmailEnabled(false);
+  });
+  expect(push).toMatchObject({
+    busy: false,
+    enabled: true,
+    emailEnabled: false,
+    documentsEnabled: true,
+  });
+  expect(runtime.save).toHaveBeenLastCalledWith(
+    "test-access",
+    runtime.deviceId,
+    runtime.session.stores[0]!.storeId,
+    "ExpoPushToken[aaaaaaaaaaaaaaaaaaaaaa]",
+    { chat: true, email: false, documents: true },
+  );
+  expect(runtime.states.size).toBe(1);
+  expect(runtime.tokens.size).toBe(1);
+  expect(vi.getTimerCount()).toBe(0);
 });

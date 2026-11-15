@@ -13,6 +13,8 @@ const runtime = vi.hoisted(() => ({
   emailEnabled: false,
   setDocumentsEnabled: vi.fn(async () => {}),
   pushAvailable: false,
+  pushBusy: false,
+  pushBusyChannel: undefined as "chat" | "email" | "documents" | undefined,
   setEmailEnabled: vi.fn(async () => {}),
   refresh: vi.fn(async () => {}),
   permission: vi.fn(async () => true),
@@ -26,7 +28,8 @@ vi.mock("@/notifications/chat-push-provider", () => ({
   useChatPush: () => ({
     enabled: false,
     ready: runtime.pushAvailable,
-    busy: false,
+    busy: runtime.pushBusy,
+    busyChannel: runtime.pushBusyChannel,
     available: runtime.pushAvailable,
     emailEnabled: runtime.emailEnabled,
     documentsEnabled: false,
@@ -120,6 +123,8 @@ beforeEach(() => {
     stores: [{ storeId: "store-a" }],
   };
   runtime.focused = true;
+  runtime.pushBusy = false;
+  runtime.pushBusyChannel = undefined;
   runtime.database = { sqlite: {}, deviceId: "device" };
   runtime.preferences.mockReset().mockResolvedValue(false);
   runtime.list.mockReset().mockResolvedValue([]);
@@ -414,6 +419,33 @@ it("keeps document-result alerts default-off and independent of email reception"
     await act(async () => toggle.props.onValueChange(true));
     expect(runtime.setDocumentsEnabled).toHaveBeenCalledWith(true);
     expect(runtime.setEmailEnabled).not.toHaveBeenCalled();
+  } finally {
+    runtime.pushAvailable = false;
+  }
+});
+
+it("only disables the channel being changed, leaving other alert choices available", async () => {
+  runtime.pushAvailable = true;
+  runtime.pushBusy = true;
+  runtime.pushBusyChannel = "email";
+  Object.assign(runtime.session.stores[0]!, { role: "MANAGER" });
+  try {
+    await mount();
+    const switches = hosts("Switch").slice(0, 3);
+    expect(switches.map((node) => node.props.disabled)).toEqual([
+      false,
+      true,
+      false,
+    ]);
+    runtime.pushBusy = false;
+    runtime.pushBusyChannel = undefined;
+    await act(async () => tree!.update(createElement(ReminderSettings)));
+    expect(
+      hosts("Switch")
+        .slice(0, 3)
+        .every((node) => !node.props.disabled),
+    ).toBe(true);
+    expect(button("Vérifier les alertes de ce téléphone")).toBeDefined();
   } finally {
     runtime.pushAvailable = false;
   }
