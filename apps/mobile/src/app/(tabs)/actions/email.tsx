@@ -18,6 +18,10 @@ export default function StoreEmailScreen({
   const { session } = useAuth();
   const { emailIntake, lastSyncedAt } = useSync();
   const store = session?.stores[0];
+  const close = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace(configuration ? "/settings" : "/(tabs)/actions");
+  };
   if (!store || store.role !== "MANAGER" || !emailIntake)
     return (
       <AppScreen>
@@ -26,7 +30,7 @@ export default function StoreEmailScreen({
           title="Réception indisponible"
           message="Connectez-vous avec les droits de gestion du magasin pour retrouver sa réception."
         />
-        <SecondaryButton label="Retour" onPress={() => router.back()} />
+        <SecondaryButton label="Retour" onPress={close} />
       </AppScreen>
     );
   return (
@@ -39,7 +43,7 @@ export default function StoreEmailScreen({
       view={configuration ? "settings" : "inbox"}
       onSettings={() => router.push("/email-settings")}
       refreshKey={received.success ? received.data : undefined}
-      onClose={() => router.back()}
+      onClose={close}
       onOpenMercalys={(batchId) =>
         router.push({ pathname: "/email-import", params: { batchId } })
       }

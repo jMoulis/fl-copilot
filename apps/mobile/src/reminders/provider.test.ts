@@ -824,6 +824,111 @@ it("opens a store email alert in Actions once, without importing or writing", as
   expect(runtime.syncNow).not.toHaveBeenCalled();
   expect(runtime.destination).not.toHaveBeenCalled();
 });
+
+it.each(["COLD_ROOT", "ALREADY_OPEN"])(
+  "opens one owned email destination from a pending response and ignores its duplicate: %s",
+  async (mode) => {
+    const sdk = StackRouter({
+      initialRouteName: mode === "COLD_ROOT" ? "index" : "(tabs)",
+    });
+    const options = {
+      routeNames: ["index", "(tabs)", "email-inbox"],
+      routeParamList: {},
+      routeGetIdList: {},
+    };
+    let state = sdk.getInitialState(options);
+    if (mode === "ALREADY_OPEN")
+      state = sdk.getStateForAction(
+        state,
+        {
+          type: "PUSH",
+          payload: {
+            name: "email-inbox",
+            params: { receiptId: "88888888-8888-4888-8888-888888888888" },
+          },
+        },
+        options,
+      )! as typeof state;
+    const existingEmailKey = state.routes.find(
+      (route) => route.name === "email-inbox",
+    )?.key;
+    const data = {
+      kind: "STORE_EMAIL_READY",
+      storeId: runtime.storeId,
+      ownerId: runtime.ownerId,
+      receiptId: "77777777-7777-4777-8777-777777777777",
+    };
+    const destination = {
+      pathname: "/email-inbox",
+      params: { receiptId: data.receiptId },
+    };
+    const apply = (
+      type: "PUSH" | "NAVIGATE" | "POP_TO",
+      target: typeof destination,
+    ) => {
+      const next = sdk.getStateForAction(
+        state,
+        {
+          type,
+          payload: {
+            name: target.pathname.slice(1),
+            params: target.params,
+          },
+        },
+        options,
+      );
+      expect(next).not.toBeNull();
+      state = next! as typeof state;
+      runtime.rootState = state;
+    };
+    runtime.rootState = state;
+    runtime.push.mockImplementation((target) => apply("PUSH", target));
+    runtime.navigate.mockImplementation((target) => apply("NAVIGATE", target));
+    runtime.dismissTo.mockImplementation((target) => apply("POP_TO", target));
+    runtime.syncMessages = vi.fn().mockResolvedValue(undefined);
+    runtime.sqlite.getAllAsync.mockClear();
+    runtime.lastResponse = response(data);
+
+    await render();
+    const opened = state.routes[state.index]!;
+    expect(runtime.dismissTo).toHaveBeenCalledExactlyOnceWith(destination);
+    expect(opened).toMatchObject({
+      name: "email-inbox",
+      params: { receiptId: data.receiptId },
+    });
+    expect(state.routes).toHaveLength(mode === "COLD_ROOT" ? 1 : 2);
+    if (existingEmailKey) expect(opened.key).toBe(existingEmailKey);
+    // POP_TO replaces an unmatched cold root: the screen must provide its fallback.
+    if (mode === "COLD_ROOT")
+      expect(
+        sdk.getStateForAction(state, { type: "GO_BACK" }, options),
+      ).toBeNull();
+
+    await render();
+    await act(async () => {
+      for (const listener of runtime.responseListeners)
+        listener(response(data));
+    });
+    expect(
+      state.routes.filter((route) => route.name === "email-inbox"),
+    ).toHaveLength(1);
+    expect(state.routes[state.index]).toMatchObject({
+      key: opened.key,
+      params: { receiptId: data.receiptId },
+    });
+    expect(runtime.dismissTo).toHaveBeenCalledTimes(1);
+    expect(runtime.navigate).not.toHaveBeenCalled();
+    expect(runtime.push).not.toHaveBeenCalled();
+    expect(runtime.clear).toHaveBeenCalledTimes(1);
+    expect(runtime.setStatus).not.toHaveBeenCalled();
+    expect(runtime.syncNow).not.toHaveBeenCalled();
+    expect(runtime.syncMessages).not.toHaveBeenCalled();
+    expect(runtime.destination).not.toHaveBeenCalled();
+    expect(runtime.sqlite.getFirstAsync).not.toHaveBeenCalled();
+    expect(runtime.sqlite.getAllAsync).not.toHaveBeenCalled();
+  },
+);
+
 it.each(["owner", "store", "role"])(
   "refuses an email alert for another %s",
   async (field) => {

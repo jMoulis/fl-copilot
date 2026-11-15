@@ -1,3 +1,12 @@
+## Native corrective increment — email notification Back, 15 November 2026
+
+Owner reports that Documents received by email cannot return after notification
+entry. Reuse the screen close handler: preserve Back when history exists and
+replace an isolated inbox with Imports (isolated configuration with Settings).
+Keep notification delivery, private scope, receiver and document processing
+unchanged. See `../qa/EMAIL_NOTIFICATION_BACK_2026_11_15.md` for SDK/native
+reproduction, regression coverage and the new binary acceptance boundary.
+
 ## Owner-approved Marché solaire native batch — 15 November 2026
 
 The owner accepts the four navigation journeys, then the light-led five-screen
