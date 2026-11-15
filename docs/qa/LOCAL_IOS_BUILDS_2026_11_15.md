@@ -9,12 +9,10 @@ agreement. Budget renewal in early December does not automatically restore
 that authority. The current rule is recorded first in
 [the release process](../RELEASE_PROCESS.md).
 
-**Qualification is in progress.** A proposed local command, installed toolchain
-or source review does not prove a signed archive, a successful upload or device
-acceptance. No successful local release is claimed by this document. The first
-attempt targets existing clean application source
-`a5860476c96aa2404bc6c852a0a52a416f2d53cc`; this documentation does not require a
-new native build. Actual outcomes will be recorded separately when available.
+**The first local delivery is qualified and owner accepted.** Actual build
+`0.1.0 (68)` used clean source `7339a670b73ada6eef22dd82d78c5a23abe6bcf6`.
+The owner confirmed the focused iPhone recipe after private TestFlight delivery.
+This documentation update does not require another native build.
 
 ## Reuse and boundaries
 
@@ -51,7 +49,7 @@ required even when the compiler runs locally.
   starting a cloud compiler. Read the actual allocated number; do not assume or
   reuse one. A failed attempt can still consume a number.
 
-## First qualification attempt — in progress
+## Qualification history and actual outcome
 
 The first preparation attempt stopped on a CocoaPods tooling conflict, addressed
 by the isolated wrappers above. The second stopped because the signing chain
@@ -60,12 +58,26 @@ retrieved, its chain checked, and added to the user's keychain without a custom
 trust override. The existing Apple Distribution identity then passed its signing
 identity check; no new distribution certificate or replacement profile is claimed.
 
-The third local attempt has passed credential preparation, native dependency
-installation/prebuild and Xcode configuration, and reached Metro bundling. It
-has not yet produced a verified STORE archive or a local-binary TestFlight
-result. Retain this distinction when reporting progress or updating the gates
-below. The successful cloud build 64 remains the verified distribution fallback;
-its acceptance is not evidence about this local attempt.
+The third local attempt stopped on the old Sentry upload credential. After the
+owner explicitly authorized reuse of the existing authenticated CLI credential
+in process memory, build 68 completed without disabling the diagnostic uploads.
+No token was written to a file by the local build runner. Build phases completing
+do not independently prove server indexing of every source map or native symbol.
+
+The actual STORE IPA passed signature, profile, team/bundle, production APNs,
+production API and content checks. Its SHA-256 is
+`2fca537091081a068625bb71be8f46f27227e15947e126827bb7ce6fee33968c`.
+Source provenance joins the clean checkout and successful local-run record; it
+is not claimed to be cryptographically recovered from the binary.
+
+Local Fastlane uploaded that verified IPA directly to App Store Connect using
+the existing submission key in temporary protected files, removed afterwards.
+No EAS Submit job, new signing identity, tester invitation or public release was
+created. Apple reports build 68 as `VALID` / `IN_BETA_TESTING`, and membership in
+the existing owner-only internal group was read back. The before/after cloud
+lists contain the same 15 IDs; build 64 remains the latest cloud compilation.
+The owner subsequently confirmed build 68 acceptance. Private evidence is in
+workspace `maintenance/local-ios-build/first-local-release/delivery.json`.
 
 ## Local compilation procedure
 
@@ -101,14 +113,14 @@ its acceptance is not evidence about this local attempt.
 
 ## Evidence and acceptance gates
 
-- [ ] Local dependencies and production environment qualified.
-- [ ] Local compilation completes and produces the expected IPA.
-- [ ] Actual archive signature/APNs/content and source provenance verified.
-- [ ] Cloud-build IDs compared before/after; no new compilation job attributed
+- [x] Local dependencies and production environment qualified.
+- [x] Local compilation completes and produces the expected IPA.
+- [x] Actual archive signature/APNs/content and source provenance verified.
+- [x] Cloud-build IDs compared before/after; no new compilation job attributed
       to this local attempt. Preserve the command/log evidence of the local path.
-- [ ] Verified local IPA submitted and accepted by Apple.
-- [ ] Build available in the existing private owner-only TestFlight group.
-- [ ] Owner accepts the focused iPhone recipe on that exact local binary.
+- [x] Verified local IPA submitted and accepted by Apple.
+- [x] Build available in the existing private owner-only TestFlight group.
+- [x] Owner accepts the focused iPhone recipe on that exact local binary.
 
 Retain private attempt evidence outside Git in workspace
 `maintenance/local-ios-build/`. Record source SHA, actual tool versions, local

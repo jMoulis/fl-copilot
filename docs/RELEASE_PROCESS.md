@@ -20,11 +20,12 @@ where the archive is produced, not the application architecture or distribution
 scope. EAS authentication, existing credentials and version/environment services
 may still be used; `--local` is not a claim of fully offline operation.
 
-The first local STORE archive is **being qualified**, not declared successful or
-accepted on iPhone. Read [the local-build qualification record](qa/LOCAL_IOS_BUILDS_2026_11_15.md)
-for source/toolchain checks and the distinction between a local archive and an
-EAS cloud build record. The previous verified TestFlight binary remains available
-while this qualification is in progress.
+The first local STORE archive, **0.1.0 (68)**, was compiled on the owner's Mac,
+verified, uploaded directly to Apple and made available in the existing private
+TestFlight group. The owner accepted that exact build. Read
+[the local-build qualification record](qa/LOCAL_IOS_BUILDS_2026_11_15.md) for the
+observed evidence and the distinction between a local archive and an EAS cloud
+build record. Build 64 remains the previous accepted distribution fallback.
 
 ## Delivery policy — 17 October 2026
 

@@ -208,9 +208,6 @@ function LoadedProductEditor({
         >
           {base?.product.entity.label ?? "Nouveau produit"}
         </Text>
-        <Text style={{ color: colors.muted, fontSize: 13, lineHeight: 19 }}>
-          Enregistré sur cet appareil, même hors connexion.
-        </Text>
       </View>
       {state.error ? (
         <InlineAlert title="Actualisation interrompue" message={state.error} />

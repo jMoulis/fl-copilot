@@ -1,3 +1,12 @@
+## Native presentation increment — products and sheet backdrop, 15 November 2026
+
+The owner requests removal of routine local-copy/list-context messages, direct
+identity tags in the product editor and a quieter bottom-sheet backdrop. Reuse
+the existing choice controller and native Modal fade; keep persistence, explicit
+saves, real errors, provenance and parent/native dismissal sequencing. No schema,
+sync, AI or API change. See `../qa/PRODUCT_SHEETS_POLISH_2026_11_15.md` for
+verification and the distinction from the separate weekly-plan visual proposal.
+
 ## Native corrective increment — notification settings resume, 15 November 2026
 
 Owner reports coupled notification switch loading and a freeze after foreground

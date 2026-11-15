@@ -9,12 +9,7 @@ import {
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Pressable, Switch, Text, TextInput, View } from "react-native";
 import { z } from "zod";
-import {
-  InlineAlert,
-  PrimaryButton,
-  SecondaryButton,
-  BottomSheet,
-} from "../components/ui";
+import { InlineAlert, PrimaryButton, SecondaryButton } from "../components/ui";
 import { colors } from "../design/tokens";
 import {
   emptyProductDraft,
@@ -229,10 +224,12 @@ export function ProductEditorForm({
         <InlineAlert title="Enregistrement impossible" message={saveError} />
       ) : null}
       {saved && !isDirty ? (
-        <InlineAlert
-          title="Produit enregistré"
-          message="La modification est disponible hors connexion et sera synchronisée automatiquement."
-        />
+        <Text
+          accessibilityLiveRegion="polite"
+          className="text-sm font-semibold text-forest"
+        >
+          Produit enregistré
+        </Text>
       ) : null}
 
       <View className="gap-4">
@@ -565,77 +562,37 @@ function ChoiceController({
   choices: readonly (readonly [string, string])[];
   disabled?: boolean;
 }) {
-  const [opened, setOpened] = useState(false);
-  const compact =
-    name === "category" || name === "nature" || name === "salesUnit";
   return (
     <View className="gap-2">
       <FormLabel label={label} />
       <Controller
         control={control}
         name={name}
-        render={({ field: { onChange, value } }) => {
-          const options = (
-            <View className={compact ? "gap-2" : "flex-row flex-wrap gap-2"}>
-              {choices.map(([choice, choiceLabel]) => {
-                const selected = value === choice;
-                return (
-                  <Pressable
-                    key={choice}
-                    accessibilityRole="radio"
-                    aria-checked={selected}
-                    accessibilityState={{ checked: selected, disabled }}
-                    disabled={disabled}
-                    accessibilityLabel={`${label} : ${choiceLabel}`}
-                    onPress={() => {
-                      onChange(choice);
-                      if (compact) setOpened(false);
-                    }}
-                    className={`min-h-12 flex-row items-center justify-between gap-3 rounded-2xl border px-4 py-3 ${selected ? "border-accent bg-accent" : "border-line bg-surface"}`}
+        render={({ field: { onChange, value } }) => (
+          <View className="flex-row flex-wrap gap-2">
+            {choices.map(([choice, choiceLabel]) => {
+              const selected = value === choice;
+              return (
+                <Pressable
+                  key={choice}
+                  accessibilityRole="radio"
+                  aria-checked={selected}
+                  accessibilityState={{ checked: selected, disabled }}
+                  disabled={disabled}
+                  accessibilityLabel={`${label} : ${choiceLabel}`}
+                  onPress={() => onChange(choice)}
+                  className={`min-h-12 items-center justify-center rounded-full border px-4 py-3 ${selected ? "border-accent bg-accent" : "border-line bg-surface"}`}
+                >
+                  <Text
+                    className={`text-sm ${selected ? "font-semibold text-on-accent" : "text-ink"}`}
                   >
-                    <Text
-                      className={`text-base ${selected ? "font-semibold text-on-accent" : "text-ink"}`}
-                    >
-                      {choiceLabel}
-                    </Text>
-                    {compact && selected ? (
-                      <Text accessible={false} className="text-on-accent">
-                        ✓
-                      </Text>
-                    ) : null}
-                  </Pressable>
-                );
-              })}
-            </View>
-          );
-          if (!compact) return options;
-          const selectedLabel =
-            choices.find(([choice]) => value === choice)?.[1] ?? "À préciser";
-          return (
-            <>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Choisir ${label.toLowerCase()} : ${selectedLabel}`}
-                accessibilityState={{ expanded: opened, disabled }}
-                disabled={disabled}
-                onPress={() => setOpened(true)}
-                className="min-h-12 flex-row items-center justify-between gap-3 rounded-2xl border border-line bg-surface px-4 py-3"
-              >
-                <Text className="text-base text-ink">{selectedLabel}</Text>
-                <Text accessible={false} className="text-lg text-forest">
-                  ⌄
-                </Text>
-              </Pressable>
-              <BottomSheet
-                visible={opened}
-                title={label}
-                onClose={() => setOpened(false)}
-              >
-                {options}
-              </BottomSheet>
-            </>
-          );
-        }}
+                    {choiceLabel}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
       />
     </View>
   );

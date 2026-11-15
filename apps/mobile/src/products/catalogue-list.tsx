@@ -42,7 +42,6 @@ export function CatalogueList({
   onBack,
   loading,
   error,
-  notice,
   onRefresh,
   storeMissing = false,
   visuals,
@@ -254,9 +253,6 @@ export function CatalogueList({
                 title="Aucun magasin actif"
                 message="Reconnectez-vous pour retrouver votre magasin."
               />
-            ) : null}
-            {notice ? (
-              <InlineAlert title="Contexte de liste" message={notice} />
             ) : null}
             {error ? (
               <>

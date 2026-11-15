@@ -434,7 +434,7 @@ export function MenuRow({
     </Pressable>
   );
 }
-/** Contextual sheet: fixed close/footer, separately scrollable content and guarded dismissal. */
+/** Native fade keeps the scrim stationary and retains Modal's dismissal sequencing. */
 export function BottomSheet({
   visible,
   title,
@@ -485,7 +485,7 @@ export function BottomSheet({
     <Modal
       visible={visible}
       transparent
-      animationType="slide"
+      animationType="fade"
       onRequestClose={onClose}
       onDismiss={onDismiss}
     >
@@ -495,7 +495,7 @@ export function BottomSheet({
         style={{
           flex: 1,
           justifyContent: "flex-end",
-          backgroundColor: colors.overlay,
+          backgroundColor: colors.sheetOverlay,
         }}
       >
         <Pressable

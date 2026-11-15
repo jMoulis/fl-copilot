@@ -70,6 +70,9 @@ it("keeps close and footer outside the scrolling body and defers completion to n
     onDismiss: dismissed,
     footer: createElement("Button", { label: "Appliquer" }),
   });
+  expect(
+    tree.root.find((n) => String(n.type) === "Modal").props.animationType,
+  ).toBe("fade");
   const scroll = tree.root.find((n) => String(n.type) === "ScrollView");
   expect(scroll.findAll((n) => String(n.type) === "Pressable")).toHaveLength(0);
   expect(scroll.findAll((n) => String(n.type) === "Button")).toHaveLength(0);
@@ -86,6 +89,36 @@ it("keeps close and footer outside the scrolling body and defers completion to n
   );
   expect(dismissed).not.toHaveBeenCalled();
   tree.root.find((n) => String(n.type) === "Modal").props.onDismiss();
+  expect(dismissed).toHaveBeenCalledOnce();
+});
+it("preserves a guarded backdrop close and reports completion only after native dismissal", async () => {
+  const close = vi.fn(),
+    dismissed = vi.fn();
+  await mount({ onClose: close, onDismiss: dismissed });
+  const backdrop = tree.root.find(
+    (n) =>
+      String(n.type) === "Pressable" &&
+      n.props.accessibilityLabel === "Fermer : Détail du fichier",
+  );
+  await act(() => backdrop.props.onPress());
+  expect(close).toHaveBeenCalledOnce();
+  expect(tree.root.find((n) => String(n.type) === "Modal").props.visible).toBe(
+    true,
+  );
+  await act(() =>
+    tree.update(
+      createElement(BottomSheet, {
+        title: "Détail du fichier",
+        visible: false,
+        onClose: close,
+        onDismiss: dismissed,
+      }),
+    ),
+  );
+  expect(dismissed).not.toHaveBeenCalled();
+  const modal = tree.root.find((n) => String(n.type) === "Modal");
+  expect(modal.props.visible).toBe(false);
+  await act(() => modal.props.onDismiss());
   expect(dismissed).toHaveBeenCalledOnce();
 });
 it("recognizes a downward header gesture without taking horizontal gestures or the scrolling body", async () => {
