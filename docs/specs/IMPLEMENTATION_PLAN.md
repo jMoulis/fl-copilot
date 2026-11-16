@@ -1,3 +1,21 @@
+## Owner correction — native interactive iPhone sheets, 16 November 2026
+
+The owner accepts build 70's backdrop but rejects a sheet that waits until
+release instead of following the finger. The previous gesture recipe proved
+post-release dismissal, not continuous tracking. Replace the iOS presentation
+with Expo UI's native SwiftUI BottomSheet from the already-resolved SDK 57
+package, rather than extending a homemade gesture engine or turning every panel
+into a navigation route. Keep shared content and the existing Android/web
+presentation. The OS owns tracking, rebound, dimming and keyboard presentation.
+
+Use the lower-level SwiftUI onDismiss after complete native dismissal for queued
+pickers. Expose only existing owner dirty/busy vetoes as interactive dismissal
+locks: a blocked gesture rebounds, while X retains the existing confirmation.
+No new veto, writer, schema, sync policy, route registry or provider is introduced.
+Native acceptance must capture the panel while touch is still held, including
+body/scroll cooperation, then qualify keyboard/footer and picker sequencing.
+See `../qa/NATIVE_SHEETS_2026_11_16.md` for evidence boundaries.
+
 ## Owner correction — independent sheet and scrim motion, 16 November 2026
 
 Build 69's week/detail/declaration journeys and product identity tags are accepted

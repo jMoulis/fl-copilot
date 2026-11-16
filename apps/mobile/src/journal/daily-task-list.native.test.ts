@@ -12,6 +12,7 @@ const runtime = vi.hoisted(() => ({
   refresh: vi.fn(async () => {}),
   permission: vi.fn(async () => false),
   navigate: vi.fn(),
+  alert: vi.fn(),
 }));
 vi.mock("react-native", () => ({
   View: "View",
@@ -19,7 +20,7 @@ vi.mock("react-native", () => ({
   TextInput: "Input",
   Pressable: "Pressable",
   Switch: "Switch",
-  Alert: { alert: vi.fn() },
+  Alert: { alert: runtime.alert },
   StyleSheet: { create: (s: unknown) => s },
 }));
 vi.mock("@expo/vector-icons/Ionicons", () => ({ default: "Icon" }));
@@ -58,10 +59,11 @@ vi.mock("../components/ui", () => ({
   BottomSheet: ({
     visible,
     children,
+    ...props
   }: {
     visible: boolean;
     children: unknown;
-  }) => (visible ? createElement("Sheet", {}, children as never) : null),
+  }) => (visible ? createElement("Sheet", props, children as never) : null),
   InlineAlert: "Alert",
   PrimaryButton: "Button",
   SecondaryButton: "Button",
@@ -81,6 +83,7 @@ beforeEach(async () => {
   runtime.sync.mockReset().mockRejectedValue(Error("offline"));
   runtime.refresh.mockReset().mockResolvedValue(undefined);
   runtime.permission.mockClear();
+  runtime.alert.mockReset();
 });
 afterEach(async () => {
   await act(async () => tree?.unmount());
@@ -187,6 +190,30 @@ it("captures an offline private reminder for the selected day before requesting 
       ownerId: "44444444-4444-4444-8444-444444444444",
     }).list("2026-11-14", "2026-11-14"),
   ).toEqual([]);
+});
+it("blocks native dismissal of a changed task while retaining the explicit close confirmation", async () => {
+  await mount();
+  const add = tree!.root.findAll(
+    (n) =>
+      n.type === ("Pressable" as never) &&
+      n
+        .findAllByType("Text" as never)
+        .some((text) => text.children.includes("Ajouter")),
+  )[0]!;
+  await act(() => add.props.onPress());
+  expect(tree!.root.findByType("Sheet" as never).props.dismissible).toBe(true);
+  await act(() =>
+    node("Input", "À faire").props.onChangeText("Vérifier les bananes"),
+  );
+  expect(tree!.root.findByType("Sheet" as never).props.dismissible).toBe(false);
+  await act(() => tree!.root.findByType("Sheet" as never).props.onClose());
+  expect(runtime.alert).toHaveBeenCalledOnce();
+  expect(node("Input", "À faire").props.value).toBe("Vérifier les bananes");
+  expect(raw.prepare("SELECT count(*) n FROM sync_outbox").get()!.n).toBe(0);
+  await act(() => node("Input", "À faire").props.onChangeText(""));
+  expect(tree!.root.findByType("Sheet" as never).props.dismissible).toBe(true);
+  await act(() => tree!.root.findByType("Sheet" as never).props.onClose());
+  expect(tree!.root.findAllByType("Sheet" as never)).toHaveLength(0);
 });
 it("does not create reminders or request permission for an untimed note and reopens a completed task explicitly", async () => {
   await mount();

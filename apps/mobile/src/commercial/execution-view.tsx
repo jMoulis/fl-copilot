@@ -286,18 +286,19 @@ export function CommercialExecutionView({
     editorOpen.current = false;
     setEditorVisible(false);
   }
+  const editorDirty = Boolean(
+    editor &&
+    (editor.status !==
+      (editor.installationConfirmation
+        ? "DONE"
+        : (editor.record?.entity.status ?? "TODO")) ||
+      editor.note !== (editor.record?.entity.note ?? "") ||
+      JSON.stringify(editor.actuals) !==
+        JSON.stringify(executionActualsDraft(editor.record?.entity.actuals))),
+  );
   function closeEditor() {
     if (busy || !editorOpen.current) return;
-    const changed =
-      editor &&
-      (editor.status !==
-        (editor.installationConfirmation
-          ? "DONE"
-          : (editor.record?.entity.status ?? "TODO")) ||
-        editor.note !== (editor.record?.entity.note ?? "") ||
-        JSON.stringify(editor.actuals) !==
-          JSON.stringify(executionActualsDraft(editor.record?.entity.actuals)));
-    if (changed && Platform.OS === "web") {
+    if (editorDirty && Platform.OS === "web") {
       if (
         window.confirm(
           "Fermer sans enregistrer ? Les modifications de cette déclaration ne sont pas encore enregistrées.",
@@ -306,7 +307,7 @@ export function CommercialExecutionView({
         hideEditor();
       return;
     }
-    if (changed)
+    if (editorDirty)
       Alert.alert(
         "Fermer sans enregistrer ?",
         "Les modifications de cette déclaration ne sont pas encore enregistrées.",
@@ -566,6 +567,7 @@ export function CommercialExecutionView({
         <ExecutionDeclarationSheet
           editor={editor}
           visible={editorVisible}
+          dismissible={!editorDirty}
           busy={busy || !editorVisible}
           error={error}
           noteError={noteError}
@@ -607,6 +609,7 @@ export function CommercialExecutionView({
 export function ExecutionDeclarationSheet({
   editor,
   visible = true,
+  dismissible = true,
   busy,
   error,
   noteError,
@@ -630,6 +633,7 @@ export function ExecutionDeclarationSheet({
     record?: LocalCommercialExecution | null;
   };
   visible?: boolean;
+  dismissible?: boolean;
   busy: boolean;
   error?: string;
   noteError?: string;
@@ -666,6 +670,7 @@ export function ExecutionDeclarationSheet({
   return (
     <BottomSheet
       visible={visible}
+      dismissible={dismissible && !busy}
       title={installation ? "Déclarer l’installation" : "Revoir la déclaration"}
       onClose={onClose}
       onDismiss={onDismiss}

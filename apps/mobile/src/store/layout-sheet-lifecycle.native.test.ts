@@ -104,7 +104,9 @@ it("keeps addition mounted through its guarded close, blocks late application an
   );
   const form = hosts("InventoryForm")[0]!,
     apply = form.props.onApply;
+  expect(sheet("Ajouter au plan").props.dismissible).toBe(true);
   await act(() => form.props.onDirty());
+  expect(sheet("Ajouter au plan").props.dismissible).toBe(false);
   await act(() => sheet("Ajouter au plan").props.onClose());
   expect(sheet("Ajouter au plan").props.visible).toBe(true);
   expect(
@@ -138,7 +140,9 @@ it("keeps an element mounted while closing and clears discarded local controls w
   await act(() => hosts("Map")[0]!.props.onSelect(furniture.id));
   const inventory = hosts("InventoryControls")[0]!,
     apply = inventory.props.onApply;
+  expect(sheet(furniture.label).props.dismissible).toBe(true);
   await act(() => inventory.props.onDirty());
+  expect(sheet(furniture.label).props.dismissible).toBe(false);
   await act(() => sheet(furniture.label).props.onClose());
   expect(sheet(furniture.label).props.visible).toBe(true);
   expect(
