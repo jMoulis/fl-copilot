@@ -395,18 +395,20 @@ export function MenuRow({
   description,
   icon,
   onPress,
+  quiet = false,
 }: {
   title: string;
   description: string;
   icon: React.ComponentProps<typeof Ionicons>["name"];
   onPress: () => void;
+  quiet?: boolean;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${title}. ${description}`}
       onPress={onPress}
-      className="flex-row items-center gap-4 rounded-2xl bg-surface-muted px-4 py-4"
+      className={`flex-row items-center gap-4 py-4 ${quiet ? "border-b border-line" : "rounded-2xl bg-surface-muted px-4"}`}
       style={({ pressed }) => ({
         minHeight: 64,
         opacity: pressed ? 0.72 : 1,

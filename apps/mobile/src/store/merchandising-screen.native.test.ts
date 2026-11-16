@@ -8,6 +8,10 @@ import { storeContextFixture } from "../../../../scripts/test-store-context-fixt
 import { ReceiptTestDatabase } from "../../../../scripts/test-receipt-publication-sqlite";
 import { runLocalMigrations } from "../db/migrations";
 import { StoreContextRepository } from "./context-repository";
+vi.mock("@/components/settings-chrome", () => ({
+  SettingsHeader: "SettingsHeader",
+  SettingsIntro: "SettingsIntro",
+}));
 const runtime = vi.hoisted(() => ({
   session: undefined as unknown,
   database: undefined as unknown,
@@ -77,7 +81,7 @@ const button = (label: string) =>
   tree!.root.find(
     (n) => String(n.type) === "Button" && n.props.label === label,
   );
-async function setup(role = "MANAGER") {
+async function setup(role = "MANAGER", edit = "Modifier l’implantation") {
   db = new DatabaseSync(":memory:");
   const sqlite = new ReceiptTestDatabase(db);
   await runLocalMigrations(sqlite);
@@ -94,6 +98,7 @@ async function setup(role = "MANAGER") {
   await act(() => {
     tree = create(createElement(StoreSettingsScreen));
   });
+  await act(() => button(edit).props.onPress());
   return { repo, settings, sqlite };
 }
 beforeEach(() => {
@@ -118,6 +123,7 @@ it("saves declared active TGs, circulation and a qualified zone locally through 
   const f = await setup();
   expect(input("Nombre de TG actives F&L").props.value).toBe("");
   await act(() => input("Nombre de TG actives F&L").props.onChangeText("2"));
+  expect(button("Retour aux repères").props.disabled).toBe(true);
   await act(() =>
     input("Circulation principale déclarée").props.onChangeText(
       "Allée centrale entre les îlots ; TG1 en premier",
@@ -147,6 +153,8 @@ it("saves declared active TGs, circulation and a qualified zone locally through 
     zones: [{ label: "TG1", kind: "TG", active: true, heat: "COLD" }],
   });
   expect(saved?.syncState).toBe("PENDING");
+  expect(tree!.root.findAll((n) => String(n.type) === "Input")).toHaveLength(0);
+  await act(() => button("Modifier l’implantation").props.onPress());
   expect(input("Circulation principale déclarée").props.value).toContain(
     "TG1 en premier",
   );
@@ -168,6 +176,7 @@ it("refuses inconsistent counts without losing input and makes merchandising rea
     stores: [{ storeId: f.settings.storeId, name: "Test", role: "ASSISTANT" }],
   };
   await act(() => tree!.update(createElement(StoreSettingsScreen)));
+  await act(() => button("Consulter l’implantation").props.onPress());
   expect(input("Nombre de TG actives F&L").props.editable).toBe(false);
   expect(button("Enregistrer les réglages du magasin").props.disabled).toBe(
     true,
@@ -177,7 +186,12 @@ it("refuses inconsistent counts without losing input and makes merchandising rea
 it.each(["Nombre de TG actives F&L", "Commune du magasin"])(
   "preserves %s when a focus read finishes in the same event turn",
   async (label) => {
-    const f = await setup();
+    const f = await setup(
+      "MANAGER",
+      label === "Commune du magasin"
+        ? "Modifier la localisation"
+        : "Modifier l’implantation",
+    );
     const before = await f.repo.get(f.settings.storeId);
     runtime.focused = false;
     await act(() => tree!.update(createElement(StoreSettingsScreen)));
