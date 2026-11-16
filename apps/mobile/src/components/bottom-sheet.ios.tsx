@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { View } from "react-native";
+import { View, useWindowDimensions } from "react-native";
 import {
   BottomSheet as NativeBottomSheet,
   Group,
@@ -31,6 +31,7 @@ export function BottomSheet({
   footer,
   children,
 }: BottomSheetProps) {
+  const { width, height } = useWindowDimensions();
   const [presented, setPresented] = useState(visible);
   const [retained, setRetained] = useState(visible);
   const closing = useRef(false);
@@ -56,7 +57,7 @@ export function BottomSheet({
 
   return (
     <Host
-      style={{ position: "absolute" }}
+      style={{ position: "absolute", top: 0, left: 0, width, height }}
       pointerEvents="none"
       colorScheme="light"
     >

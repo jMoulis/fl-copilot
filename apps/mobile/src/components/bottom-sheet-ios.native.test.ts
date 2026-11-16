@@ -71,6 +71,9 @@ afterEach(async () => {
 it("uses an actual native sheet and hosts existing RN content without a custom gesture or animation", async () => {
   await mount();
   expect(sheet().props.isPresented).toBe(true);
+  expect(
+    tree.root.find((node) => String(node.type) === "Host").props.style,
+  ).toMatchObject({ width: 402, height: 874 });
   expect(sheet().props.fitToContents).toBeUndefined();
   expect(modifier("detents")).toEqual(["medium", "large"]);
   expect(
