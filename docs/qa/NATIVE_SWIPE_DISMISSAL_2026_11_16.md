@@ -1,0 +1,9 @@
+# Native swipe completion — 16 November 2026
+
+The owner accepts build 72 scrolling and close-button dismissal, but reports that swipe dismissal prevents all subsequent sheet openings. The previous repeated-panel recipe used close buttons; a held swipe ending on Journal did not verify a subsequent opening.
+
+The iOS wrapper previously ignored onDismiss unless onIsPresentedChange(false) or a parent close had already set its closing flag. Native completion must be authoritative, even if that earlier event has not reached JavaScript. A regression test reproduced the missing owner close (zero callbacks instead of one) when completion arrived first.
+
+Use a presentation-scoped lifecycle token. Completion closes the native presenter, notifies the owner if not already notified, releases the native hierarchy and fires queued dismissal work once. Late callbacks retain the completed token and cannot close a newer presentation. A requested reopen occurs only after the old presenter is removed. No timer, SDK patch, route registry, new provider or business guard is introduced. The accepted scroll body and viewport sizing are unchanged.
+
+Validation: 26 component tests passed, strict mobile TypeScript and targeted lint passed. Actual XCTest on the existing iPhone 17 Pro Expo Go simulator performed three alternating weather/task cycles with native press/drag/hold dismissals (six swipes), verified the next sheet after every swipe, then reopened weather and closed it by X. One real test, zero failures, recorded video; no text entry, save or import. Private evidence: workspace maintenance/sheet-swipe-2026-11-16/native. Physical TestFlight acceptance remains pending. The simulator test does not establish the callback order on the owner's iPhone; the wrapper covers either order and missing earlier notification.

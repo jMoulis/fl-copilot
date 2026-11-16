@@ -1,3 +1,7 @@
+## Owner correction — swipe dismissal notification, 16 November 2026
+
+Build 72 scrolling and X dismissal are accepted; swipe dismissal still blocks the next opening. Treat native onDismiss as authoritative regardless of an earlier state-change event. Scope completion/deduplication to each presentation and ignore its late callbacks after reopening. Preserve the accepted content layout and existing guards. Verify actual swipe → different sheet → swipe → original sheet repeatedly. See `../qa/NATIVE_SWIPE_DISMISSAL_2026_11_16.md`.
+
 ## Owner correction — build 71 sheet reopening and clipped content, 16 November 2026
 
 Remove the native presenter after real dismissal; keep outgoing content until that event and retain existing parent guards/picker sequencing. Bound fixed sheet headings and preserve a shrinking scroll body. Qualify repeated different-panel openings and the weekly TG explanation; physical TestFlight acceptance remains distinct. See `../qa/NATIVE_SHEET_REOPEN_2026_11_16.md`. No domain or synchronization change.
