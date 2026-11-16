@@ -123,6 +123,7 @@ it("saves declared active TGs, circulation and a qualified zone locally through 
   const f = await setup();
   expect(input("Nombre de TG actives F&L").props.value).toBe("");
   await act(() => input("Nombre de TG actives F&L").props.onChangeText("2"));
+  expect(button("Retour aux repères").props.disabled).toBe(true);
   await act(() =>
     input("Circulation principale déclarée").props.onChangeText(
       "Allée centrale entre les îlots ; TG1 en premier",
