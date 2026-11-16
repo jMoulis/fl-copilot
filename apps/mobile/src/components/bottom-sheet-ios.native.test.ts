@@ -154,6 +154,34 @@ it("notifies the owner after native gesture dismissal starts, never from a fabri
   await act(() => sheet().props.onDismiss());
   expect(dismissed).toHaveBeenCalledOnce();
 });
+it("finishes a swipe even when native dismissal arrives before the state-change event, ignoring late events after reopening", async () => {
+  const close = vi.fn(),
+    dismissed = vi.fn();
+  await mount({
+    onClose: () => {
+      close();
+      props = { ...props, visible: false };
+      tree.update(createElement(BottomSheet, props));
+    },
+    onDismiss: dismissed,
+  });
+  const previous = sheet().props;
+  await act(() => previous.onDismiss());
+  expect(close).toHaveBeenCalledOnce();
+  expect(dismissed).toHaveBeenCalledOnce();
+  expect(tree.toJSON()).toBeNull();
+  await act(() => previous.onIsPresentedChange(false));
+  expect(close).toHaveBeenCalledOnce();
+  await update({ visible: true });
+  expect(sheet().props.isPresented).toBe(true);
+  await act(() => {
+    previous.onDismiss();
+    previous.onIsPresentedChange(false);
+  });
+  expect(sheet().props.isPresented).toBe(true);
+  expect(close).toHaveBeenCalledOnce();
+  expect(dismissed).toHaveBeenCalledOnce();
+});
 it("holds a rapid reopen until the previous native sheet has really dismissed", async () => {
   const dismissed = vi.fn();
   await mount({ onDismiss: dismissed });

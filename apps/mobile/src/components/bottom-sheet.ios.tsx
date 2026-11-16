@@ -34,26 +34,30 @@ export function BottomSheet({
   const { width, height } = useWindowDimensions();
   const [presented, setPresented] = useState(visible);
   const [retained, setRetained] = useState(visible);
-  const closing = useRef(false);
+  const lifecycle = useRef({ closing: false, finished: false });
+  const cycle = lifecycle.current;
   const current = useRef({ visible, onClose, onDismiss });
   current.current = { visible, onClose, onDismiss };
   const contents = useRef({ title, footer, children });
-  if (visible && !closing.current)
+  if (visible && !cycle.closing && !cycle.finished)
     contents.current = { title, footer, children };
   useEffect(() => {
-    if (closing.current) return;
-    if (visible) {
+    if (lifecycle.current.closing) return;
+    if (visible && !retained) {
+      lifecycle.current = { closing: false, finished: false };
       setRetained(true);
       setPresented(true);
     } else if (presented) {
-      closing.current = true;
-      setPresented(false);
+      if (!visible) {
+        lifecycle.current.closing = true;
+        setPresented(false);
+      }
     }
-  }, [visible, presented]);
+  }, [visible, presented, retained]);
 
   // A dismissed presenter must leave the native hierarchy. Keeping every Host
   // alive retains native presentation/touch state across unrelated panels.
-  if (!visible && !retained) return null;
+  if (!retained) return null;
 
   return (
     <Host
@@ -64,20 +68,23 @@ export function BottomSheet({
       <NativeBottomSheet
         isPresented={presented}
         onIsPresentedChange={(next) => {
-          if (next || closing.current) return;
-          closing.current = true;
+          if (next || cycle.closing || cycle.finished) return;
+          cycle.closing = true;
           setPresented(false);
           current.current.onClose();
         }}
         onDismiss={() => {
-          if (!closing.current) return;
-          closing.current = false;
+          // Native completion is authoritative. A swipe may complete before
+          // its state-change event reaches JS, or without that earlier event.
+          if (cycle.finished) return;
+          const notifyClose = !cycle.closing && current.current.visible;
+          cycle.finished = true;
+          cycle.closing = false;
+          setPresented(false);
+          setRetained(false);
+          contents.current = { title: "", footer: undefined, children: null };
+          if (notifyClose) current.current.onClose();
           current.current.onDismiss?.();
-          if (current.current.visible) setPresented(true);
-          else {
-            contents.current = { title: "", footer: undefined, children: null };
-            setRetained(false);
-          }
         }}
       >
         <Group
