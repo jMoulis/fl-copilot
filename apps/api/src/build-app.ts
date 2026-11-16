@@ -1,3 +1,4 @@
+import { projectEconomicContext } from "@fl-copilot/domain";
 import {
   nearbyTransportInputSchema,
   nearbyTransportResultSchema,
@@ -2198,7 +2199,12 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           ? { journal }
           : {}),
         ...(request.headers["x-context-economy"] === "1" && economy
-          ? { economy }
+          ? {
+              economy: projectEconomicContext(
+                economy,
+                request.headers["x-context-produce-prices"] === "1",
+              ),
+            }
           : {}),
         ...(request.headers["x-context-observed-weather"] === "1" &&
         observedWeather

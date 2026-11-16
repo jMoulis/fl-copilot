@@ -1,6 +1,7 @@
 import { economicPeriodSummary } from "@fl-copilot/analytics-core";
 import {
-  economicDataUrl,
+  isEconomicPriceSeries,
+  economicProduceScope,
   economicSeriesLabels,
   type EconomicContext,
   type JournalContext,
@@ -182,7 +183,7 @@ export async function readCopilotWeek(
     (context?.weekEnd ?? input.weekStart).slice(0, 7),
   );
   const economicText = economy
-    ? ` Conjoncture INSEE nationale mensuelle, édition actuelle révisable, relevée le ${stamp(economy.retrievedAt)} ; statut ${states[economy.status]}. ${economicSummary.map((s) => `${economicSeriesLabels[s.id]} : ${s.period ?? "mois indisponible"}, indice ${s.value ?? "indisponible"}${s.id === "011813720" ? ` (base 2025=100), évolution sur un an ${s.annualChangePercent ?? "indisponible"} %` : ` (moyenne de long terme 100), écart au mois précédent ${s.monthlyDifferencePoints ?? "indisponible"} points`}.`).join(" ")} Ces périodes peuvent différer du mois demandé ; ce ne sont ni des statistiques quotidiennes du magasin, ni une explication causale de ses ventes. Les dates de publication de chaque valeur historique sont inconnues : ne pas prétendre reconstituer ce qui était connu ce jour-là.`
+    ? ` Conjoncture INSEE nationale mensuelle, édition actuelle révisable, relevée le ${stamp(economy.retrievedAt)} ; statut ${states[economy.status]}. ${economicSummary.map((s) => `${economicSeriesLabels[s.id]} : ${s.period ?? "mois indisponible"}, indice ${s.value ?? "indisponible"}${isEconomicPriceSeries(s.id) ? ` (base 2025=100), évolution sur un an ${s.annualChangePercent ?? "indisponible"} %` : ` (moyenne de long terme 100), écart au mois précédent ${s.monthlyDifferencePoints ?? "indisponible"} points`}.`).join(" ")} ${economicSummary.some((s) => s.id === "011814957" || s.id === "011815032") ? economicProduceScope : ""} Ces périodes peuvent différer du mois demandé ; ce ne sont ni des statistiques quotidiennes du magasin, ni une explication causale de ses ventes. Les dates de publication de chaque valeur historique sont inconnues : ne pas prétendre reconstituer ce qui était connu ce jour-là.`
     : "";
   const traffic = journal?.transport;
   const rawTrafficText =
@@ -286,7 +287,7 @@ export async function readCopilotWeek(
         : "Réglages du magasin absents ou non synchronisés. Demander la commune, le code postal et la zone scolaire si nécessaires ; aucun contexte local n'a été inventé. Les analyses déjà disponibles restent utilisables.") +
         economicText +
         journalText,
-      economy ? economicDataUrl : storeId,
+      economy ? economy.sourceUrl : storeId,
       economy ? "DERIVED" : "QUALITY",
     ),
   );

@@ -1,5 +1,6 @@
 import {
   economicMonthSchema,
+  isEconomicPriceSeries,
   shiftEconomicMonth,
   type EconomicContext,
 } from "@fl-copilot/domain";
@@ -27,7 +28,7 @@ export function economicPeriodSummary(
         );
       const value = current?.value ?? null;
       const annualChangePercent =
-        series.id === "011813720" &&
+        isEconomicPriceSeries(series.id) &&
         value !== null &&
         reference?.value !== null &&
         reference?.value !== undefined &&

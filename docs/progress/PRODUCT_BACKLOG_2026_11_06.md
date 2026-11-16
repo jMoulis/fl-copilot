@@ -1,4 +1,4 @@
-# Backlog produit — point du 14 novembre 2026
+# Backlog produit — point du 16 novembre 2026
 
 Ce fichier conserve son chemin historique pour les liens existants. Le statut
 courant du pilote et les preuves sont dans [le point consolidé](PILOT_STATUS_2026_11_14.md).
@@ -15,7 +15,7 @@ leurs cases non cochées ne sont plus des tâches actives.
 - [x] Titres automatiques et renommage manuel des conversations.
 - [x] Génération d'images depuis la fiche produit et aperçus transparents, avec
       suppression des libellés récurrents. Plusieurs générations réussies rapportées
-      après le correctif ; le détourage d'une photo existante reste séparé.
+      après le correctif.
 - [x] Routage léger et optimisation des outils du copilote, vérifiés sur les
       scénarios rapportés. Les coûts et la qualité restent à surveiller à l'usage.
 - [x] Mémoire automatique privée : nouvelle préférence retenue puis retrouvée dans
@@ -25,12 +25,17 @@ leurs cases non cochées ne sont plus des tâches actives.
 - [x] Moteur descriptif du Journal : calculs et restitution fonctionnelle validés.
       Le test à deux paires de jours ne qualifie pas une association ou sa stabilité.
 
-## Prochain lot — cadré, non implémenté
+- [x] Pilotage quotidien du Journal, tâches commerciales et pense-bêtes privés
+      avec rappel facultatif : fonctionnement et rappel validés par le propriétaire.
+- [x] Marché solaire et finitions Réglages / Mon magasin / Synchronisation :
+      build 74 accepté sur iPhone. Parcours, formulaires et retours validés.
 
-- [ ] **Pilotage quotidien dans le Journal — maquette validée, intégration en cours** : liste commune des tâches commerciales
-      et pense-bêtes libres, ces derniers privés au compte dans le magasin, avec
-      rappel facultatif. Choix confirmés par le propriétaire. [Brief](../ux/DAILY_PILOTING_BRIEF_2026_11_14.md).
-      La maquette interactive est validée. [Implémentation et recette](../qa/JOURNAL_DAILY_PILOTING_2026_11_14.md).
+## Lot en cours
+
+- [ ] **Journal — indices de prix fruits/légumes INSEE** : extension des séries
+      mensuelles et des archives existantes, périmètres officiels explicités,
+      compatibilité avec le build 74. Code, livraison API et recette restent
+      distingués dans [la fiche du lot](../qa/JOURNAL_PRODUCE_PRICES_2026_11_16.md).
 
 ## Réserves et sujets explicitement reportés
 
@@ -45,7 +50,6 @@ leurs cases non cochées ne sont plus des tâches actives.
 ## Évolutions à prioriser à l'usage
 
 - [ ] Finitions UX et graphiques à partir des maquettes et de défauts concrets.
-- [ ] Détourage du fond réellement présent dans une photo existante.
 - [ ] Contexte économique F&L plus détaillé, actualités nationales pertinentes et
       autres facteurs du Journal. Le socle actuel n'attend pas ces extensions.
 - [ ] Évaluation de l'utilité des associations quand un historique comparable
@@ -64,3 +68,6 @@ reprise conserve les exigences de provenance et d'import canonique.
 
 La surveillance des coûts, de la collecte et des régressions est de la maintenance,
 pas une raison de laisser ouverts indéfiniment les anciens lots acceptés.
+
+Décision du propriétaire — 16 novembre 2026 : le détourage des photos existantes
+est retiré du périmètre, jugé inutile. Ne plus le proposer comme prochain lot.

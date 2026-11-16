@@ -1,4 +1,4 @@
-# État courant — pilote iPhone, 14 novembre 2026
+# État courant — pilote iPhone, actualisé le 16 novembre 2026
 
 Ce point consolide les arbitrages et validations du propriétaire. Il remplace les
 anciens statuts « en attente » des journaux datés, sans transformer une validation
@@ -6,10 +6,12 @@ fonctionnelle en certification de tous les appareils ou scénarios.
 
 ## Version utilisée
 
-- iOS **0.1.0 (60)**, distribué dans le groupe TestFlight privé habituel. Source
-  native `202f387b9d95a83d2bfa61f8604311049bba35ca`.
-- API publiée depuis `9429f2b42951e7ec1be8752e265d53254095939f`, en région `cdg1`.
-  Le moteur descriptif du Journal est livré côté serveur et utilise le build 60.
+- iOS **0.1.0 (74)**, distribué dans le groupe TestFlight privé habituel et
+  accepté par le propriétaire. Source native `ff01b9462228c3bc99625eb4a7b03889275be78e`.
+  Les finitions Réglages, Mon magasin et Synchronisation sont clôturées.
+- Le point serveur du 14 novembre documentait la publication du moteur du Journal
+  depuis `9429f2b42951e7ec1be8752e265d53254095939f` ; les évolutions suivantes
+  distinguent leur propre livraison de la version native.
 - Pas de nouvelle recette générale M0–M8 demandée sans régression identifiée.
 
 ## Socle validé
@@ -37,7 +39,8 @@ validation d'une restauration cloud Atlas. Cette réserve reste visible.
   inventer une recette détaillée pour chaque geste non rapporté.
 - Génération d'images produits depuis la fiche, vrac/conditionné et transparence :
   parcours livré ; le propriétaire rapporte plusieurs générations réussies après
-  le correctif. Le détourage des photos existantes reste une évolution séparée.
+  le correctif. Le détourage des photos existantes est écarté par le propriétaire
+  le 16 novembre 2026 et ne figure plus au backlog actif.
   L'ancien pilote administratif de trois fichiers externes n'est pas présenté
   comme exécuté ; toute reprise exige ses vrais fichiers, droits et provenance.
 - Copilote : routage léger, titres/renommage, résultats d'outils compacts et accès
@@ -58,15 +61,15 @@ validation d'une restauration cloud Atlas. Cette réserve reste visible.
   suffisant reste à mesurer ; aucune causalité, prévision ou stabilité empirique
   n'est déclarée validée par ce test.
 
-## Prochain lot — maquette validée, intégration en cours
+## Pilotage quotidien livré ; contexte économique en cours
 
-Pilotage quotidien dans le Journal : réunir les tâches commerciales existantes
-et des pense-bêtes libres, **privés au compte dans le magasin**, avec **rappel
-facultatif**. Ces deux choix sont confirmés par le propriétaire le 14 novembre.
-La maquette est validée par le propriétaire ; la livraison et la recette native
-restent suivies dans [le journal du lot](../qa/JOURNAL_DAILY_PILOTING_2026_11_14.md).
-Le [brief UX et technique](../ux/DAILY_PILOTING_BRIEF_2026_11_14.md) décrit le
-périmètre et les critères de recette. La maquette précède les changements d'écran.
+Les tâches commerciales, pense-bêtes privés et leur rappel facultatif sont
+validés par le propriétaire. Ils ne constituent plus un lot en attente.
+
+Le lot suivant ajoute les indices INSEE mensuels des catégories fruits/légumes
+au collecteur et aux archives existantes, en conservant leurs périmètres exacts
+et la compatibilité native. Voir [le lot](../qa/JOURNAL_PRODUCE_PRICES_2026_11_16.md)
+pour les preuves et la distinction entre code, livraison et recette.
 
 Les [évolutions restantes](PRODUCT_BACKLOG_2026_11_06.md) sont séparées des anciens
 lots clôturés. Aucune nouvelle date de livraison ou dépense n'est engagée ici.

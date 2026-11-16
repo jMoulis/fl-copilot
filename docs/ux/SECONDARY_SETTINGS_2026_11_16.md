@@ -38,3 +38,10 @@ maintenance/secondary-settings-2026-11-16/native/result.xcresult. No business
 save or manual synchronization was requested. Exact-head CI/merge and delivery
 are recorded separately;
 this document alone does not assert TestFlight availability or iPhone acceptance.
+
+## Owner acceptance
+
+PR 532 is merged as `ff01b9462228c3bc99625eb4a7b03889275be78e`.
+Local production build 74 was verified, distributed to the owner-only TestFlight
+group and accepted by the owner for all three screen journeys. This UX lot is
+closed; the implementation-stage verification boundary above is historical.

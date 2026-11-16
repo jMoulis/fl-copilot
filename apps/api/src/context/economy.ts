@@ -30,7 +30,8 @@ export function parseInseeMonthly(xml: string, start: string, end: string) {
   )
     throw Error("INSEE_XML_INVALID");
   const all = Array.from(doc.getElementsByTagNameNS("*", "Series"));
-  if (!all.length || all.length > 2) throw Error("INSEE_SERIES_INVALID");
+  if (!all.length || all.length > economicSeriesIds.length)
+    throw Error("INSEE_SERIES_INVALID");
   const known = new Set<string>();
   for (const item of all) {
     const id = item.getAttribute("IDBANK");
@@ -49,11 +50,14 @@ export function parseInseeMonthly(xml: string, start: string, end: string) {
     )
       throw Error("INSEE_UNIT_CHANGED");
     const title = item.getAttribute("TITLE_FR") ?? "";
-    if (
-      id === "011813720"
-        ? !/Base 2025.*Alimentation/.test(title)
-        : !/confiance des ménages/.test(title)
-    )
+    const definitions = {
+      "011813720": /Base 2025.*Alimentation/,
+      "001587668": /confiance des ménages/,
+      "011814957": /Base 2025.*01\.1\.6 - Fruits et fruits à coque/,
+      "011815032":
+        /Base 2025.*01\.1\.7 - Légumes, tubercules, bananes plantains, bananes à cuire et légumineuses/,
+    };
+    if (!definitions[id as keyof typeof definitions].test(title))
       throw Error("INSEE_DEFINITION_CHANGED");
   }
   return economicDataSchema.parse({

@@ -1,6 +1,9 @@
 import { journalContextFixture } from "../../../../scripts/test-journal-context-fixtures";
 import { observedWeatherContextFixture } from "../../../../scripts/test-observed-weather-fixtures";
-import { economicContextFixture } from "../../../../scripts/test-economic-fixtures";
+import {
+  economicContextFixture,
+  economicProduceContextFixture,
+} from "../../../../scripts/test-economic-fixtures";
 import { randomUUID } from "node:crypto";
 import { it, expect, vi } from "vitest";
 import { weeklyContextFixture } from "../../../../scripts/test-weekly-context-fixtures";
@@ -247,4 +250,29 @@ it("bounds transit context for many long messages without leaking coordinates or
   expect(String(result.evidence[3]!.value).length).toBeLessThan(10000);
   expect(result.evidence[3]!.value).toContain("Extrait partiel");
   expect(result.context).not.toHaveProperty("journal");
+});
+
+it("reuses archived produce indices as compact facts with their scope and original source, without a new provider call", async () => {
+  const context = weeklyContextFixture();
+  context.weekStart = "2026-11-09";
+  context.weekEnd = "2026-11-15";
+  context.economy = economicProduceContextFixture();
+  context.weather.days = [];
+  const readStored = vi.fn(async () => context),
+    read = vi.fn();
+  const result = await readCopilotWeek({ readStored, read }, context.storeId, {
+    weekStart: context.weekStart,
+  });
+  expect(read).not.toHaveBeenCalled();
+  const fact = result.evidence.find(
+    (e) => e.sourceId === context.economy!.sourceUrl,
+  )!;
+  expect(fact.value).toContain("Fruits et fruits à coque");
+  expect(fact.value).toContain("5.25 %");
+  expect(fact.value).toContain("-10.00 %");
+  expect(fact.value).toContain(
+    "ne correspondent pas strictement au rayon frais",
+  );
+  expect(result.context).not.toHaveProperty("economy");
+  expect(JSON.stringify(result)).not.toContain('"points":');
 });

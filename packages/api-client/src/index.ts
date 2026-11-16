@@ -442,7 +442,9 @@ export class ApiClient {
         headers: {
           ...syncHeaders(accessToken, storeId),
           ...(includeJournal ? { "x-context-journal": "1" } : {}),
-          ...(includeEconomicContext ? { "x-context-economy": "1" } : {}),
+          ...(includeEconomicContext
+            ? { "x-context-economy": "1", "x-context-produce-prices": "1" }
+            : {}),
           ...(includeObservedWeather
             ? { "x-context-observed-weather": "1" }
             : {}),
