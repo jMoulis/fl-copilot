@@ -600,6 +600,7 @@ it.each(["ios", "android", "web"])(
     await act(async () => fileBusy!(true));
     const fileModal = renderer!.root.findByType("Sheet" as ElementType);
     expect(fileModal.props.swipeToClose).toBe(false);
+    expect(fileModal.props.dismissible).toBe(false);
     await act(async () => fileModal.props.onClose());
     expect(
       renderer!.root.findAllByType("FileReview" as ElementType),

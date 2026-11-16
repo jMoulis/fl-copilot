@@ -337,6 +337,9 @@ export function DailyTaskList({
         );
     }
   };
+  const hasDraftChanges = Boolean(
+    sheet?.edit && JSON.stringify(draft) !== draftAtOpen.current,
+  );
   const close = () => {
     if (busy) return;
     const finish = () => {
@@ -345,7 +348,7 @@ export function DailyTaskList({
         setError(undefined);
       }
     };
-    if (sheet?.edit && JSON.stringify(draft) !== draftAtOpen.current)
+    if (hasDraftChanges)
       Alert.alert(
         "Fermer le pense-bête ?",
         "Les modifications non enregistrées seront abandonnées.",
@@ -604,6 +607,7 @@ export function DailyTaskList({
       ) : null}
       <BottomSheet
         visible={!!sheet}
+        dismissible={!busy && !hasDraftChanges}
         title={
           sheet?.edit
             ? selected

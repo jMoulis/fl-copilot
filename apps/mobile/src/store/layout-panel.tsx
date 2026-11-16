@@ -564,6 +564,7 @@ export function StoreLayoutPanel({
       ) : null}
       <BottomSheet
         visible={adding && !!edit}
+        dismissible={!busy && !additionDirty}
         title="Ajouter au plan"
         avoidKeyboard
         scrollRef={additionScroll}
@@ -621,6 +622,7 @@ export function StoreLayoutPanel({
       </BottomSheet>
       <BottomSheet
         visible={!!review || history !== null || !!comparison}
+        dismissible={!busy}
         title={
           review
             ? review.kind === "ADOPT"

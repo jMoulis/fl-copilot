@@ -214,11 +214,13 @@ it("opens the installation confirmation without writing and closes an untouched 
   expect(env.save).not.toHaveBeenCalled();
   await act(() => button("Déclarer l’installation").props.onPress());
   expect(hosts("Sheet")).toHaveLength(1);
+  expect(hosts("Sheet")[0]!.props.dismissible).toBe(true);
   expect(button("Confirmer la déclaration").parent!.type).toBe("FixedFooter");
   expect(env.save).not.toHaveBeenCalled();
   await act(() => hosts("Sheet")[0]!.props.onClose());
   expect(hosts("Sheet")[0]!.props.visible).toBe(false);
   expect(button("Confirmer la déclaration").props.disabled).toBe(true);
+  expect(hosts("Sheet")[0]!.props.dismissible).toBe(false);
   await act(() => button("Confirmer la déclaration").props.onPress());
   expect(env.save).not.toHaveBeenCalled();
   await act(() => hosts("Sheet")[0]!.props.onDismiss());
@@ -262,6 +264,7 @@ it("saves only after confirmation with the canonical task identity, no invented 
     deviceId: env.deviceId,
   });
   expect(button("Confirmer la déclaration").props.disabled).toBe(true);
+  expect(hosts("Sheet")[0]!.props.dismissible).toBe(false);
   await act(() => hosts("Sheet")[0]!.props.onClose());
   expect(hosts("Sheet")).toHaveLength(1);
   expect(env.sync).not.toHaveBeenCalled();
@@ -289,6 +292,7 @@ it("keeps optional notes and actual details when closing is cancelled and valida
   );
   await act(() => hosts("Sheet")[0]!.props.onClose());
   expect(env.alert).toHaveBeenCalledOnce();
+  expect(hosts("Sheet")[0]!.props.dismissible).toBe(false);
   expect(hosts("Sheet")).toHaveLength(1);
   expect(input("Note ou motif de la déclaration").props.value).toBe(
     "Balisage vérifié",

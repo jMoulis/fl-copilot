@@ -213,6 +213,7 @@ export function StoreLayoutElementSheet({
     return (
       <BottomSheet
         visible={visible}
+        dismissible={!inventoryDirty}
         title={label}
         onClose={requestClose}
         swipeToClose
@@ -325,6 +326,7 @@ export function StoreLayoutElementSheet({
   return (
     <BottomSheet
       visible={visible}
+      dismissible={!inventoryDirty}
       title={f.label}
       onClose={requestClose}
       swipeToClose

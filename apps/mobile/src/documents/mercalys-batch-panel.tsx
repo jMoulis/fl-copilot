@@ -1122,6 +1122,7 @@ export function MercalysBatchPanel({
           </AppScreen>
           <BottomSheet
             visible={!!reviewAsset}
+            dismissible={!reviewBusy}
             title={reviewAsset?.name.split("/").at(-1) ?? "Fichier Mercalys"}
             swipeToClose={!reviewBusy}
             onClose={closeReview}

@@ -37,10 +37,11 @@ vi.mock("../components/ui", () => ({
   BottomSheet: ({
     visible,
     children,
+    ...props
   }: {
     visible: boolean;
     children: unknown;
-  }) => (visible ? createElement("Sheet", {}, children as never) : null),
+  }) => (visible ? createElement("Sheet", props, children as never) : null),
   InlineAlert: "Alert",
   PrimaryButton: "Button",
   SecondaryButton: "Button",
@@ -133,6 +134,7 @@ it("does not discard an unsaved draft without confirmation", async () => {
   await act(async () =>
     pressable("Ajouter une note du magasin").props.onPress(),
   );
+  expect(tree!.root.findByType("Sheet" as never).props.dismissible).toBe(true);
   await act(async () =>
     input("Note du magasin").props.onChangeText("Accès compliqué"),
   );
@@ -141,6 +143,7 @@ it("does not discard an unsaved draft without confirmation", async () => {
     (n) =>
       typeof n.type === "function" && n.props.title === "Noter dans le Journal",
   )[0]!;
+  expect(sheet.props.dismissible).toBe(false);
   await act(async () => sheet.props.onClose());
   expect(runtime.alert).toHaveBeenCalled();
   expect(input("Note du magasin").props.value).toBe("Accès compliqué");

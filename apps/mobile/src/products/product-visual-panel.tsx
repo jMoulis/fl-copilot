@@ -507,6 +507,7 @@ export function ProductVisualPanel({
               : "Choisir une image"
         }
         onClose={close}
+        dismissible={!busy}
         swipeToClose={!busy}
       >
         <ProductImageGenerator

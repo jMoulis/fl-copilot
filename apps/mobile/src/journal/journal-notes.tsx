@@ -92,9 +92,10 @@ export function JournalNotes({
   function assertCurrentScope() {
     if (!alive.current) throw Error("JOURNAL_NOTE_SCOPE_CHANGED");
   }
+  const hasDraftChanges = Boolean(text.trim() || endDate);
   function close() {
     if (locked.current) return;
-    if (text.trim() || endDate)
+    if (hasDraftChanges)
       Alert.alert(
         "Fermer la note ?",
         "Le texte non enregistré sera abandonné.",
@@ -305,6 +306,7 @@ export function JournalNotes({
       ) : null}
       <BottomSheet
         visible={open}
+        dismissible={!busy && !hasDraftChanges}
         title="Noter dans le Journal"
         onClose={close}
         swipeToClose
