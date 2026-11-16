@@ -36,7 +36,6 @@ import {
 } from "react";
 import {
   Modal,
-  Platform,
   Pressable,
   Text,
   TextInput,
@@ -228,7 +227,6 @@ export function MercalysBatchPanel({
     if (pendingIntake.current || busy || disabled) return;
     pendingIntake.current = () => void run(work);
     closeImportMenu();
-    if (Platform.OS !== "ios") finishIntake();
   }
   const [historyQuery, setHistoryQuery] = useState("");
   const [reviewAsset, setReviewAsset] = useState<
@@ -244,7 +242,6 @@ export function MercalysBatchPanel({
   function closeReview() {
     if (reviewBusy) return;
     setReviewAsset(undefined);
-    if (Platform.OS !== "ios") finishReview();
   }
   const [query, setQuery] = useState("");
   const [itemFilter, setItemFilter] = useState<BatchItemFilter>("ALL");

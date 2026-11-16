@@ -18,14 +18,7 @@ import {
   type CopilotTurnDelivery,
 } from "./turn-delivery";
 import { useEffect, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Platform,
-  Pressable,
-  Text,
-  View,
-} from "react-native";
+import { ActivityIndicator, Alert, Pressable, Text, View } from "react-native";
 import { CopilotChatView } from "./chat-view";
 import type { CopilotLocalChatController } from "./local-chat-controller";
 import { colors } from "../design/tokens";
@@ -202,6 +195,7 @@ function LocalChatPanel({
       alive = false;
       delivery?.cancel(conversationId);
       attachmentAbort.current?.abort();
+      queuedFileAction.current = undefined;
       current.current = { controller: undefined, conversationId: "" };
     };
   }, [controller, conversationId, delivery]);
@@ -429,10 +423,9 @@ function LocalChatPanel({
   function selectFileAction(
     kind: "PDF" | "RECEIPTS" | "RECEIPT_VIEWS" | "CAMERA" | "STORE_PHOTOS",
   ) {
+    // The picker opens only after the sheet's native/animated dismissal.
+    queuedFileAction.current = kind;
     setFileMenu(false);
-    // UIKit must finish dismissing this sheet before another modal/picker opens.
-    if (Platform.OS === "ios") queuedFileAction.current = kind;
-    else performFileAction(kind);
   }
   async function attach() {
     if (!onAttachPdf || attachmentAbort.current || locked.current) return;

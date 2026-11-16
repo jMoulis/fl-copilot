@@ -217,6 +217,11 @@ it("opens the installation confirmation without writing and closes an untouched 
   expect(button("Confirmer la déclaration").parent!.type).toBe("FixedFooter");
   expect(env.save).not.toHaveBeenCalled();
   await act(() => hosts("Sheet")[0]!.props.onClose());
+  expect(hosts("Sheet")[0]!.props.visible).toBe(false);
+  expect(button("Confirmer la déclaration").props.disabled).toBe(true);
+  await act(() => button("Confirmer la déclaration").props.onPress());
+  expect(env.save).not.toHaveBeenCalled();
+  await act(() => hosts("Sheet")[0]!.props.onDismiss());
   expect(hosts("Sheet")).toHaveLength(0);
   expect(env.alert).not.toHaveBeenCalled();
   expect(env.save).not.toHaveBeenCalled();
@@ -261,6 +266,8 @@ it("saves only after confirmation with the canonical task identity, no invented 
   expect(hosts("Sheet")).toHaveLength(1);
   expect(env.sync).not.toHaveBeenCalled();
   await act(async () => finish());
+  expect(hosts("Sheet")[0]!.props.visible).toBe(false);
+  await act(() => hosts("Sheet")[0]!.props.onDismiss());
   expect(hosts("Sheet")).toHaveLength(0);
   expect(env.sync).toHaveBeenCalledExactlyOnceWith(plan.storeId);
 });
@@ -311,6 +318,40 @@ it("keeps optional notes and actual details when closing is cancelled and valida
       location: "TG à l’entrée",
     },
   });
+});
+
+it("preserves the closing declaration until native dismissal and ignores an old dismissal after reopening", async () => {
+  await placement();
+  await act(() => button("Déclarer l’installation").props.onPress());
+  await act(() => details().props.onPress());
+  await act(() =>
+    input("Note ou motif de la déclaration").props.onChangeText(
+      "Saisie à abandonner",
+    ),
+  );
+  const oldInput = input("Note ou motif de la déclaration").props.onChangeText;
+  await act(() => hosts("Sheet")[0]!.props.onClose());
+  const buttons = env.alert.mock.calls[0]![2] as {
+    text: string;
+    onPress?(): void;
+  }[];
+  await act(() =>
+    buttons.find((choice) => choice.text === "Fermer")!.onPress!(),
+  );
+  const dismissed = hosts("Sheet")[0]!.props.onDismiss;
+  expect(hosts("Sheet")[0]!.props.visible).toBe(false);
+  await act(() => oldInput("Modification trop tardive"));
+  expect(input("Note ou motif de la déclaration").props.value).toBe(
+    "Saisie à abandonner",
+  );
+  expect(input("Note ou motif de la déclaration").props.editable).toBe(false);
+  await act(() => button("Déclarer l’installation").props.onPress());
+  await act(() => dismissed());
+  expect(hosts("Sheet")[0]!.props.visible).toBe(true);
+  expect(hosts("Input")).toHaveLength(0);
+  await act(() => details().props.onPress());
+  expect(input("Note ou motif de la déclaration").props.value).toBe("");
+  expect(env.save).not.toHaveBeenCalled();
 });
 
 it.each(["placementId", "initialTaskId"] as const)(

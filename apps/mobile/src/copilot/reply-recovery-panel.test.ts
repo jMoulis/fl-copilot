@@ -1,5 +1,5 @@
 import { createElement, type ElementType } from "react";
-import { Alert } from "react-native";
+import { Alert, Platform } from "react-native";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { DatabaseSync } from "node:sqlite";
@@ -76,6 +76,7 @@ class Adapter implements OutboxDatabase {
 let renderer: ReactTestRenderer | undefined, db: DatabaseSync | undefined;
 const view = () => renderer!.root.findByType("ChatView" as ElementType).props;
 beforeEach(() => {
+  (Platform as { OS: string }).OS = "ios";
   (
     globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
   ).IS_REACT_ACT_ENVIRONMENT = true;
@@ -216,6 +217,7 @@ async function setup(
     sync,
     wait,
     refresh,
+    props,
   };
 }
 it("removes only the matching delivery warning when the durable reply arrives through background synchronization", async () => {
@@ -575,4 +577,69 @@ it("does not offer or invoke email reception in the Copilot, even for a legacy h
   expect(open).not.toHaveBeenCalled();
   expect(x.ask).toHaveBeenCalledTimes(calls);
   expect(await x.controller.open(x.f.conversation.id)).toEqual(before);
+});
+
+it.each(["ios", "android", "web"])(
+  "waits for the file-menu dismissal before opening a picker exactly once on %s",
+  async (platform) => {
+    (Platform as { OS: string }).OS = platform;
+    const x = await setup("RECOVER"),
+      pick = vi.fn().mockResolvedValue(undefined);
+    await act(async () =>
+      renderer!.update(
+        createElement(CopilotLocalChatPanel, {
+          ...x.props,
+          onPhotographReceipt: pick,
+        }),
+      ),
+    );
+    const sheet = () => renderer!.root.findByType("BottomSheet" as ElementType);
+    await act(async () => view().onAttach());
+    expect(sheet().props.visible).toBe(true);
+    await act(async () =>
+      renderer!.root
+        .findAllByType("MenuRow" as ElementType)
+        .find((row) => row.props.title === "Photographier un ticket")!
+        .props.onPress(),
+    );
+    expect(sheet().props.visible).toBe(false);
+    expect(pick).not.toHaveBeenCalled();
+    const dismissed = sheet().props.onDismiss;
+    await act(async () => dismissed());
+    expect(pick).toHaveBeenCalledOnce();
+    expect(pick.mock.calls[0]![0]).toBe(x.f.conversation.id);
+    await act(async () => dismissed());
+    expect(pick).toHaveBeenCalledOnce();
+  },
+);
+
+it("discards a queued picker on explicit cancellation or leaving the chat", async () => {
+  (Platform as { OS: string }).OS = "android";
+  const x = await setup("RECOVER"),
+    pick = vi.fn().mockResolvedValue(undefined);
+  await act(async () =>
+    renderer!.update(
+      createElement(CopilotLocalChatPanel, {
+        ...x.props,
+        onPhotographReceipt: pick,
+      }),
+    ),
+  );
+  const sheet = () => renderer!.root.findByType("BottomSheet" as ElementType);
+  const queue = async () => {
+    await act(async () => view().onAttach());
+    await act(async () =>
+      renderer!.root.findByType("MenuRow" as ElementType).props.onPress(),
+    );
+  };
+  await queue();
+  await act(async () => sheet().props.onClose());
+  await act(async () => sheet().props.onDismiss());
+  expect(pick).not.toHaveBeenCalled();
+  await queue();
+  const dismissed = sheet().props.onDismiss;
+  await act(async () => renderer!.unmount());
+  renderer = undefined;
+  await act(async () => dismissed());
+  expect(pick).not.toHaveBeenCalled();
 });

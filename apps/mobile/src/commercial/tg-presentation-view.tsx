@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 import {
   commercialTgPresentationSchema,
@@ -45,7 +45,19 @@ export function TgPresentationView({
     index: number;
     value: string;
   }>();
+  const [editorOpen, setEditorOpen] = useState(false);
+  const editorOpenRef = useRef(false);
   const [error, setError] = useState<string>();
+  function openEditor(value: NonNullable<typeof editor>) {
+    editorOpenRef.current = true;
+    setEditorOpen(true);
+    setError(undefined);
+    setEditor(value);
+  }
+  function closeEditor() {
+    editorOpenRef.current = false;
+    setEditorOpen(false);
+  }
   const current = placements.find((p) => p.id === editor?.id);
   const presentation = current?.presentation;
   if (layout !== "compact")
@@ -92,8 +104,7 @@ export function TgPresentationView({
                   onChoose={
                     onSharesChange
                       ? (i) => {
-                          setError(undefined);
-                          setEditor({
+                          openEditor({
                             id: p.id,
                             index: i,
                             value: String(p.presentation!.zones[i]!.sharePct),
@@ -111,8 +122,7 @@ export function TgPresentationView({
                     disabled={!onSharesChange}
                     accessibilityRole={onSharesChange ? "button" : "text"}
                     onPress={() => {
-                      setError(undefined);
-                      setEditor({
+                      openEditor({
                         id: p.id,
                         index: i,
                         value: String(z.sharePct),
@@ -173,8 +183,7 @@ export function TgPresentationView({
                 <SecondaryButton
                   label="Pourquoi ce choix ?"
                   onPress={() => {
-                    setError(undefined);
-                    setEditor({ id: p.id, index: -1, value: "" });
+                    openEditor({ id: p.id, index: -1, value: "" });
                   }}
                 />
               </>
@@ -189,7 +198,7 @@ export function TgPresentationView({
       </View>
       {editor && current && presentation ? (
         <BottomSheet
-          visible
+          visible={editorOpen}
           swipeToClose
           avoidKeyboard
           title={
@@ -197,7 +206,10 @@ export function TgPresentationView({
               ? current.theme || current.label
               : `Ajuster · ${presentation.zones[editor.index]!.label}`
           }
-          onClose={() => setEditor(undefined)}
+          onClose={closeEditor}
+          onDismiss={() => {
+            if (!editorOpenRef.current) setEditor(undefined);
+          }}
         >
           {editor.index < 0 ? (
             <>
@@ -222,7 +234,10 @@ export function TgPresentationView({
                 accessibilityLabel="Part de surface proposée en pourcentage"
                 keyboardType="number-pad"
                 value={editor.value}
-                onChangeText={(value) => setEditor({ ...editor, value })}
+                editable={editorOpen}
+                onChangeText={(value) => {
+                  if (editorOpenRef.current) setEditor({ ...editor, value });
+                }}
                 style={{
                   color: colors.ink,
                   borderColor: colors.line,
@@ -242,7 +257,9 @@ export function TgPresentationView({
               ) : null}
               <PrimaryButton
                 label="Appliquer à la proposition"
+                disabled={!editorOpen}
                 onPress={() => {
+                  if (!editorOpenRef.current) return;
                   try {
                     if (!/^\d{1,3}$/.test(editor.value)) throw Error();
                     const next = resizeTgPresentationZone(
@@ -254,7 +271,7 @@ export function TgPresentationView({
                       current.id,
                       next.zones.map((z) => z.sharePct),
                     );
-                    setEditor(undefined);
+                    closeEditor();
                   } catch {
                     setError(
                       `Saisis une part entre ${presentation.zones.length === 1 ? 100 : 1} et ${101 - presentation.zones.length} %. Chaque produit conserve une zone.`,

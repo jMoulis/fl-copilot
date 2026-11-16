@@ -1,13 +1,17 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
+  useState,
   type Ref,
   type PropsWithChildren,
 } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
+  Animated,
+  Easing,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -22,7 +26,10 @@ import {
   type StyleProp,
   type ViewStyle,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { colors } from "../design/tokens";
 
@@ -444,7 +451,7 @@ export function MenuRow({
     </Pressable>
   );
 }
-/** Native fade keeps the scrim stationary and retains Modal's dismissal sequencing. */
+/** The stationary scrim fades while the measured panel slides, inside one native modal. */
 export function BottomSheet({
   visible,
   title,
@@ -465,9 +472,64 @@ export function BottomSheet({
   scrollRef?: Ref<ScrollView>;
   footer?: React.ReactNode;
 }>) {
+  const insets = useSafeAreaInsets();
   const heading = useRef<Text>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
+  const dismissRef = useRef(onDismiss);
+  dismissRef.current = onDismiss;
+  const waitingForDismiss = useRef(false);
+  const [presented, setPresented] = useState(visible);
+  const [shown, setShown] = useState(false);
+  const [height, setHeight] = useState(0);
+  const progress = useRef(new Animated.Value(0)).current;
+  // Several owners clear the selected item with visible=false. Keep its last
+  // rendered contents for the exit without retaining a separate business draft.
+  const lastContent = useRef({ title, children, footer });
+  if (visible) lastContent.current = { title, children, footer };
+  const content = visible ? { title, children, footer } : lastContent.current;
+  const finishDismiss = useCallback(() => {
+    if (!waitingForDismiss.current) return;
+    waitingForDismiss.current = false;
+    dismissRef.current?.();
+    if (visibleRef.current) {
+      setHeight(0);
+      setPresented(true);
+    } else
+      lastContent.current = { title: "", children: null, footer: undefined };
+  }, []);
+  useEffect(() => {
+    if (waitingForDismiss.current) return;
+    if (visible && !presented) {
+      setHeight(0);
+      setPresented(true);
+      return;
+    }
+    if (!presented || (visible && (!shown || !height))) return;
+    let active = true;
+    const animation = Animated.timing(progress, {
+      toValue: visible ? 1 : 0,
+      duration: visible ? 280 : 220,
+      easing: visible ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
+      useNativeDriver: Platform.OS !== "web",
+      isInteraction: false,
+    });
+    animation.start(({ finished }) => {
+      if (!active || !finished || visibleRef.current) return;
+      waitingForDismiss.current = true;
+      setShown(false);
+      setPresented(false);
+      // iOS owns the actual native dismissal event; the other platforms do not
+      // provide that event, so completion follows the finished exit animation.
+      if (Platform.OS !== "ios") finishDismiss();
+    });
+    return () => {
+      active = false;
+      animation.stop();
+    };
+  }, [visible, presented, shown, height, progress, finishDismiss]);
   const swipe = useMemo(
     () =>
       PanResponder.create({
@@ -484,138 +546,169 @@ export function BottomSheet({
     [],
   );
   useEffect(() => {
-    if (!visible || Platform.OS === "web") return;
+    if (!visible || !shown || Platform.OS === "web") return;
     const timer = setTimeout(() => {
       const node = findNodeHandle(heading.current);
       if (node) AccessibilityInfo.setAccessibilityFocus(node);
-    }, 250);
+    }, 280);
     return () => clearTimeout(timer);
-  }, [visible]);
+  }, [visible, shown]);
   return (
     <Modal
-      visible={visible}
+      visible={presented}
       transparent
-      animationType="fade"
+      animationType="none"
+      onShow={() => setShown(true)}
       onRequestClose={onClose}
-      onDismiss={onDismiss}
+      onDismiss={finishDismiss}
     >
+      <Animated.View
+        pointerEvents="none"
+        style={{
+          position: "absolute",
+          inset: 0,
+          backgroundColor: colors.sheetOverlay,
+          opacity: progress,
+        }}
+      />
       <KeyboardAvoidingView
+        pointerEvents={visible ? "auto" : "none"}
         enabled={avoidKeyboard && Platform.OS !== "web"}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={{
           flex: 1,
           justifyContent: "flex-end",
-          backgroundColor: colors.sheetOverlay,
         }}
       >
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Fermer : ${title}`}
+          accessibilityLabel={`Fermer : ${content.title}`}
           onPress={onClose}
           style={{ position: "absolute", inset: 0 }}
         />
-        <SafeAreaView
-          edges={["bottom", "left", "right"]}
-          accessibilityViewIsModal
-          onAccessibilityEscape={onClose}
-          className="rounded-t-3xl bg-surface"
-          style={{ maxHeight: "90%", overflow: "hidden" }}
+        <Animated.View
+          onLayout={(event) => setHeight(event.nativeEvent.layout.height)}
+          style={{
+            maxHeight: "90%",
+            opacity: height > 0 ? 1 : 0,
+            transform: [
+              {
+                translateY: progress.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [Math.max(1, height), 0],
+                }),
+              },
+            ],
+          }}
         >
-          {swipeToClose ? (
-            <View
-              {...swipe.panHandlers}
-              accessibilityLabel="Glisser vers le bas pour fermer"
-              style={{
-                height: 28,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <View
-                style={{
-                  width: 36,
-                  height: 4,
-                  borderRadius: 2,
-                  backgroundColor: colors.line,
-                }}
-              />
-            </View>
-          ) : null}
           <View
-            {...(swipeToClose ? swipe.panHandlers : {})}
+            accessibilityViewIsModal
+            onAccessibilityEscape={onClose}
+            className="rounded-t-3xl bg-surface"
             style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 12,
-              paddingHorizontal: 20,
-              paddingTop: swipeToClose ? 0 : 16,
-              paddingBottom: 14,
-              borderBottomWidth: 1,
-              borderColor: colors.line,
+              flexShrink: 1,
+              overflow: "hidden",
+              paddingBottom: insets.bottom,
+              paddingLeft: insets.left,
+              paddingRight: insets.right,
             }}
           >
-            <Text
-              ref={heading}
-              accessible
-              accessibilityRole="header"
-              style={{
-                flex: 1,
-                minWidth: 0,
-                fontSize: 21,
-                fontWeight: "600",
-                letterSpacing: -0.5,
-                color: colors.ink,
-              }}
-            >
-              {title}
-            </Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Fermer le panneau : ${title}`}
-              onPress={onClose}
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 22,
-                borderWidth: 1,
-                borderColor: colors.line,
-                backgroundColor: colors.surfaceMuted,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Ionicons
-                name="close"
-                size={22}
-                color={colors.ink}
-                accessible={false}
-              />
-            </Pressable>
-          </View>
-          <View style={{ flexShrink: 1 }}>
-            <ScrollView
-              ref={scrollRef}
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode={avoidKeyboard ? "interactive" : "none"}
-              style={{ flexShrink: 1 }}
-              contentContainerStyle={{ padding: 20, gap: 18 }}
-            >
-              {children}
-            </ScrollView>
-          </View>
-          {footer ? (
+            {swipeToClose ? (
+              <View
+                {...swipe.panHandlers}
+                accessibilityLabel="Glisser vers le bas pour fermer"
+                style={{
+                  height: 28,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <View
+                  style={{
+                    width: 36,
+                    height: 4,
+                    borderRadius: 2,
+                    backgroundColor: colors.line,
+                  }}
+                />
+              </View>
+            ) : null}
             <View
+              {...(swipeToClose ? swipe.panHandlers : {})}
               style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 12,
                 paddingHorizontal: 20,
-                paddingVertical: 14,
-                borderTopWidth: 1,
+                paddingTop: swipeToClose ? 0 : 16,
+                paddingBottom: 14,
+                borderBottomWidth: 1,
                 borderColor: colors.line,
               }}
             >
-              {footer}
+              <Text
+                ref={heading}
+                accessible
+                accessibilityRole="header"
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  fontSize: 21,
+                  fontWeight: "600",
+                  letterSpacing: -0.5,
+                  color: colors.ink,
+                }}
+              >
+                {content.title}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Fermer le panneau : ${content.title}`}
+                onPress={onClose}
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 22,
+                  borderWidth: 1,
+                  borderColor: colors.line,
+                  backgroundColor: colors.surfaceMuted,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Ionicons
+                  name="close"
+                  size={22}
+                  color={colors.ink}
+                  accessible={false}
+                />
+              </Pressable>
             </View>
-          ) : null}
-        </SafeAreaView>
+            <View style={{ flexShrink: 1 }}>
+              <ScrollView
+                ref={scrollRef}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode={avoidKeyboard ? "interactive" : "none"}
+                style={{ flexShrink: 1 }}
+                contentContainerStyle={{ padding: 20, gap: 18 }}
+              >
+                {content.children}
+              </ScrollView>
+            </View>
+            {content.footer ? (
+              <View
+                style={{
+                  paddingHorizontal: 20,
+                  paddingVertical: 14,
+                  borderTopWidth: 1,
+                  borderColor: colors.line,
+                }}
+              >
+                {content.footer}
+              </View>
+            ) : null}
+          </View>
+        </Animated.View>
       </KeyboardAvoidingView>
     </Modal>
   );

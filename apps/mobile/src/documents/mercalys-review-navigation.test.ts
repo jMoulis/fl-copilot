@@ -16,6 +16,7 @@ import type { MercalysBatchInput, MercalysBatchItem } from "@fl-copilot/domain";
 import type { ComponentProps } from "react";
 
 const ports = vi.hoisted(() => ({
+  os: "ios",
   visibility: vi.fn().mockResolvedValue([]),
   archiveSet: vi.fn(),
   recent: vi.fn(),
@@ -40,7 +41,11 @@ vi.mock("react-native", () => ({
   View: "View",
   TextInput: "TextInput",
   Pressable: "Pressable",
-  Platform: { OS: "ios" },
+  Platform: {
+    get OS() {
+      return ports.os;
+    },
+  },
   Modal: ({
     visible,
     children,
@@ -242,6 +247,7 @@ beforeEach(() => {
     globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
   ).IS_REACT_ACT_ENVIRONMENT = true;
   vi.clearAllMocks();
+  ports.os = "ios";
   const original = console.error;
   vi.spyOn(console, "error").mockImplementation((...args) => {
     if (!String(args[0]).includes("react-test-renderer is deprecated"))
@@ -577,32 +583,39 @@ it("keeps archives and batch files on separate levels, labels the import date, a
   expect(text(renderer!.root)).toContain("1 sur 40 fichiers chargés");
   expect(ports.confirm).not.toHaveBeenCalled();
 });
-it("allows opening retained failed files and protects dismissal during a file mutation", async () => {
-  const items = batchFixture();
-  items[0]!.result = {
-    status: "FAILED",
-    code: "MERCALYS_BATCH_PREPARATION_FAILED",
-  };
-  await act(async () => {
-    renderer = create(panel());
-  });
-  await openBatch();
-  await press("Ouvrir le fichier export-0.xlsx");
-  await act(async () => fileBusy!(true));
-  const fileModal = renderer!.root.findByType("Sheet" as ElementType);
-  expect(fileModal.props.swipeToClose).toBe(false);
-  await act(async () => fileModal.props.onClose());
-  expect(
-    renderer!.root.findAllByType("FileReview" as ElementType),
-  ).toHaveLength(1);
-  await act(async () => fileBusy!(false));
-  const dismiss = fileModal.props.onDismiss;
-  await act(async () =>
-    renderer!.root.findByType("FileReview" as ElementType).props.close(),
-  );
-  await act(async () => dismiss());
-  expect(ports.prepare).not.toHaveBeenCalled();
-});
+it.each(["ios", "android", "web"])(
+  "allows opening retained failed files and protects dismissal during a file mutation on %s",
+  async (os) => {
+    ports.os = os;
+    const items = batchFixture();
+    items[0]!.result = {
+      status: "FAILED",
+      code: "MERCALYS_BATCH_PREPARATION_FAILED",
+    };
+    await act(async () => {
+      renderer = create(panel());
+    });
+    await openBatch();
+    await press("Ouvrir le fichier export-0.xlsx");
+    await act(async () => fileBusy!(true));
+    const fileModal = renderer!.root.findByType("Sheet" as ElementType);
+    expect(fileModal.props.swipeToClose).toBe(false);
+    await act(async () => fileModal.props.onClose());
+    expect(
+      renderer!.root.findAllByType("FileReview" as ElementType),
+    ).toHaveLength(1);
+    await act(async () => fileBusy!(false));
+    const dismiss = fileModal.props.onDismiss;
+    const publications = ports.publications.mock.calls.length;
+    await act(async () =>
+      renderer!.root.findByType("FileReview" as ElementType).props.close(),
+    );
+    expect(ports.publications).toHaveBeenCalledTimes(publications);
+    await act(async () => dismiss());
+    expect(ports.publications).toHaveBeenCalledTimes(publications + 1);
+    expect(ports.prepare).not.toHaveBeenCalled();
+  },
+);
 it("does not mutate a batch after its owner-scoped review is unmounted", async () => {
   batchFixture();
   await act(async () => {
@@ -735,26 +748,30 @@ it("archives and restores lots/files through the retained list without publishin
   expect(ports.prepare).not.toHaveBeenCalled();
 });
 
-it("opens a full-screen lot and starts the file picker only after its menu has actually dismissed", async () => {
-  batchFixture();
-  const pick = vi.fn().mockResolvedValue(undefined);
-  await act(async () => {
-    renderer = create(panel({ pick }));
-  });
-  await press("Importer un fichier");
-  const dismiss = renderer!.root.findByType("Sheet" as ElementType).props
-    .onDismiss;
-  await press("Choisir des fichiers XLSX");
-  expect(pick).not.toHaveBeenCalled();
-  await act(async () => dismiss());
-  expect(pick).toHaveBeenCalledTimes(1);
-  expect(ports.prepare).not.toHaveBeenCalled();
-  expect(ports.confirm).not.toHaveBeenCalled();
-  await openBatch();
-  expect(
-    renderer!.root.findByType("Modal" as ElementType).props.presentationStyle,
-  ).toBe("fullScreen");
-});
+it.each(["ios", "android", "web"])(
+  "opens a full-screen lot and starts the file picker only after its menu has actually dismissed on %s",
+  async (os) => {
+    ports.os = os;
+    batchFixture();
+    const pick = vi.fn().mockResolvedValue(undefined);
+    await act(async () => {
+      renderer = create(panel({ pick }));
+    });
+    await press("Importer un fichier");
+    const dismiss = renderer!.root.findByType("Sheet" as ElementType).props
+      .onDismiss;
+    await press("Choisir des fichiers XLSX");
+    expect(pick).not.toHaveBeenCalled();
+    await act(async () => dismiss());
+    expect(pick).toHaveBeenCalledTimes(1);
+    expect(ports.prepare).not.toHaveBeenCalled();
+    expect(ports.confirm).not.toHaveBeenCalled();
+    await openBatch();
+    expect(
+      renderer!.root.findByType("Modal" as ElementType).props.presentationStyle,
+    ).toBe("fullScreen");
+  },
+);
 
 it("does not start a queued picker after the import view has unmounted", async () => {
   batchFixture();

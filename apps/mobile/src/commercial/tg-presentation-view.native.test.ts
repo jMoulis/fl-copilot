@@ -59,6 +59,13 @@ it("lets a manager adjust a colored zone, keeps counter-promo separate and never
     await act(async () => hosts("Primary")[0]!.props.onPress());
     expect(onSharesChange).toHaveBeenCalledWith(id, [99, 1]);
     expect(placements[0]!.presentation.zones[0]!.sharePct).toBe(60);
+    expect(hosts("Sheet")[0]!.props.visible).toBe(false);
+    expect(hosts("Input")[0]!.props.value).toBe("99");
+    expect(hosts("Input")[0]!.props.editable).toBe(false);
+    expect(hosts("Primary")[0]!.props.disabled).toBe(true);
+    await act(async () => hosts("Primary")[0]!.props.onPress());
+    expect(onSharesChange).toHaveBeenCalledOnce();
+    await act(async () => hosts("Sheet")[0]!.props.onDismiss());
     expect(hosts("Sheet")).toHaveLength(0);
     await act(async () =>
       tree.update(createElement(TgPresentationView, { placements })),
@@ -102,6 +109,55 @@ function journeyHosts(tree: ReactTestRenderer, type: string) {
     (node) => typeof node.type === "string" && String(node.type) === type,
   );
 }
+
+it("retains an unapplied share editor until dismissal, blocks edits during exit and resets the next opening", async () => {
+  const placement = journeyPlacement(),
+    onSharesChange = vi.fn();
+  let tree: ReactTestRenderer;
+  await act(async () => {
+    tree = create(
+      createElement(TgPresentationView, {
+        placements: [placement],
+        onSharesChange,
+      }),
+    );
+  });
+  try {
+    const hosts = (type: string) => journeyHosts(tree!, type);
+    const open = () =>
+      hosts("Button")
+        .find((node) =>
+          node.props.accessibilityLabel?.startsWith("Patate douce vrac,"),
+        )!
+        .props.onPress();
+    await act(async () => open());
+    await act(async () => hosts("Input")[0]!.props.onChangeText("invalide"));
+    await act(async () => hosts("Primary")[0]!.props.onPress());
+    expect(hosts("Sheet")[0]!.props.visible).toBe(true);
+    expect(
+      hosts("Text").some((node) => node.props.accessibilityRole === "alert"),
+    ).toBe(true);
+    const staleChange = hosts("Input")[0]!.props.onChangeText;
+    await act(async () => hosts("Sheet")[0]!.props.onClose());
+    expect(hosts("Sheet")[0]!.props.visible).toBe(false);
+    expect(hosts("Input")[0]!.props.value).toBe("invalide");
+    await act(async () => staleChange("25"));
+    await act(async () => hosts("Primary")[0]!.props.onPress());
+    expect(hosts("Input")[0]!.props.value).toBe("invalide");
+    expect(onSharesChange).not.toHaveBeenCalled();
+    await act(async () => hosts("Sheet")[0]!.props.onDismiss());
+    expect(hosts("Sheet")).toHaveLength(0);
+    await act(async () => open());
+    expect(hosts("Sheet")[0]!.props.visible).toBe(true);
+    expect(hosts("Input")[0]!.props.value).toBe("95");
+    expect(hosts("Input")[0]!.props.editable).toBe(true);
+    expect(
+      hosts("Text").some((node) => node.props.accessibilityRole === "alert"),
+    ).toBe(false);
+  } finally {
+    await act(async () => tree!.unmount());
+  }
+});
 
 it("opens the requested placement from either card entry point without entering the share editor", async () => {
   const placement = journeyPlacement();
