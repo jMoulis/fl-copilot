@@ -1,3 +1,12 @@
+## Owner-approved secondary settings polish — 16 November 2026
+
+Apply the accepted Marché solaire study to Settings, Store and Synchronization.
+Prioritize summaries and one fixed Back action; keep existing local writers,
+role/dirty/busy/conflict checks, all destinations and actionable recovery. Use
+actual declared data rather than the prototype's illustration. Preserve the
+accepted sheet lifecycle. See `../ux/SECONDARY_SETTINGS_2026_11_16.md` for scope
+and verification boundaries. No API, schema or provider change.
+
 ## Owner correction — swipe dismissal notification, 16 November 2026
 
 Build 72 scrolling and X dismissal are accepted; swipe dismissal still blocks the next opening. Treat native onDismiss as authoritative regardless of an earlier state-change event. Scope completion/deduplication to each presentation and ignore its late callbacks after reopening. Preserve the accepted content layout and existing guards. Verify actual swipe → different sheet → swipe → original sheet repeatedly. See `../qa/NATIVE_SWIPE_DISMISSAL_2026_11_16.md`.

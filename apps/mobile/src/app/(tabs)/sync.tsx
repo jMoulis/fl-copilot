@@ -4,7 +4,6 @@ import { LocalDatabaseRecoveryNotice } from "@/db/recovery-notice";
 import { Text, View } from "react-native";
 import { router, type Href } from "expo-router";
 import {
-  AppHeader,
   AppScreen,
   InlineAlert,
   PrimaryButton,
@@ -12,6 +11,8 @@ import {
   SectionCard,
   StatusBadge,
 } from "@/components/ui";
+import { SettingsHeader, SettingsIntro } from "@/components/settings-chrome";
+import { DetailsDisclosure } from "@/components/dashboard";
 import { useAuth } from "@/auth/auth-provider";
 import { useSync } from "@/sync/sync-provider";
 import { useOpenSyncConflicts } from "@/sync/use-sync-conflicts";
@@ -23,6 +24,7 @@ export default function SynchronizationScreen() {
   const {
     status,
     pendingCount,
+    pendingCommandCount,
     pendingDetails,
     conflictCount,
     failedCount,
@@ -37,37 +39,55 @@ export default function SynchronizationScreen() {
   );
 
   return (
-    <AppScreen>
-      <AppHeader
+    <AppScreen
+      header={
+        <SettingsHeader
+          title="Synchronisation"
+          onBack={() =>
+            router.canGoBack()
+              ? router.back()
+              : router.replace("/(tabs)/actions")
+          }
+        />
+      }
+    >
+      <SettingsIntro
+        eyebrow={store?.name ?? "Mon magasin"}
         title="Synchronisation"
-        subtitle={
-          store
-            ? `Données locales et partagées de ${store.name}.`
-            : "Données locales et partagées du magasin."
-        }
-      />
-
-      <SecondaryButton
-        label="Retour"
-        onPress={() =>
-          router.canGoBack() ? router.back() : router.replace("/(tabs)/actions")
-        }
+        description="Les échanges entre ton appareil et le magasin."
       />
       <LocalDatabaseRecoveryNotice />
-      <SectionCard title="État actuel">
-        <View accessibilityLiveRegion="polite">
-          <StatusBadge status={status} />
-        </View>
-        <StatusLine
-          label="Modifications en attente"
-          value={String(pendingCount)}
-        />
-        <StatusLine label="Conflits" value={String(conflictCount)} />
-        <StatusLine label="Erreurs" value={String(failedCount)} />
-        <StatusLine
-          label="Dernière synchronisation"
-          value={formatSyncDate(lastSyncedAt)}
-        />
+      <View
+        className="gap-4 rounded-3xl bg-hero p-6"
+        accessibilityLiveRegion="polite"
+      >
+        <StatusBadge status={status} />
+        <Text
+          accessibilityRole="header"
+          className="text-3xl font-semibold tracking-tight text-hero-ink"
+        >
+          {!store
+            ? "Connecte-toi à ton magasin."
+            : {
+                synced: lastSyncedAt
+                  ? "Tout est à jour."
+                  : "Prêt à synchroniser.",
+                syncing: "Les échanges sont en cours.",
+                pending: "Des éléments restent en attente.",
+                offline: "Tu es hors ligne.",
+                conflict: "Un point à examiner.",
+                error: "Des éléments sont à reprendre.",
+              }[status]}
+        </Text>
+        <Text className="text-sm leading-6 text-hero-muted">
+          {status === "offline"
+            ? "Tes changements restent sur cet appareil. La synchronisation reprendra avec le réseau."
+            : status === "conflict" || status === "error"
+              ? "Consulte les éléments ci-dessous. Tes modifications locales restent conservées."
+              : pendingCount > 0
+                ? "Les envois et les traitements locaux sont détaillés ci-dessous."
+                : "Tes données locales restent consultables, même sans connexion."}
+        </Text>
         <PrimaryButton
           label="Synchroniser maintenant"
           loading={status === "syncing"}
@@ -76,7 +96,15 @@ export default function SynchronizationScreen() {
             void syncNow(store?.storeId);
           }}
         />
-      </SectionCard>
+      </View>
+      <View className="flex-row border-b border-line pb-5">
+        <SyncCount label="À envoyer" value={pendingCommandCount} />
+        <SyncCount label="Conflits" value={conflictCount} />
+        <SyncCount label="Erreurs" value={failedCount} />
+      </View>
+      <Text className="text-sm text-muted">
+        Dernier échange · {formatSyncDate(lastSyncedAt)}
+      </Text>
 
       {pendingDetails && pendingDetails.length > 0 ? (
         <SectionCard title="Détail des éléments en attente">
@@ -170,8 +198,9 @@ export default function SynchronizationScreen() {
         </SectionCard>
       ) : null}
 
-      <LocalCopiesPanel />
-      <SecondaryButton label="Retour" onPress={() => router.back()} />
+      <DetailsDisclosure title="Copies locales et récupération">
+        <LocalCopiesPanel />
+      </DetailsDisclosure>
     </AppScreen>
   );
 }
@@ -180,11 +209,19 @@ function sourceTypeLabel(sourceType: "MERCALYS_SALES" | "MERCALYS_WASTE") {
   return sourceType === "MERCALYS_SALES" ? "Ventes Mercalys" : "Casse Mercalys";
 }
 
-function StatusLine({ label, value }: { label: string; value: string }) {
+function SyncCount({
+  label,
+  value,
+}: {
+  label: string;
+  value: number | undefined;
+}) {
   return (
-    <View className="flex-row items-start justify-between gap-4 border-t border-line pt-3">
-      <Text className="flex-1 text-sm text-muted">{label}</Text>
-      <Text className="text-right text-sm font-semibold text-ink">{value}</Text>
+    <View className="flex-1 items-center gap-1 px-2">
+      <Text className="text-3xl font-semibold tracking-tight text-ink">
+        {value ?? "—"}
+      </Text>
+      <Text className="text-center text-xs text-muted">{label}</Text>
     </View>
   );
 }

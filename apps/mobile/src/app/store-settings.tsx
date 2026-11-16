@@ -1,3 +1,4 @@
+import { SettingsHeader, SettingsIntro } from "@/components/settings-chrome";
 import { MerchandisingEditor } from "@/store/merchandising-editor";
 import {
   merchandisingDraft,
@@ -85,6 +86,9 @@ function StoreSettingsEditor({
     [error, setError] = useState<string>(),
     [notice, setNotice] = useState<string>(),
     [issues, setIssues] = useState<Record<string, string>>({});
+  const [editing, setEditing] = useState<"merchandising" | "location" | null>(
+    null,
+  );
   const [merchandising, setMerchandising] = useState<MerchandisingDraft>();
   const busy = activity !== null;
   const baseline = useRef<string | undefined>(undefined);
@@ -311,6 +315,7 @@ function StoreSettingsEditor({
       const stored = await repo.get(storeId);
       if (!stored) throw Error("STORE_CONTEXT_CHANGED");
       hydrate(stored);
+      setEditing(null);
       setNotice("Réglages enregistrés sur cet appareil.");
       void syncNow(storeId)
         .then(async () => {
@@ -330,32 +335,21 @@ function StoreSettingsEditor({
     }
   }
   return (
-    <AppScreen>
-      <AppHeader
-        title="Mon magasin"
-        subtitle="Localisation et contexte de préparation de la semaine."
-      />
-      <SecondaryButton label="Retour" onPress={() => router.back()} />
-      <MenuRow
-        title="Transports à proximité"
-        description="Adresse, rayon de recherche et lignes à suivre dans le Journal."
-        icon="bus-outline"
-        onPress={() => {
-          if (busy || saved === undefined) return;
-          if (dirty || !saved) {
-            setNotice(
-              "Enregistre d’abord les réglages du magasin pour configurer ses transports.",
-            );
-            return;
+    <AppScreen
+      keyboardAware
+      header={
+        <SettingsHeader
+          title="Mon magasin"
+          onBack={() =>
+            router.canGoBack() ? router.back() : router.replace("/settings")
           }
-          router.push("/store-transports");
-        }}
-      />
-      <MenuRow
-        title="Plan et mobilier"
-        description="Consulter les îlots, les TG et leurs surfaces de vente."
-        icon="map-outline"
-        onPress={() => router.push("/store-layout")}
+        />
+      }
+    >
+      <SettingsIntro
+        eyebrow={storeName}
+        title={"Ton rayon,\nses repères."}
+        description="Le contexte partagé avec ton copilote."
       />
       {error ? (
         <>
@@ -372,7 +366,7 @@ function StoreSettingsEditor({
         </>
       ) : null}
       {notice ? <InlineAlert title="Magasin" message={notice} /> : null}
-      <SectionCard title={storeName}>
+      <View className="gap-3">
         <Text className="text-muted">
           {saved
             ? ((
@@ -393,157 +387,240 @@ function StoreSettingsEditor({
             onPress={() => router.push("/sync-center")}
           />
         ) : null}
-      </SectionCard>
+      </View>
       {dirty ? (
         <Text accessibilityLiveRegion="polite" className="text-warning">
           Modifications non enregistrées
         </Text>
       ) : null}
-      <MerchandisingEditor
-        value={merchandising}
-        onChange={(next) => {
-          dirtyRef.current = true;
-          setMerchandising(next);
-        }}
-        disabled={!canManage || busy || saved === undefined}
-        issue={issues.merchandising}
-      />
-      <SectionCard title="Commune du magasin">
-        <Text className="text-muted">Commune</Text>
-        <TextInput
-          accessibilityLabel="Commune du magasin"
-          value={city}
-          editable={canManage && !busy && saved !== undefined}
-          onChangeText={(v) => changeTown(v, "city")}
-          maxLength={120}
-          className={`rounded-xl border p-3 text-ink ${issues.city ? "border-danger" : "border-line"}`}
-        />
-        {issues.city ? (
-          <Text className="text-danger" accessibilityRole="alert">
-            {issues.city}
-          </Text>
-        ) : null}
-        <Text className="text-muted">Code postal</Text>
-        <TextInput
-          accessibilityLabel="Code postal"
-          value={postalCode}
-          editable={canManage && !busy && saved !== undefined}
-          onChangeText={(v) => changeTown(v, "postalCode")}
-          keyboardType="number-pad"
-          maxLength={5}
-          className={`rounded-xl border p-3 text-ink ${issues.postalCode ? "border-danger" : "border-line"}`}
-        />
-        {issues.postalCode ? (
-          <Text className="text-danger" accessibilityRole="alert">
-            {issues.postalCode}
-          </Text>
-        ) : null}
-        <Text className="text-sm text-muted">
-          France · fuseau Europe/Paris. La commune sert de référence lorsque la
-          position précise n’est pas utilisée.
-        </Text>
-      </SectionCard>
-      <SectionCard title="Position pour la météo">
-        <View className="flex-row items-center justify-between gap-3">
-          <Text className="flex-1 text-ink">
-            Utiliser une position précise enregistrée pour le magasin
-          </Text>
-          <Switch
-            accessibilityLabel="Utiliser une position précise du magasin"
-            value={pointMode}
-            disabled={!canManage || busy || saved === undefined}
-            onValueChange={(value) => {
-              setPointMode(value);
-              if (!value) setPosition(null);
-            }}
-          />
-        </View>
-        <Text className="text-sm text-muted">
-          Le téléphone relève la position uniquement quand vous appuyez sur le
-          bouton. Faites-le au magasin ; cette position restera fixe si vous
-          vous déplacez ensuite. Aucun suivi en arrière-plan.
-        </Text>
-        {pointMode ? (
-          <>
+      {!editing ? (
+        <>
+          <SectionCard title="Implantation">
+            <View className="flex-row items-baseline gap-3">
+              <Text className="text-4xl font-semibold tracking-tight text-ink">
+                {saved?.entity.merchandising?.activeTgCount ?? "—"}
+              </Text>
+              <Text className="flex-1 text-sm text-muted">TG actives F&L</Text>
+            </View>
+            <Text className="text-base leading-6 text-ink">
+              {saved?.entity.merchandising?.implantation ||
+                "Implantation non renseignée"}
+            </Text>
+            <Text className="text-sm leading-6 text-muted">
+              {saved?.entity.merchandising?.circulation ||
+                "Parcours client non renseigné"}
+            </Text>
             <SecondaryButton
               label={
-                activity === "LOCATION"
-                  ? "Relevé…"
-                  : "Relever ma position au magasin"
+                canManage
+                  ? "Modifier l’implantation"
+                  : "Consulter l’implantation"
               }
-              disabled={!canManage || busy || saved === undefined}
-              onPress={() => void locate()}
+              disabled={busy || saved === undefined}
+              onPress={() => setEditing("merchandising")}
             />
-            <Text className="text-ink">
-              {position
-                ? `${position.latitude} · ${position.longitude} · relevée le ${new Date(position.capturedAt).toLocaleString("fr-FR")}`
-                : "Position non relevée"}
+          </SectionCard>
+          <SectionCard title="Localisation">
+            <Text className="text-lg font-semibold text-ink">
+              {saved?.entity.city || "Commune non renseignée"}
             </Text>
-            {issues.position ? (
-              <Text className="text-danger" accessibilityRole="alert">
-                {issues.position}
-              </Text>
-            ) : null}
-          </>
-        ) : null}
-      </SectionCard>
-      <SectionCard title="Vacances scolaires">
-        <Text className="text-sm text-muted">
-          Choisissez la zone du magasin. Elle n’est pas déduite de la position
-          du téléphone.
-        </Text>
-        <View
-          accessibilityRole="radiogroup"
-          accessibilityLabel="Zone de vacances scolaires"
-          className="flex-row flex-wrap gap-2"
-        >
-          {(["A", "B", "C", null] as const).map((zone) => (
-            <Pressable
-              key={zone ?? "unknown"}
-              accessibilityRole="radio"
-              accessibilityLabel={zone ? `Zone ${zone}` : "Zone non précisée"}
-              accessibilityState={{
-                checked: schoolZone === zone,
-                disabled: busy || saved === undefined,
+            <Text className="text-sm text-muted">
+              {saved?.entity.postalCode || "Code postal non renseigné"} ·{" "}
+              {saved?.entity.schoolZone
+                ? `Zone scolaire ${saved.entity.schoolZone}`
+                : "Zone scolaire non renseignée"}
+            </Text>
+            <SecondaryButton
+              label={
+                canManage
+                  ? "Modifier la localisation"
+                  : "Consulter la localisation"
+              }
+              disabled={busy || saved === undefined}
+              onPress={() => setEditing("location")}
+            />
+          </SectionCard>
+          <MenuRow
+            title="Transports à proximité"
+            description="Adresse, rayon de recherche et lignes à suivre dans le Journal."
+            icon="bus-outline"
+            onPress={() => {
+              if (busy || saved === undefined) return;
+              if (dirty || !saved) {
+                setNotice(
+                  "Enregistre d’abord les réglages du magasin pour configurer ses transports.",
+                );
+                return;
+              }
+              router.push("/store-transports");
+            }}
+          />
+          <MenuRow
+            title="Plan et mobilier"
+            description="Consulter les îlots, les TG et leurs surfaces de vente."
+            icon="map-outline"
+            onPress={() => router.push("/store-layout")}
+          />
+        </>
+      ) : (
+        <>
+          {editing === "merchandising" ? (
+            <MerchandisingEditor
+              value={merchandising}
+              onChange={(next) => {
+                dirtyRef.current = true;
+                setMerchandising(next);
               }}
-              aria-checked={schoolZone === zone}
-              aria-disabled={!canManage || busy || saved === undefined}
               disabled={!canManage || busy || saved === undefined}
-              onPress={() => setZone(zone)}
-              className={`min-h-12 items-center justify-center rounded-xl border px-4 py-3 ${schoolZone === zone ? "border-forest bg-forest-soft" : "border-line bg-surface"}`}
-            >
-              <Text className="text-ink">
-                {zone ? `Zone ${zone}` : "Non précisée"}
+              issue={issues.merchandising}
+            />
+          ) : (
+            <>
+              <SectionCard title="Commune du magasin">
+                <Text className="text-muted">Commune</Text>
+                <TextInput
+                  accessibilityLabel="Commune du magasin"
+                  value={city}
+                  editable={canManage && !busy && saved !== undefined}
+                  onChangeText={(v) => changeTown(v, "city")}
+                  maxLength={120}
+                  className={`rounded-xl border p-3 text-ink ${issues.city ? "border-danger" : "border-line"}`}
+                />
+                {issues.city ? (
+                  <Text className="text-danger" accessibilityRole="alert">
+                    {issues.city}
+                  </Text>
+                ) : null}
+                <Text className="text-muted">Code postal</Text>
+                <TextInput
+                  accessibilityLabel="Code postal"
+                  value={postalCode}
+                  editable={canManage && !busy && saved !== undefined}
+                  onChangeText={(v) => changeTown(v, "postalCode")}
+                  keyboardType="number-pad"
+                  maxLength={5}
+                  className={`rounded-xl border p-3 text-ink ${issues.postalCode ? "border-danger" : "border-line"}`}
+                />
+                {issues.postalCode ? (
+                  <Text className="text-danger" accessibilityRole="alert">
+                    {issues.postalCode}
+                  </Text>
+                ) : null}
+                <Text className="text-sm text-muted">
+                  France · fuseau Europe/Paris. La commune sert de référence
+                  lorsque la position précise n’est pas utilisée.
+                </Text>
+              </SectionCard>
+              <SectionCard title="Position pour la météo">
+                <View className="flex-row items-center justify-between gap-3">
+                  <Text className="flex-1 text-ink">
+                    Utiliser une position précise enregistrée pour le magasin
+                  </Text>
+                  <Switch
+                    accessibilityLabel="Utiliser une position précise du magasin"
+                    value={pointMode}
+                    disabled={!canManage || busy || saved === undefined}
+                    onValueChange={(value) => {
+                      setPointMode(value);
+                      if (!value) setPosition(null);
+                    }}
+                  />
+                </View>
+                <Text className="text-sm text-muted">
+                  Le téléphone relève la position uniquement quand vous appuyez
+                  sur le bouton. Faites-le au magasin ; cette position restera
+                  fixe si vous vous déplacez ensuite. Aucun suivi en
+                  arrière-plan.
+                </Text>
+                {pointMode ? (
+                  <>
+                    <SecondaryButton
+                      label={
+                        activity === "LOCATION"
+                          ? "Relevé…"
+                          : "Relever ma position au magasin"
+                      }
+                      disabled={!canManage || busy || saved === undefined}
+                      onPress={() => void locate()}
+                    />
+                    <Text className="text-ink">
+                      {position
+                        ? `${position.latitude} · ${position.longitude} · relevée le ${new Date(position.capturedAt).toLocaleString("fr-FR")}`
+                        : "Position non relevée"}
+                    </Text>
+                    {issues.position ? (
+                      <Text className="text-danger" accessibilityRole="alert">
+                        {issues.position}
+                      </Text>
+                    ) : null}
+                  </>
+                ) : null}
+              </SectionCard>
+              <SectionCard title="Vacances scolaires">
+                <Text className="text-sm text-muted">
+                  Choisissez la zone du magasin. Elle n’est pas déduite de la
+                  position du téléphone.
+                </Text>
+                <View
+                  accessibilityRole="radiogroup"
+                  accessibilityLabel="Zone de vacances scolaires"
+                  className="flex-row flex-wrap gap-2"
+                >
+                  {(["A", "B", "C", null] as const).map((zone) => (
+                    <Pressable
+                      key={zone ?? "unknown"}
+                      accessibilityRole="radio"
+                      accessibilityLabel={
+                        zone ? `Zone ${zone}` : "Zone non précisée"
+                      }
+                      accessibilityState={{
+                        checked: schoolZone === zone,
+                        disabled: busy || saved === undefined,
+                      }}
+                      aria-checked={schoolZone === zone}
+                      aria-disabled={!canManage || busy || saved === undefined}
+                      disabled={!canManage || busy || saved === undefined}
+                      onPress={() => setZone(zone)}
+                      className={`min-h-12 items-center justify-center rounded-xl border px-4 py-3 ${schoolZone === zone ? "border-forest bg-forest-soft" : "border-line bg-surface"}`}
+                    >
+                      <Text className="text-ink">
+                        {zone ? `Zone ${zone}` : "Non précisée"}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </SectionCard>
+              <Text className="text-sm leading-6 text-muted">
+                Ces repères alimentent la météo et le calendrier du Journal
+                après synchronisation.
               </Text>
-            </Pressable>
-          ))}
-        </View>
-      </SectionCard>
-      <SectionCard title="Contexte météo">
-        <Text className="text-muted">
-          La météo MET Norway et les calendriers officiels sont disponibles dans
-          Ma semaine, après synchronisation des réglages. Ces réglages ne
-          changent pas les offres, les plans ni les résultats du rayon.
-        </Text>
-      </SectionCard>
-      <PrimaryButton
-        label={
-          activity === "SAVE"
-            ? "Enregistrement…"
-            : activity === "READ"
-              ? "Lecture…"
-              : activity === "LOCATION"
-                ? "Relevé…"
-                : "Enregistrer les réglages du magasin"
-        }
-        disabled={
-          !canManage ||
-          busy ||
-          saved === undefined ||
-          saved?.syncState === "CONFLICT"
-        }
-        onPress={() => void save()}
-      />
+            </>
+          )}
+          <PrimaryButton
+            label={
+              activity === "SAVE"
+                ? "Enregistrement…"
+                : activity === "READ"
+                  ? "Lecture…"
+                  : activity === "LOCATION"
+                    ? "Relevé…"
+                    : "Enregistrer les réglages du magasin"
+            }
+            disabled={
+              !canManage ||
+              busy ||
+              saved === undefined ||
+              saved?.syncState === "CONFLICT"
+            }
+            onPress={() => void save()}
+          />
+          <SecondaryButton
+            label="Retour aux repères"
+            disabled={busy || dirty}
+            onPress={() => setEditing(null)}
+          />
+        </>
+      )}
     </AppScreen>
   );
 }
