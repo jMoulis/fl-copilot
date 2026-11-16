@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Platform, Pressable, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import { router } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { MainHeader } from "../../../components/main-header";
@@ -131,7 +131,6 @@ export default function ImportsHub() {
           onPress={() => {
             nextMercalys.current = true;
             setChoosing(false);
-            if (Platform.OS !== "ios") finishChoosing();
           }}
         />
         <MenuRow

@@ -99,6 +99,7 @@ export function CommercialExecutionView({
     );
   const autoOpened = useRef<string | undefined>(undefined);
   const saveLock = useRef(false);
+  const editorOpen = useRef(false);
   const [loadedRevision, setLoadedRevision] = useState<string>();
   const [localFilter, setLocalFilter] = useState<ExecutionFilter>("TODO");
   const filter = controlledFilter ?? localFilter;
@@ -106,6 +107,7 @@ export function CommercialExecutionView({
   const [proposals, setProposals] = useState<CommercialExecutionProposal[]>([]),
     [records, setRecords] = useState<LocalCommercialExecution[]>([]),
     [editor, setEditor] = useState<Editor | null>(null),
+    [editorVisible, setEditorVisible] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string>(),
     [notice, setNotice] = useState<string>(),
@@ -139,7 +141,9 @@ export function CommercialExecutionView({
                       commercialExecutionSameTarget(r.entity, proposal),
                     ) ?? null)
                   : null;
-              if (proposal)
+              if (proposal) {
+                editorOpen.current = true;
+                setEditorVisible(true);
                 setEditor({
                   proposal,
                   record,
@@ -148,7 +152,7 @@ export function CommercialExecutionView({
                   actuals: executionActualsDraft(record?.entity.actuals),
                   plan,
                 });
-              else
+              } else
                 setError(
                   "Cette tâche ne figure plus dans la version actuelle du plan. Consulte le plan avant de choisir.",
                 );
@@ -176,6 +180,8 @@ export function CommercialExecutionView({
     setActualsError(undefined);
     setActualsOpen(false);
     setError(undefined);
+    editorOpen.current = true;
+    setEditorVisible(true);
     setEditor({
       proposal: p,
       record: r,
@@ -208,7 +214,7 @@ export function CommercialExecutionView({
     }
   }
   async function save(value: Editor | null = editor) {
-    if (!value || busy || saveLock.current) return;
+    if (!value || !editorOpen.current || busy || saveLock.current) return;
     setError(undefined);
     setNoteError(undefined);
     setActualsError(undefined);
@@ -258,7 +264,7 @@ export function CommercialExecutionView({
     setBusy(true);
     try {
       await repo.save(parsed.data, { commandId: randomUUID(), deviceId });
-      setEditor(null);
+      hideEditor();
       setNotice(
         `Déclaration enregistrée pour le plan version ${parsed.data.planVersion}.`,
       );
@@ -276,8 +282,12 @@ export function CommercialExecutionView({
       setBusy(false);
     }
   }
+  function hideEditor() {
+    editorOpen.current = false;
+    setEditorVisible(false);
+  }
   function closeEditor() {
-    if (busy) return;
+    if (busy || !editorOpen.current) return;
     const changed =
       editor &&
       (editor.status !==
@@ -293,7 +303,7 @@ export function CommercialExecutionView({
           "Fermer sans enregistrer ? Les modifications de cette déclaration ne sont pas encore enregistrées.",
         )
       )
-        setEditor(null);
+        hideEditor();
       return;
     }
     if (changed)
@@ -305,11 +315,11 @@ export function CommercialExecutionView({
           {
             text: "Fermer",
             style: "destructive",
-            onPress: () => setEditor(null),
+            onPress: hideEditor,
           },
         ],
       );
-    else setEditor(null);
+    else hideEditor();
   }
   const loaded = loadedRevision === plan.revisionId;
   const visibleProposals = loaded ? proposals : [];
@@ -555,16 +565,23 @@ export function CommercialExecutionView({
       {editor ? (
         <ExecutionDeclarationSheet
           editor={editor}
-          busy={busy}
+          visible={editorVisible}
+          busy={busy || !editorVisible}
           error={error}
           noteError={noteError}
           actualsError={actualsError}
           actualsOpen={actualsOpen}
-          onToggleActuals={() => setActualsOpen((value) => !value)}
+          onToggleActuals={() => {
+            if (editorOpen.current) setActualsOpen((value) => !value);
+          }}
           onChange={(patch) =>
+            editorOpen.current &&
             setEditor((e) => (e ? { ...e, ...patch } : null))
           }
           onClose={closeEditor}
+          onDismiss={() => {
+            if (!editorOpen.current) setEditor(null);
+          }}
           onSave={() => void save()}
         />
       ) : null}
@@ -589,6 +606,7 @@ export function CommercialExecutionView({
 /** The canonical controller owns drafts, validation and saving; this sheet only renders them. */
 export function ExecutionDeclarationSheet({
   editor,
+  visible = true,
   busy,
   error,
   noteError,
@@ -597,6 +615,7 @@ export function ExecutionDeclarationSheet({
   onToggleActuals,
   onChange,
   onClose,
+  onDismiss,
   onSave,
 }: {
   editor: Pick<
@@ -610,6 +629,7 @@ export function ExecutionDeclarationSheet({
   > & {
     record?: LocalCommercialExecution | null;
   };
+  visible?: boolean;
   busy: boolean;
   error?: string;
   noteError?: string;
@@ -618,6 +638,7 @@ export function ExecutionDeclarationSheet({
   onToggleActuals(): void;
   onChange(patch: Partial<Pick<Editor, "status" | "note" | "actuals">>): void;
   onClose(): void;
+  onDismiss?(): void;
   onSave(): void;
 }) {
   const installation =
@@ -644,9 +665,10 @@ export function ExecutionDeclarationSheet({
   );
   return (
     <BottomSheet
-      visible
+      visible={visible}
       title={installation ? "Déclarer l’installation" : "Revoir la déclaration"}
       onClose={onClose}
+      onDismiss={onDismiss}
       swipeToClose
       avoidKeyboard
       footer={

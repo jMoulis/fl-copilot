@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Pressable,
   Switch,
@@ -114,6 +114,7 @@ export function LayoutMeasurements({
 export function StoreLayoutElementSheet({
   content,
   id,
+  visible = true,
   editing,
   busy,
   onClose,
@@ -123,6 +124,7 @@ export function StoreLayoutElementSheet({
 }: {
   content: StoreLayoutContent;
   id: string | null;
+  visible?: boolean;
   editing: boolean;
   busy: boolean;
   onClose: () => void;
@@ -131,16 +133,32 @@ export function StoreLayoutElementSheet({
   blockedReason?: string;
 }) {
   const scroll = useRef<ScrollView>(null);
+  const visibleRef = useRef(visible);
   const [surfaceId, setSurfaceId] = useState<string | null>(null),
     [applied, setApplied] = useState(false),
     [inventoryDirty, setInventoryDirty] = useState(false),
-    [closeRequested, setCloseRequested] = useState(false);
+    [closeRequested, setCloseRequested] = useState(false),
+    [opening, setOpening] = useState(0);
+  useEffect(() => {
+    if (!visible) return;
+    setSurfaceId(null);
+    setApplied(false);
+    setInventoryDirty(false);
+    setCloseRequested(false);
+    setOpening((value) => value + 1);
+    scroll.current?.scrollTo({ y: 0, animated: false });
+  }, [visible, id]);
+  const apply = (next: StoreLayoutContent) =>
+    visibleRef.current ? onApply(next) : false;
   const f = content.furniture.find((x) => x.id === id),
     assembly = content.assemblies.find((a) => a.id === id),
     surface = content.surfaces.find(
       (s) => s.id === surfaceId && s.furnitureId === id,
     );
+  visibleRef.current = visible && (!!f || !!assembly || id === "room");
+  const paused = busy || !visibleRef.current;
   function selectApplied(nextId: string) {
+    if (!visibleRef.current) return;
     setSurfaceId(null);
     setApplied(false);
     setInventoryDirty(false);
@@ -149,6 +167,7 @@ export function StoreLayoutElementSheet({
     onSelect(nextId);
   }
   function requestClose() {
+    if (!visibleRef.current) return;
     if (inventoryDirty) {
       setCloseRequested(true);
       scroll.current?.scrollTo({ y: 0, animated: false });
@@ -178,7 +197,14 @@ export function StoreLayoutElementSheet({
     },
   };
   if (!f) {
-    if (!assembly && id !== "room") return null;
+    if (!assembly && id !== "room")
+      return (
+        <BottomSheet
+          visible={false}
+          title="Élément du plan"
+          onClose={onClose}
+        />
+      );
     const label = assembly?.label ?? "Rayon",
       dimensions = assembly?.dimensions ?? {
         ...content.room,
@@ -186,7 +212,7 @@ export function StoreLayoutElementSheet({
       };
     return (
       <BottomSheet
-        visible
+        visible={visible}
         title={label}
         onClose={requestClose}
         swipeToClose
@@ -209,13 +235,13 @@ export function StoreLayoutElementSheet({
         {editing ? (
           <>
             <LayoutMeasurements
-              key={`measure:${id}`}
+              key={`measure:${id}:${opening}`}
               label={label}
               dimensions={dimensions}
               axes={assembly ? undefined : ["width", "depth"]}
-              busy={busy}
+              busy={paused}
               onApply={(next) =>
-                onApply(
+                apply(
                   assembly
                     ? {
                         ...content,
@@ -232,11 +258,11 @@ export function StoreLayoutElementSheet({
             />
             {assembly ? (
               <LayoutInventoryControls
-                key={`inventory:${assembly.id}`}
+                key={`inventory:${assembly.id}:${opening}`}
                 content={content}
                 target={{ kind: "ASSEMBLY", id: assembly.id }}
-                busy={busy}
-                onApply={onApply}
+                busy={paused}
+                onApply={apply}
                 onSelect={selectApplied}
                 onRemoved={onClose}
                 {...inventoryCallbacks}
@@ -244,12 +270,12 @@ export function StoreLayoutElementSheet({
             ) : null}
             {assembly ? (
               <LayoutPhysicalFields
-                key={`position:${id}`}
+                key={`position:${id}:${opening}`}
                 content={content}
                 id={assembly.id}
                 kind="ASSEMBLY"
-                busy={busy}
-                onApply={onApply}
+                busy={paused}
+                onApply={apply}
               />
             ) : null}
           </>
@@ -271,6 +297,7 @@ export function StoreLayoutElementSheet({
       accessibilityLabel={`Consulter ${s.label} de ${f.label}`}
       accessibilityState={{ selected: surfaceId === s.id }}
       onPress={() => {
+        if (!visibleRef.current) return;
         if (inventoryDirty) {
           requestClose();
           return;
@@ -297,7 +324,7 @@ export function StoreLayoutElementSheet({
   );
   return (
     <BottomSheet
-      visible
+      visible={visible}
       title={f.label}
       onClose={requestClose}
       swipeToClose
@@ -335,6 +362,7 @@ export function StoreLayoutElementSheet({
                 accessibilityRole="button"
                 accessibilityLabel={`Ouvrir ${m.label}`}
                 onPress={() => {
+                  if (!visibleRef.current) return;
                   if (inventoryDirty) {
                     requestClose();
                     return;
@@ -408,12 +436,12 @@ export function StoreLayoutElementSheet({
       ) : null}
       {editing ? (
         <LayoutMeasurements
-          key={target.id}
+          key={`${target.id}:${opening}`}
           label={target.label}
           dimensions={target.dimensions}
-          busy={busy}
+          busy={paused}
           onApply={(dimensions) => {
-            onApply(
+            apply(
               surface
                 ? {
                     ...content,
@@ -445,24 +473,24 @@ export function StoreLayoutElementSheet({
       ) : null}
       {editing && !surface ? (
         <LayoutPhysicalFields
-          key={`position:${f.id}`}
+          key={`position:${f.id}:${opening}`}
           content={content}
           id={f.id}
           kind="FURNITURE"
-          busy={busy}
-          onApply={onApply}
+          busy={paused}
+          onApply={apply}
         />
       ) : null}
       {editing ? (
         <LayoutInventoryControls
-          key={`inventory:${surface?.id ?? f.id}`}
+          key={`inventory:${surface?.id ?? f.id}:${opening}`}
           content={content}
           target={{
             kind: surface ? "SURFACE" : "FURNITURE",
             id: surface?.id ?? f.id,
           }}
-          busy={busy}
-          onApply={onApply}
+          busy={paused}
+          onApply={apply}
           onSelect={selectApplied}
           onRemoved={surface ? () => setSurfaceId(null) : onClose}
           {...inventoryCallbacks}

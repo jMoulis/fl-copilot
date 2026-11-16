@@ -107,6 +107,7 @@ export function StoreLayoutPanel({
     [comparison, setComparison] = useState<SyncConflict | null>(null),
     [panelError, setPanelError] = useState<string>();
   const lock = useRef(false),
+    addingRef = useRef(false),
     additionScroll = useRef<ScrollView>(null),
     historyRequest = useRef(0);
   const head = snapshot.head?.entity ?? null,
@@ -164,6 +165,10 @@ export function StoreLayoutPanel({
   function select(id: string) {
     setSelectedId(id);
     setShowElement(true);
+  }
+  function closeAddition() {
+    addingRef.current = false;
+    setAdding(false);
   }
   async function openHistory() {
     const request = ++historyRequest.current;
@@ -419,6 +424,7 @@ export function StoreLayoutPanel({
                 label="Ajouter au plan : îlot, élément, TG ou mobile"
                 disabled={!canEdit}
                 onPress={() => {
+                  addingRef.current = true;
                   setAdding(true);
                   setAdditionKey((v) => v + 1);
                   setAdditionDirty(false);
@@ -533,10 +539,11 @@ export function StoreLayoutPanel({
           onPress={() => void openHistory()}
         />
       ) : null}
-      {content && !adding && showElement && selectedId ? (
+      {content && selectedId ? (
         <StoreLayoutElementSheet
           content={content}
           id={selectedId}
+          visible={showElement && !adding}
           editing={!!edit}
           busy={busy || !allowed || blocked}
           blockedReason={
@@ -549,69 +556,69 @@ export function StoreLayoutPanel({
           onClose={() => setShowElement(false)}
           onSelect={select}
           onApply={(next) => {
-            if (!edit || !canEdit) return false;
+            if (!showElement || adding || !edit || !canEdit) return false;
             setEdit(patchLayoutEdit(edit, next));
             return true;
           }}
         />
       ) : null}
-      {adding && edit ? (
-        <BottomSheet
-          visible
-          title="Ajouter au plan"
-          avoidKeyboard
-          scrollRef={additionScroll}
-          swipeToClose
-          onClose={() => {
-            if (busy) return;
-            if (additionDirty) {
-              setAdditionClose(true);
-              additionScroll.current?.scrollTo({ y: 0, animated: false });
-            } else setAdding(false);
-          }}
-        >
-          {additionClose ? (
-            <View className="gap-3">
-              <InlineAlert
-                title="Abandonner cet ajout ?"
-                message="Les champs de cet ajout ne sont pas encore appliqués au brouillon. Les autres modifications du plan restent conservées."
-              />
-              <SecondaryButton
-                label="Continuer cet ajout"
-                onPress={() => setAdditionClose(false)}
-              />
-              <SecondaryButton
-                label="Abandonner les champs de cet ajout"
-                onPress={() => {
-                  setAdding(false);
-                  setAdditionDirty(false);
-                  setAdditionClose(false);
-                }}
-              />
-            </View>
-          ) : null}
+      <BottomSheet
+        visible={adding && !!edit}
+        title="Ajouter au plan"
+        avoidKeyboard
+        scrollRef={additionScroll}
+        swipeToClose
+        onDismiss={() => {
+          if (!addingRef.current) {
+            setAdditionDirty(false);
+            setAdditionClose(false);
+          }
+        }}
+        onClose={() => {
+          if (!addingRef.current || busy) return;
+          if (additionDirty) {
+            setAdditionClose(true);
+            additionScroll.current?.scrollTo({ y: 0, animated: false });
+          } else closeAddition();
+        }}
+      >
+        {additionClose ? (
+          <View className="gap-3">
+            <InlineAlert
+              title="Abandonner cet ajout ?"
+              message="Les champs de cet ajout ne sont pas encore appliqués au brouillon. Les autres modifications du plan restent conservées."
+            />
+            <SecondaryButton
+              label="Continuer cet ajout"
+              onPress={() => setAdditionClose(false)}
+            />
+            <SecondaryButton
+              label="Abandonner les champs de cet ajout"
+              onPress={() => {
+                closeAddition();
+              }}
+            />
+          </View>
+        ) : null}
+        {edit && additionKey > 0 ? (
           <LayoutInventoryForm
             key={additionKey}
             content={edit.content}
-            busy={!canEdit}
+            busy={!canEdit || !adding}
             onDirty={() => setAdditionDirty(true)}
             onCancel={() => {
-              setAdding(false);
-              setAdditionDirty(false);
-              setAdditionClose(false);
+              closeAddition();
             }}
             onApply={(next, id) => {
-              if (!edit || !canEdit) return false;
+              if (!addingRef.current || !edit || !canEdit) return false;
               setEdit(patchLayoutEdit(edit, next));
-              setAdding(false);
-              setAdditionDirty(false);
-              setAdditionClose(false);
+              closeAddition();
               setSelectedId(id);
               return true;
             }}
           />
-        </BottomSheet>
-      ) : null}
+        ) : null}
+      </BottomSheet>
       <BottomSheet
         visible={!!review || history !== null || !!comparison}
         title={

@@ -1,3 +1,15 @@
+## Owner correction — independent sheet and scrim motion, 16 November 2026
+
+Build 69's week/detail/declaration journeys and product identity tags are accepted
+on iPhone. Its whole-modal fade is rejected. The stationary 25% backdrop must
+fade while only the bottom panel slides up/down. Reuse React Native Animated
+inside the existing transparent Modal; preserve parent-owned dirty/busy guards,
+header-only swipe and actual native dismissal before queued pickers. Retain the
+last visible content through exit, and keep the few conditionally mounted editors
+present until dismissal. No new animation library, business model, sync contract
+or API change. This supersedes the whole-modal fade in the 15 November polish.
+See `../qa/SHEET_MOTION_2026_11_16.md` for verification and release boundaries.
+
 ## Owner-approved weekly TG journey — 15 November 2026
 
 The owner accepts the Marché solaire week/TG/installation prototype. Reuse the

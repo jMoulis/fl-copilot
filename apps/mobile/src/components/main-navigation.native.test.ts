@@ -16,7 +16,7 @@ import { EventSeverity } from "../needs/event-severity";
 import TabLayout from "../app/(tabs)/_layout";
 import ImportsHub from "../app/(tabs)/actions";
 import JournalScreen from "../app/(tabs)/today";
-const runtime = vi.hoisted(() => ({ push: vi.fn(), sqlite: {} }));
+const runtime = vi.hoisted(() => ({ push: vi.fn(), sqlite: {}, os: "ios" }));
 vi.mock("expo-crypto", () => ({ randomUUID: () => "test-id" }));
 vi.mock("../providers/database-provider", () => ({
   useLocalDatabase: () => ({ sqlite: runtime.sqlite, deviceId: "test-device" }),
@@ -40,7 +40,11 @@ vi.mock("react-native", () => ({
   View: "View",
   Pressable: "Pressable",
   Image: "Image",
-  Platform: { OS: "ios" },
+  Platform: {
+    get OS() {
+      return runtime.os;
+    },
+  },
   StyleSheet: { create: (styles: object) => styles },
   useWindowDimensions: () => ({ fontScale: 1 }),
 }));
@@ -105,6 +109,7 @@ let tree: ReactTestRenderer | undefined;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   runtime.push.mockReset();
+  runtime.os = "ios";
   const original = console.error;
   vi.spyOn(console, "error").mockImplementation((...args) => {
     if (!String(args[0]).includes("react-test-renderer is deprecated"))
@@ -150,48 +155,54 @@ it.each(["Journal", "Analyses", "Copilote", "Imports"])(
     expect(runtime.push).toHaveBeenLastCalledWith("/settings");
   },
 );
-it("shows one canonical Mercalys history and retains the other intake paths", async () => {
-  await mount(createElement(ImportsHub));
-  expect(
-    tree!.root.findAll((n) => String(n.type) === "MercalysReader"),
-  ).toHaveLength(1);
-  for (const [title, path] of [
-    ["Tickets de casse", "/waste-tickets"],
-    ["Documents commerciaux", "/commercial-documents"],
-  ]) {
-    await act(() => menu(title).props.onPress());
-    expect(runtime.push).toHaveBeenLastCalledWith(path);
-  }
-  const press = (label: string) =>
-    tree!.root
-      .find(
-        (n) =>
-          String(n.type) === "Pressable" &&
-          n.props.accessibilityLabel === label,
-      )
-      .props.onPress();
-  await act(() => press("Documents reçus par email"));
-  expect(runtime.push).toHaveBeenLastCalledWith("/email-inbox");
-  await act(() => press("Synchronisation et envois"));
-  expect(runtime.push).toHaveBeenLastCalledWith("/sync-center");
-  await act(() => press("Importer un fichier"));
-  const sheet = tree!.root.find((n) => String(n.type) === "Sheet");
-  const onDismiss = sheet.props.onDismiss;
-  await act(() => menu("Ventes Mercalys").props.onPress());
-  expect(tree!.root.findAll((n) => String(n.type) === "Sheet")).toHaveLength(0);
-  expect(
-    tree!.root.find((n) => String(n.type) === "MercalysReader").props.importMenu
-      .visible,
-  ).toBe(false);
-  await act(() => onDismiss());
-  expect(
-    tree!.root.find((n) => String(n.type) === "MercalysReader").props.importMenu
-      .visible,
-  ).toBe(true);
-  expect(
-    tree!.root.findAll((n) => String(n.type) === "MercalysReader"),
-  ).toHaveLength(1);
-});
+it.each(["ios", "android", "web"])(
+  "shows one canonical Mercalys history and waits for dismissal before its next menu on %s",
+  async (os) => {
+    runtime.os = os;
+    await mount(createElement(ImportsHub));
+    expect(
+      tree!.root.findAll((n) => String(n.type) === "MercalysReader"),
+    ).toHaveLength(1);
+    for (const [title, path] of [
+      ["Tickets de casse", "/waste-tickets"],
+      ["Documents commerciaux", "/commercial-documents"],
+    ]) {
+      await act(() => menu(title).props.onPress());
+      expect(runtime.push).toHaveBeenLastCalledWith(path);
+    }
+    const press = (label: string) =>
+      tree!.root
+        .find(
+          (n) =>
+            String(n.type) === "Pressable" &&
+            n.props.accessibilityLabel === label,
+        )
+        .props.onPress();
+    await act(() => press("Documents reçus par email"));
+    expect(runtime.push).toHaveBeenLastCalledWith("/email-inbox");
+    await act(() => press("Synchronisation et envois"));
+    expect(runtime.push).toHaveBeenLastCalledWith("/sync-center");
+    await act(() => press("Importer un fichier"));
+    const sheet = tree!.root.find((n) => String(n.type) === "Sheet");
+    const onDismiss = sheet.props.onDismiss;
+    await act(() => menu("Ventes Mercalys").props.onPress());
+    expect(tree!.root.findAll((n) => String(n.type) === "Sheet")).toHaveLength(
+      0,
+    );
+    expect(
+      tree!.root.find((n) => String(n.type) === "MercalysReader").props
+        .importMenu.visible,
+    ).toBe(false);
+    await act(() => onDismiss());
+    expect(
+      tree!.root.find((n) => String(n.type) === "MercalysReader").props
+        .importMenu.visible,
+    ).toBe(true);
+    expect(
+      tree!.root.findAll((n) => String(n.type) === "MercalysReader"),
+    ).toHaveLength(1);
+  },
+);
 it("retains the selected Journal week and reuses existing observation capture", async () => {
   await mount(createElement(JournalScreen));
   await act(() =>
