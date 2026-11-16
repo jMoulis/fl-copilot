@@ -1,6 +1,9 @@
 import { journalContextFixture } from "../../../scripts/test-journal-context-fixtures";
 import { observedWeatherContextFixture } from "../../../scripts/test-observed-weather-fixtures";
-import { economicContextFixture } from "../../../scripts/test-economic-fixtures";
+import {
+  economicContextFixture,
+  economicProduceContextFixture,
+} from "../../../scripts/test-economic-fixtures";
 import { it, expect, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { buildApp } from "../src/build-app";
@@ -182,6 +185,34 @@ it("requires store authorization before any provider request and validates week 
     });
     expect(failed.statusCode).toBe(500);
     expect(readStored).toHaveBeenCalledTimes(1);
+
+    source.economy = economicProduceContextFixture();
+    for (const method of ["GET", "POST"] as const) {
+      const legacy = await app.inject({
+        method,
+        url: "/api/v1/store/context?weekStart=2026-10-05",
+        headers: { ...headers, "x-context-economy": "1" },
+      });
+      expect(legacy.statusCode).toBe(200);
+      expect(
+        legacy.json().economy.series.map((s: { id: string }) => s.id),
+      ).toEqual(["011813720", "001587668"]);
+      expect(legacy.json().economy.sourceUrl).toBe(
+        "https://bdm.insee.fr/series/sdmx/data/SERIES_BDM/001587668+011813720",
+      );
+      const extended = await app.inject({
+        method,
+        url: "/api/v1/store/context?weekStart=2026-10-05",
+        headers: {
+          ...headers,
+          "x-context-economy": "1",
+          "x-context-produce-prices": "1",
+        },
+      });
+      expect(extended.statusCode).toBe(200);
+      expect(extended.json().economy).toEqual(source.economy);
+      expect(source.economy.series).toHaveLength(4);
+    }
   } finally {
     await app.close();
   }

@@ -136,3 +136,32 @@ it("uses the shared cache once per month range, does not request future source m
     read.mockRestore();
   }
 });
+
+it("validates the four-series official capture and preserves each monthly scope", () => {
+  const raw = readFileSync(
+    new URL(
+      "../../../../scripts/fixtures/insee-produce-monthly-2026-11-16.xml",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const data = parse(raw);
+  expect(data.series).toHaveLength(4);
+  expect(
+    data.series.find((s) => s.id === "011814957")!.points.at(-1),
+  ).toMatchObject({ period: "2026-10", value: "103.21" });
+  expect(
+    data.series.find((s) => s.id === "011815032")!.points.at(-1),
+  ).toMatchObject({ period: "2026-10", value: "104.75" });
+  expect(() =>
+    parse(
+      raw.replace(
+        "01.1.6 - Fruits et fruits à coque",
+        "01.1.6.1 - Fruits frais",
+      ),
+    ),
+  ).toThrow("INSEE_DEFINITION_CHANGED");
+  expect(() => parse(raw.replace('REF_AREA="FM"', 'REF_AREA="FE"'))).toThrow(
+    "INSEE_UNIT_CHANGED",
+  );
+});

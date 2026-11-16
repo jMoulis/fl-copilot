@@ -1,3 +1,14 @@
+## Owner-approved Journal produce price context — 16 November 2026
+
+Extend the existing monthly INSEE context with metropolitan base-2025 COICOP
+01.1.6 (fruit and nuts) and 01.1.7 (vegetables, tubers, cooking bananas and pulses).
+Preserve their explicit broader scope rather than calling them fresh-only rayon
+indices. Reuse daily archives, shared exact-month year-on-year arithmetic and the
+existing economic sheet/compact Copilot evidence. Negotiate the extended response
+so build 74 retains the original two-series format. No new model, paid source,
+scheduler, database model or causal inference. See
+`../qa/JOURNAL_PRODUCE_PRICES_2026_11_16.md` for sources and delivery boundaries.
+
 ## Owner-approved secondary settings polish — 16 November 2026
 
 Apply the accepted Marché solaire study to Settings, Store and Synchronization.

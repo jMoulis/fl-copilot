@@ -1,5 +1,8 @@
 import { expect, it } from "vitest";
-import { economicContextFixture } from "../../../scripts/test-economic-fixtures";
+import {
+  economicContextFixture,
+  economicProduceContextFixture,
+} from "../../../scripts/test-economic-fixtures";
 import { economicPeriodSummary } from "./economic-context";
 it("keeps different monthly coverage, computes exact-month annual change and confidence in points", () => {
   const s = economicPeriodSummary(economicContextFixture(), "2026-11");
@@ -43,4 +46,24 @@ it("never uses a later month, never substitutes an approximate annual reference 
     value: null,
   });
   expect(economicPeriodSummary(undefined, "2026-11")).toEqual([]);
+});
+
+it("computes separate official produce price changes without combining indices or borrowing reference months", () => {
+  const context = economicProduceContextFixture();
+  const result = economicPeriodSummary(context, "2026-11");
+  expect(result.find((s) => s.id === "011814957")).toMatchObject({
+    period: "2026-10",
+    annualChangePercent: "5.25",
+    monthlyDifferencePoints: null,
+  });
+  expect(result.find((s) => s.id === "011815032")).toMatchObject({
+    period: "2026-09",
+    annualChangePercent: "-10.00",
+  });
+  context.series.find((s) => s.id === "011814957")!.points[0]!.period =
+    "2025-09";
+  expect(
+    economicPeriodSummary(context, "2026-11").find((s) => s.id === "011814957")!
+      .annualChangePercent,
+  ).toBeNull();
 });

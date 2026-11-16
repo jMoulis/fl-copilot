@@ -2,7 +2,12 @@ import { useState } from "react";
 import { Linking, Pressable, Text, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { economicPeriodSummary } from "@fl-copilot/analytics-core";
-import { economicSeriesLabels, type EconomicContext } from "@fl-copilot/domain";
+import {
+  economicSeriesLabels,
+  economicProduceScope,
+  isEconomicPriceSeries,
+  type EconomicContext,
+} from "@fl-copilot/domain";
 import { BottomSheet, SecondaryButton } from "../components/ui";
 import { contextIsStale } from "../store/weekly-context-repository";
 import { journalColors as c } from "./journal-theme";
@@ -39,6 +44,20 @@ export function JournalEconomy({
   const stale = !!context && contextIsStale(context, new Date());
   const food = summaries.find((s) => s.id === "011813720"),
     confidence = summaries.find((s) => s.id === "001587668");
+  const produce = summaries.filter(
+    (s) => s.id === "011814957" || s.id === "011815032",
+  );
+  const compactPrices = produce.some((s) => s.period)
+    ? produce
+    : food
+      ? [food]
+      : [];
+  const compactLabels = {
+    "011813720": "Prix alimentaires",
+    "001587668": "Confiance",
+    "011814957": "Fruits (INSEE)",
+    "011815032": "Légumes (INSEE)",
+  };
   async function source(id: string) {
     try {
       await Linking.openURL(`https://www.insee.fr/fr/statistiques/serie/${id}`);
@@ -68,15 +87,14 @@ export function JournalEconomy({
           <Text style={{ color: c.muted, fontSize: 12, fontWeight: "600" }}>
             Contexte national{stale ? " · à actualiser" : ""}
           </Text>
-          {food?.period || confidence?.period ? (
+          {compactPrices.some((s) => s.period) || confidence?.period ? (
             <Text style={{ color: c.muted, fontSize: 11, lineHeight: 16 }}>
-              Prix alimentaires ·{" "}
-              {food?.annualChangePercent != null
-                ? `${number(food.annualChangePercent)} % / an`
-                : food?.value != null
-                  ? "indice à consulter"
-                  : "indisponible"}{" "}
-              · {monthLabel(food?.period ?? null)}
+              {compactPrices
+                .map(
+                  (s) =>
+                    `${compactLabels[s.id]} · ${s.annualChangePercent !== null ? `${number(s.annualChangePercent)} % / an` : s.value !== null ? "indice à consulter" : "indisponible"} · ${monthLabel(s.period)}`,
+                )
+                .join("\n")}
               {"\n"}Confiance · {number(confidence?.value ?? null)}
               {confidence?.value != null ? " points" : ""} ·{" "}
               {monthLabel(confidence?.period ?? null)}
@@ -95,6 +113,11 @@ export function JournalEconomy({
           Repères mensuels de l’INSEE pour la France métropolitaine. Ils ne
           mesurent pas l’effet sur ton magasin.
         </Text>
+        {produce.length ? (
+          <Text className="text-sm leading-5 text-muted">
+            {economicProduceScope}
+          </Text>
+        ) : null}
         {summaries.length ? (
           summaries.map((s) => (
             <View key={s.id} className="gap-2 border-t border-line pt-4">
@@ -103,14 +126,14 @@ export function JournalEconomy({
               </Text>
               <Text className="text-muted">{monthLabel(s.period)}</Text>
               <Text className="text-2xl font-semibold text-ink">
-                {s.id === "011813720" && s.annualChangePercent !== null
+                {isEconomicPriceSeries(s.id) && s.annualChangePercent !== null
                   ? `${number(s.annualChangePercent)} % sur un an`
                   : s.value !== null
                     ? `${number(s.value)} · indice`
                     : "Indisponible"}
               </Text>
               <Text className="text-muted">
-                {s.id === "011813720"
+                {isEconomicPriceSeries(s.id)
                   ? `Indice ${number(s.value)}, base 100 en 2025. La variation annuelle compare exactement le même mois à un an d’écart.`
                   : `Moyenne de long terme : 100.${s.monthlyDifferencePoints !== null ? ` Écart au mois précédent : ${number(s.monthlyDifferencePoints)} points.` : ""}`}
               </Text>

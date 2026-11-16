@@ -1,7 +1,10 @@
 import { createElement } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { economicContextFixture } from "../../../../scripts/test-economic-fixtures";
+import {
+  economicContextFixture,
+  economicProduceContextFixture,
+} from "../../../../scripts/test-economic-fixtures";
 import { JournalEconomy } from "./journal-economy";
 const openURL = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock("react-native", () => ({
@@ -98,4 +101,33 @@ it("keeps zero confidence and missing inflation distinct, with no automatic refr
       (n) => String(n.type) === "Button" && n.props.label === "Actualisation…",
     )[0]!.props.disabled,
   ).toBe(true);
+});
+
+it("shows produce first with separate months, scope and direct sources in the existing sheet", async () => {
+  await act(() => {
+    tree = create(
+      createElement(JournalEconomy, {
+        date: "2026-11-16",
+        context: economicProduceContextFixture(),
+        busy: false,
+        onRefresh: vi.fn(),
+      }),
+    );
+  });
+  expect(text()).toContain("Fruits (INSEE) · 5,25 % / an · octobre 2026");
+  expect(text()).toContain("Légumes (INSEE) · -10 % / an · septembre 2026");
+  await act(() =>
+    tree!.root.find((n) => String(n.type) === "Pressable").props.onPress(),
+  );
+  expect(text()).toContain("ne correspondent pas strictement au rayon frais");
+  const links = tree!.root.findAll(
+    (n) =>
+      String(n.type) === "Button" &&
+      n.props.label === "Consulter la source INSEE",
+  );
+  expect(links).toHaveLength(4);
+  await act(() => links[2]!.props.onPress());
+  expect(openURL).toHaveBeenLastCalledWith(
+    "https://www.insee.fr/fr/statistiques/serie/011814957",
+  );
 });

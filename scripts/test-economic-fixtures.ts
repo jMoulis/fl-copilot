@@ -1,6 +1,7 @@
 import {
   economicContextSchema,
-  economicDataUrl,
+  legacyEconomicDataUrl as economicDataUrl,
+  economicDataUrl as produceEconomicDataUrl,
 } from "../packages/domain/src/index";
 export function economicContextFixture() {
   const point = (period: string, value: string | null) => ({
@@ -32,4 +33,30 @@ export function economicContextFixture() {
       },
     ],
   });
+}
+
+/** Synthetic values for deterministic UI/arithmetic tests, not a provider capture. */
+export function economicProduceContextFixture() {
+  const context = economicContextFixture();
+  context.sourceUrl = produceEconomicDataUrl;
+  const point = (period: string, value: string) => ({
+    period,
+    value,
+    observationStatus: "A",
+    quality: "DEF",
+    revised: false,
+  });
+  context.series.push(
+    {
+      id: "011814957",
+      lastUpdated: "2026-11-13",
+      points: [point("2025-10", "100"), point("2026-10", "105.25")],
+    },
+    {
+      id: "011815032",
+      lastUpdated: "2026-11-13",
+      points: [point("2025-09", "100"), point("2026-09", "90")],
+    },
+  );
+  return economicContextSchema.parse(context);
 }
