@@ -32,6 +32,7 @@ export function BottomSheet({
   children,
 }: BottomSheetProps) {
   const [presented, setPresented] = useState(visible);
+  const [retained, setRetained] = useState(visible);
   const closing = useRef(false);
   const current = useRef({ visible, onClose, onDismiss });
   current.current = { visible, onClose, onDismiss };
@@ -40,12 +41,18 @@ export function BottomSheet({
     contents.current = { title, footer, children };
   useEffect(() => {
     if (closing.current) return;
-    if (visible) setPresented(true);
-    else if (presented) {
+    if (visible) {
+      setRetained(true);
+      setPresented(true);
+    } else if (presented) {
       closing.current = true;
       setPresented(false);
     }
   }, [visible, presented]);
+
+  // A dismissed presenter must leave the native hierarchy. Keeping every Host
+  // alive retains native presentation/touch state across unrelated panels.
+  if (!visible && !retained) return null;
 
   return (
     <Host
@@ -66,8 +73,10 @@ export function BottomSheet({
           closing.current = false;
           current.current.onDismiss?.();
           if (current.current.visible) setPresented(true);
-          else
+          else {
             contents.current = { title: "", footer: undefined, children: null };
+            setRetained(false);
+          }
         }}
       >
         <Group

@@ -1,3 +1,7 @@
+## Owner correction — build 71 sheet reopening and clipped content, 16 November 2026
+
+Remove the native presenter after real dismissal; keep outgoing content until that event and retain existing parent guards/picker sequencing. Bound fixed sheet headings and preserve a shrinking scroll body. Qualify repeated different-panel openings and the weekly TG explanation; physical TestFlight acceptance remains distinct. See `../qa/NATIVE_SHEET_REOPEN_2026_11_16.md`. No domain or synchronization change.
+
 ## Owner correction — native interactive iPhone sheets, 16 November 2026
 
 The owner accepts build 70's backdrop but rejects a sheet that waits until

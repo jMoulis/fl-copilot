@@ -120,9 +120,24 @@ it("keeps the selected content until actual native dismissal and then releases a
     tree.root.find((node) => String(node.type) === "Detail").props.selected,
   ).toBe("source-1");
   expect(dismissed).not.toHaveBeenCalled();
-  await act(() => sheet().props.onDismiss());
-  await act(() => sheet().props.onDismiss());
+  const nativeDismiss = sheet().props.onDismiss;
+  await act(() => nativeDismiss());
+  expect(tree.toJSON()).toBeNull();
+  await act(() => nativeDismiss());
   expect(dismissed).toHaveBeenCalledOnce();
+});
+
+it("removes the native presenter after closing and creates it again on reopening", async () => {
+  await mount({ visible: false });
+  expect(tree.toJSON()).toBeNull();
+  for (let i = 0; i < 3; i++) {
+    await update({ visible: true });
+    expect(sheet().props.isPresented).toBe(true);
+    await update({ visible: false });
+    expect(sheet().props.isPresented).toBe(false);
+    await act(() => sheet().props.onDismiss());
+    expect(tree.toJSON()).toBeNull();
+  }
 });
 it("notifies the owner after native gesture dismissal starts, never from a fabricated gesture threshold", async () => {
   const close = vi.fn(),

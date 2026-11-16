@@ -143,6 +143,8 @@ export function BottomSheetContent({
           ref={headingRef}
           accessible
           accessibilityRole="header"
+          numberOfLines={2}
+          accessibilityLabel={title}
           style={{
             flex: 1,
             minWidth: 0,
@@ -177,7 +179,7 @@ export function BottomSheetContent({
           />
         </Pressable>
       </View>
-      <View style={fill ? { flex: 1 } : { flexShrink: 1 }}>
+      <View style={fill ? { flex: 1, minHeight: 0 } : { flexShrink: 1 }}>
         <ScrollView
           ref={attachBody}
           keyboardShouldPersistTaps="handled"
