@@ -124,9 +124,10 @@ export async function readCopilotWeek(
   const fact = (
     key: string,
     label: string,
-    value: string,
+    value: string | null,
     sourceId: string,
     factKind: "DERIVED" | "QUALITY",
+    detail?: string,
   ) =>
     copilotEvidenceSchema.parse({
       id: `store-week/${revision}/${key}`,
@@ -136,6 +137,7 @@ export async function readCopilotWeek(
       label,
       value,
       factKind,
+      ...(detail === undefined ? {} : { detail }),
     });
   if (context) {
     const c = context,
@@ -182,9 +184,34 @@ export async function readCopilotWeek(
     economy,
     (context?.weekEnd ?? input.weekStart).slice(0, 7),
   );
-  const economicText = economy
-    ? ` Conjoncture INSEE nationale mensuelle, édition actuelle révisable, relevée le ${stamp(economy.retrievedAt)} ; statut ${states[economy.status]}. ${economicSummary.map((s) => `${economicSeriesLabels[s.id]} : ${s.period ?? "mois indisponible"}, indice ${s.value ?? "indisponible"}${isEconomicPriceSeries(s.id) ? ` (base 2025=100), évolution sur un an ${s.annualChangePercent ?? "indisponible"} %` : ` (moyenne de long terme 100), écart au mois précédent ${s.monthlyDifferencePoints ?? "indisponible"} points`}.`).join(" ")}${economicSummary.some((s) => s.id === "011814957" || s.id === "011815032") ? ` ${economicProduceScope}` : ""} Ces périodes peuvent différer du mois demandé ; ce ne sont ni des statistiques quotidiennes du magasin, ni une explication causale de ses ventes. Les dates de publication de chaque valeur historique sont inconnues : ne pas prétendre reconstituer ce qui était connu ce jour-là.`
-    : "";
+  // Atomic values let the answer cite a period/index/change without inserting
+  // the entire mixed Journal payload through one {{value}} marker.
+  for (const series of economicSummary) {
+    const price = isEconomicPriceSeries(series.id);
+    const label = economicSeriesLabels[series.id];
+    const detail = `Conjoncture INSEE nationale mensuelle, édition actuelle révisable ; relevée le ${stamp(economy!.retrievedAt)} ; statut ${states[economy!.status]}. ${label} : mois ${series.period ?? "indisponible"}, indice ${series.value ?? "indisponible"}, ${price ? `évolution annuelle ${series.annualChangePercent ?? "indisponible"} %` : `écart mensuel ${series.monthlyDifferencePoints ?? "indisponible"} points`}. ${price ? "Indice base 2025=100 ; variation sur le même mois un an auparavant." : "Indice moyenne de long terme 100 ; écart au mois précédent en points."} ${series.id === "011814957" || series.id === "011815032" ? economicProduceScope : ""} Ce ne sont ni des statistiques quotidiennes du magasin, ni une explication causale de ses ventes. Les dates de publication de chaque valeur historique sont inconnues.`;
+    const source = `https://www.insee.fr/fr/statistiques/serie/${series.id}`;
+    for (const [key, title, value] of [
+      ["period", "Mois", series.period],
+      ["index", "Indice", series.value],
+      [
+        "change",
+        price ? "Évolution annuelle (%)" : "Écart mensuel (points)",
+        price ? series.annualChangePercent : series.monthlyDifferencePoints,
+      ],
+    ] as const) {
+      evidence.push(
+        fact(
+          `economy/${series.id}/${key}`,
+          `${label} · ${title}`,
+          value,
+          source,
+          "DERIVED",
+          detail,
+        ),
+      );
+    }
+  }
   const traffic = journal?.transport;
   const rawTrafficText =
     traffic && typeof traffic !== "string"
@@ -282,13 +309,15 @@ export async function readCopilotWeek(
     fact(
       "coverage",
       `Contexte externe — semaine du ${input.weekStart}`,
+      context
+        ? "Contexte du Journal disponible."
+        : "Réglages du magasin absents ou non synchronisés.",
+      storeId,
+      "QUALITY",
       (context
         ? `Semaine du lundi au dimanche, magasin et sources configurés.${service.readStored ? " Journal quotidien consulté en base ; les dates de collecte figurent dans chaque source. Aucun rafraîchissement fournisseur lancé par cette lecture." : ""} Les prévisions peuvent couvrir seulement une partie de la semaine ; conserver la fraîcheur et les données manquantes de chaque fournisseur. Contexte externe distinct des chiffres Mercalys, des observations magasin et des horaires d'ouverture. Aucun impact causal, stock, fréquentation ou chiffre de vente n'est calculé.`
         : "Réglages du magasin absents ou non synchronisés. Demander la commune, le code postal et la zone scolaire si nécessaires ; aucun contexte local n'a été inventé. Les analyses déjà disponibles restent utilisables.") +
-        economicText +
         journalText,
-      economy ? economy.sourceUrl : storeId,
-      economy ? "DERIVED" : "QUALITY",
     ),
   );
   return copilotWeekResultSchema.parse({

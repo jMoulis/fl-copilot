@@ -290,7 +290,7 @@ export const copilotWeekResultSchema = z
         schoolHolidays: weeklyContextSchema.shape.schoolHolidays,
       })
       .nullable(),
-    evidence: z.array(copilotEvidenceSchema).min(1).max(4),
+    evidence: z.array(copilotEvidenceSchema).min(1).max(16),
   })
   .superRefine((r, ctx) => {
     const c = r.context;

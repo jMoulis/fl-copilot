@@ -48,3 +48,25 @@ explicit test data, distinct from the real provider capture.
 
 API deployment, public-source collection, merged code, native build availability
 and owner acceptance remain separate checkpoints. No paid EAS build is requested.
+
+## 17 November — avoid raw context substitution in conversational answers
+
+Owner test on build 75 exposed a server-side presentation defect: one `value`
+marker expanded to the entire mixed economic/local/transit coverage string.
+Read-only inspection of assistant message `e1cb0722-f792-4637-ba58-102ac77736bd`
+confirmed the persisted answer, rather than a native Markdown rendering failure.
+
+Project the existing deterministic monthly summaries as three citable scalar
+facts per series (period, index, annual percentage or monthly confidence points).
+Each uses the official individual INSEE series source and retains period, values,
+freshness, revision and category qualifications in its source detail. Keep
+missing values null. Move the mixed Journal coverage narrative into the existing
+evidence detail field, with a short display value. Bound the internal weekly
+evidence list to sixteen (four existing plus four series times three fields).
+No prompt/model change, new tool, provider request, archive mutation, migration
+or native build. Old persisted messages remain intact.
+
+Regression coverage: real reader to answer renderer, two-row Markdown table with
+independent source details and no unrelated transport/local/coverage prose in
+visible text; exact monthly arithmetic and null values remain tested. Delivery
+and a new model-generated answer must be verified separately.
