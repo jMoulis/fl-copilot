@@ -184,7 +184,7 @@ export function createWeekContextService(
           ? [
               (async () => {
                 const [journal, transport] = await Promise.all([
-                  readJournalContext(db, cache, settings, weekEnd, now()),
+                  readJournalContext(db, cache, settings, weekEnd, now(), true),
                   readTransportContext(
                     db,
                     settings,

@@ -6,6 +6,7 @@ import {
   type EconomicContext,
   type JournalContext,
   journalItemsForPeriod,
+  nationalNewsForPeriod,
   parisDate,
   type ObservedWeatherContext,
 } from "@fl-copilot/domain";
@@ -281,6 +282,24 @@ export async function readCopilotWeek(
     rawTrafficText.length > 1800
       ? `${rawTrafficText.slice(0, 1800)}… Extrait partiel ; consulte le Journal pour la liste. Messages annoncés, pas constats magasin ni preuve causale. Source https://me-deplacer.iledefrance-mobilites.fr/infos-trafic.`
       : rawTrafficText;
+  if (journal)
+    for (const { item, source, dated } of nationalNewsForPeriod(
+      journal,
+      input.weekStart,
+      context?.weekEnd ?? input.weekStart,
+      parisDate(now.toISOString()),
+    )) {
+      evidence.push(
+        fact(
+          `news-${evidence.length}`,
+          item.title,
+          "Annonce publiée · impact magasin non établi.",
+          item.sourceUrl,
+          "DERIVED",
+          `${source.provider}. ${item.summary} ${item.scopeLabel ?? ""} Publication : ${item.publishedAt ?? "inconnue"}. ${dated ? `Période annoncée : ${item.startDate} — ${item.endDate}.` : "Période exacte inconnue ; publication récente, pas événement daté."} Collecte : ${source.firstCapturedAt ?? "inconnue"}. État : ${source.status}.`,
+        ),
+      );
+    }
   const journalText = journal
     ? ` Journal externe : ${journal.sources
         .map(

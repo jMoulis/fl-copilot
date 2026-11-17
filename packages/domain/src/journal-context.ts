@@ -33,6 +33,8 @@ export const journalSourcePayloadSchema = z
       .array(
         z
           .object({
+            publishedAt: z.iso.datetime().nullable().optional(),
+            scopeLabel: z.string().max(420).optional(),
             title: z.string().min(1).max(180),
             summary: z.string().max(420),
             sourceUrl: z.string().url().startsWith("https://"),
@@ -51,7 +53,13 @@ export const journalSourcePayloadSchema = z
   .strict();
 export const journalSourceSchema = z
   .object({
-    kind: z.enum(["WORKS", "AGENDA", "CONSUMPTION"]),
+    kind: z.enum([
+      "WORKS",
+      "AGENDA",
+      "CONSUMPTION",
+      "NATIONAL_SOCIAL",
+      "NATIONAL_RESTRICTIONS",
+    ]),
     status: z.enum(["AVAILABLE", "STALE", "UNAVAILABLE", "NOT_CONFIGURED"]),
     provider: z.string().min(1).max(100),
     sourceUrl: z.string().url().startsWith("https://"),
@@ -86,6 +94,18 @@ export const journalSourceSchema = z
 export const journalContextSchema = z
   .object({
     sources: z.array(journalSourceSchema).length(3),
+    national: z
+      .array(journalSourceSchema)
+      .max(2)
+      .refine(
+        (rows) =>
+          rows.every(
+            (s) =>
+              s.kind === "NATIONAL_SOCIAL" ||
+              s.kind === "NATIONAL_RESTRICTIONS",
+          ) && new Set(rows.map((s) => s.kind)).size === rows.length,
+      )
+      .optional(),
     transport: z.union([z.literal("NOT_CONFIGURED"), transportContextSchema]),
   })
   .strict()
@@ -143,4 +163,52 @@ export function journalSourceForDate(
     issue: selected ? null : "HISTORY_UNAVAILABLE",
     history,
   };
+}
+
+/** Bounded archived selection, never today's source retroactively applied to a past day.
+ * Undated announcements are recent reading material, not dated business observations. */
+export function nationalNewsForPeriod(
+  context: JournalContext,
+  start: string,
+  end: string,
+  today: string,
+) {
+  const seen = new Set<string>();
+  const earliest = new Date(Date.parse(`${start}T12:00:00Z`) - 14 * 86400000)
+    .toISOString()
+    .slice(0, 10);
+  return (context.national ?? [])
+    .flatMap((raw) => {
+      const source = journalSourceForDate(
+        raw,
+        end < today ? end : today,
+        today,
+      );
+      return (source.payload?.items ?? []).flatMap((item) => {
+        const published = item.publishedAt
+          ? new Intl.DateTimeFormat("en-CA", {
+              timeZone: "Europe/Paris",
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+            }).format(new Date(item.publishedAt))
+          : undefined;
+        const dated = !!item.startDate && !!item.endDate;
+        const include = dated
+          ? item.startDate! <= end && item.endDate! >= start
+          : !!published &&
+            published >= earliest &&
+            published <= end &&
+            published <= today;
+        if (!include || seen.has(item.sourceUrl)) return [];
+        seen.add(item.sourceUrl);
+        return [{ item, source, dated }];
+      });
+    })
+    .sort(
+      (a, b) =>
+        Number(b.dated) - Number(a.dated) ||
+        (b.item.publishedAt ?? "").localeCompare(a.item.publishedAt ?? ""),
+    )
+    .slice(0, 3);
 }

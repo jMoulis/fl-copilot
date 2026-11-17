@@ -195,8 +195,12 @@ export function parseWorks(html: string): JournalSourcePayload {
   if (!items.length) throw Error("WORKS_SECTION_MISSING");
   return journalSourcePayloadSchema.parse({ items, consumption: null });
 }
-export async function boundedHtml(response: Response) {
-  if (!/text\/html/i.test(response.headers.get("content-type") ?? ""))
+export async function boundedHtml(response: Response, xml = false) {
+  if (
+    !(
+      xml ? /(?:text\/xml|application\/(?:rss\+xml|xml))/i : /text\/html/i
+    ).test(response.headers.get("content-type") ?? "")
+  )
     throw Error("CONTEXT_NOT_HTML");
   if (Number(response.headers.get("content-length")) > 1_500_000)
     throw Error("CONTEXT_TOO_LARGE");

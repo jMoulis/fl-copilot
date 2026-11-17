@@ -236,3 +236,36 @@ it("persists Journal sources and revisions through SQLite reopen, old responses 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+it("retains national source provenance after SQLite restart and provider failure", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "flc_news_")),
+    file = join(dir, "local.db");
+  let db = new DatabaseSync(file);
+  try {
+    await runLocalMigrations(adapter(db));
+    const settings = storeContextFixture(),
+      c = weeklyContextFixture(settings);
+    c.journal = journalContextFixture();
+    c.journal.national = [
+      { ...structuredClone(c.journal.sources[0]!), kind: "NATIONAL_SOCIAL" },
+    ];
+    await new WeeklyContextRepository(adapter(db)).save(c, settings);
+    db.close();
+    db = new DatabaseSync(file);
+    const repo = new WeeklyContextRepository(adapter(db));
+    expect((await repo.get(settings, c.weekStart))!.journal!.national).toEqual(
+      c.journal.national,
+    );
+    const failed = structuredClone(c);
+    failed.retrievedAt = "2026-11-17T12:00:00.000Z";
+    failed.journal!.national![0]!.status = "UNAVAILABLE";
+    failed.journal!.national![0]!.payload = null;
+    const saved = await repo.save(failed, settings);
+    expect(saved.journal!.national![0]).toEqual({
+      ...c.journal.national[0],
+      status: "STALE",
+    });
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

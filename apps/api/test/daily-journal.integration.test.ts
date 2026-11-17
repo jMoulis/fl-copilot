@@ -67,7 +67,12 @@ describe.skipIf(!uri)("durable daily shop context", () => {
       );
       c.economy = economicContextFixture();
       c.journal = journalContextFixture();
+      c.journal.national = [
+        { ...structuredClone(c.journal.sources[0]!), kind: "NATIONAL_SOCIAL" },
+      ];
       if (outage) {
+        c.journal.national[0]!.status = "UNAVAILABLE";
+        c.journal.national[0]!.payload = null;
         c.weather.status = "UNAVAILABLE";
         c.weather.days = [];
         c.economy.status = "UNAVAILABLE";
@@ -84,6 +89,39 @@ describe.skipIf(!uri)("durable daily shop context", () => {
       },
     };
   }
+  it("retains national announcements and provenance through durable daily replay and outages", async () => {
+    const { settings, read, fail } = await setup();
+    await collectDailyJournal(
+      database,
+      { read },
+      settings.storeId,
+      new Date("2026-10-09T08:00:00Z"),
+    );
+    const first = await readDailyJournalWeek(
+      await database.getDb(),
+      settings,
+      "2026-10-05",
+      new Date("2026-10-09T09:00:00Z"),
+    );
+    expect(first!.journal!.national).toHaveLength(1);
+    fail();
+    await collectDailyJournal(
+      database,
+      { read },
+      settings.storeId,
+      new Date("2026-10-09T13:00:00Z"),
+    );
+    const saved = await readDailyJournalWeek(
+      await database.getDb(),
+      settings,
+      "2026-10-05",
+      new Date("2026-10-09T14:00:00Z"),
+    );
+    expect(saved!.journal!.national![0]!.payload).toEqual(
+      first!.journal!.national![0]!.payload,
+    );
+    expect(saved!.journal!.national![0]!.status).toBe("STALE");
+  });
   it("consolidates the day, retains source periods and survives restart with zero HTTP requests during AI turns", async () => {
     const { settings, db, read, fail } = await setup();
     const at = new Date("2026-10-09T08:00:00Z");

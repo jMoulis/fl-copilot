@@ -186,6 +186,27 @@ it("requires store authorization before any provider request and validates week 
     expect(failed.statusCode).toBe(500);
     expect(readStored).toHaveBeenCalledTimes(1);
 
+    source.journal!.national = [
+      {
+        ...structuredClone(source.journal!.sources[0]!),
+        kind: "NATIONAL_SOCIAL",
+      },
+    ];
+    for (const enabled of [false, true]) {
+      const news = await app.inject({
+        url: "/api/v1/store/context?weekStart=2026-10-05",
+        headers: {
+          ...headers,
+          "x-context-journal": "1",
+          ...(enabled ? { "x-context-national-news": "1" } : {}),
+        },
+      });
+      expect(news.statusCode).toBe(200);
+      expect(news.json().journal.national).toEqual(
+        enabled ? source.journal!.national : undefined,
+      );
+      expect(news.json().journal.sources).toHaveLength(3);
+    }
     source.economy = economicProduceContextFixture();
     for (const method of ["GET", "POST"] as const) {
       const legacy = await app.inject({

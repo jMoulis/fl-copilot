@@ -45,6 +45,17 @@ export class WeeklyContextRepository {
           })),
         };
       }
+      if (!next.journal.national && previous.journal.national)
+        next.journal.national = previous.journal.national;
+      if (next.journal.national)
+        next.journal.national = next.journal.national.map((source) => {
+          const prior = previous.journal!.national?.find(
+            (p) => p.kind === source.kind,
+          );
+          return source.status === "UNAVAILABLE" && prior?.payload
+            ? { ...prior, status: "STALE", issue: source.issue }
+            : source;
+        });
       next.journal.sources = next.journal.sources.map((source) => {
         const prior = previous.journal!.sources.find(
           (p) => p.kind === source.kind,

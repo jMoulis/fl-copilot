@@ -441,7 +441,9 @@ export class ApiClient {
         method: collect ? "POST" : "GET",
         headers: {
           ...syncHeaders(accessToken, storeId),
-          ...(includeJournal ? { "x-context-journal": "1" } : {}),
+          ...(includeJournal
+            ? { "x-context-journal": "1", "x-context-national-news": "1" }
+            : {}),
           ...(includeEconomicContext
             ? { "x-context-economy": "1", "x-context-produce-prices": "1" }
             : {}),

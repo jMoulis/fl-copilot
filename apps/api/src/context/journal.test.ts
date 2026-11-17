@@ -157,3 +157,51 @@ it("preserves equal-content captures on different days for within-week historica
     "2026-11-13T09:00:00.000Z",
   ]);
 });
+it("archives national announcements idempotently, retains failed-source revisions and hides future knowledge", async () => {
+  const { db, rows } = database();
+  const read = provider();
+  const value = {
+    ...fixture.sources[0]!.payload!,
+    items: [
+      {
+        title: "Appel national",
+        summary: "Annonce attribuée",
+        sourceUrl: "https://www.cgt.fr/appel",
+        publishedAt: "2026-11-12T10:00:00.000Z",
+        periodLabel: "Dates à vérifier",
+        startDate: null,
+        endDate: null,
+      },
+    ],
+  };
+  read.mockResolvedValue({
+    data: value,
+    retrievedAt: "2026-11-13T09:00:00.000Z",
+    validUntil: "2026-11-14T09:00:00.000Z",
+    failed: false,
+  });
+  const run = (end = "2026-11-15") =>
+    readJournalContext(
+      db,
+      new ContextProviderCache(db),
+      storeContextFixture(),
+      end,
+      new Date("2026-11-13T10:00:00Z"),
+      true,
+    );
+  expect((await run()).national).toHaveLength(2);
+  await run();
+  expect(rows).toHaveLength(5);
+  read.mockResolvedValue({
+    data: null,
+    retrievedAt: null,
+    validUntil: null,
+    failed: true,
+  });
+  const stale = await run();
+  expect(stale.national![0]!.status).toBe("STALE");
+  expect(stale.national![0]!.payload!.items[0]!.publishedAt).toBe(
+    "2026-11-12T10:00:00.000Z",
+  );
+  expect((await run("2026-11-08")).national![0]!.payload).toBeNull();
+});
