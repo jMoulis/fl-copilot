@@ -1,4 +1,4 @@
-# Backlog produit — point du 16 novembre 2026
+# Backlog produit — point du 17 novembre 2026
 
 Ce fichier conserve son chemin historique pour les liens existants. Le statut
 courant du pilote et les preuves sont dans [le point consolidé](PILOT_STATUS_2026_11_14.md).
@@ -30,12 +30,23 @@ leurs cases non cochées ne sont plus des tâches actives.
 - [x] Marché solaire et finitions Réglages / Mon magasin / Synchronisation :
       build 74 accepté sur iPhone. Parcours, formulaires et retours validés.
 
-## Lot en cours
+- [x] **Journal — indices de prix fruits/légumes INSEE** : collecte et archives
+      existantes enrichies, affichage natif et restitution du copilote validés
+      par le propriétaire sur build 75 le 17 novembre, après correctif serveur
+      PR 534. [Sources, livraison et validation](../qa/JOURNAL_PRODUCE_PRICES_2026_11_16.md).
 
-- [ ] **Journal — indices de prix fruits/légumes INSEE** : extension des séries
-      mensuelles et des archives existantes, périmètres officiels explicités,
-      compatibilité avec le build 74. Code, livraison API et recette restent
-      distingués dans [la fiche du lot](../qa/JOURNAL_PRODUCE_PRICES_2026_11_16.md).
+## Prochaine proposition — cadrage, pas de chantier actif
+
+**Actualités nationales utiles au Journal** : proposition présentée au propriétaire,
+non encore arbitrée ni implémentée. Commencer par sélectionner les événements
+utiles, leurs sources, dates/périmètres et limites de collecte. Éviter un fil
+d'actualité généraliste, les doublons, une nouvelle orchestration IA et toute
+promesse de causalité. Réutiliser les archives et lecteurs existants seulement
+après vérification de leur adéquation. Aucun fournisseur, coût ou abonnement
+supplémentaire n'est autorisé par cette inscription.
+
+La [passation du 17 novembre](HANDOFF_2026_11_17.md) fixe le point de reprise.
+Aucun lot livré ne reste artificiellement ouvert après la validation INSEE.
 
 ## Réserves et sujets explicitement reportés
 

@@ -1,6 +1,6 @@
 # M7 — functional iPhone pilot baseline and historical evidence
 
-This ledger records scoped M7 acceptance and its dated evidence. Use [the 14 November consolidated status](PILOT_STATUS_2026_11_14.md) for current delivery and post-pilot increments. Numerical counter-promotion and measured implantation remain deferred. This does not declare the whole original V1 scope complete. M0–M6 remain [closed for the functional iPhone pilot baseline](M0_M6_PILOT_CLOSURE_2026_11_02.md).
+This ledger records scoped M7 acceptance and its dated evidence. Use [the current consolidated status](PILOT_STATUS_2026_11_14.md) for current delivery and post-pilot increments. Numerical counter-promotion and measured implantation remain deferred. This does not declare the whole original V1 scope complete. M0–M6 remain [closed for the functional iPhone pilot baseline](M0_M6_PILOT_CLOSURE_2026_11_02.md).
 
 ## Functional pilot closure and M8 handoff — build 33
 

@@ -1,12 +1,18 @@
-## Point courant — 14 novembre 2026
+## Point courant — 17 novembre 2026
 
-Le [point pilote consolidé](../progress/PILOT_STATUS_2026_11_14.md) et le
+La [passation](../progress/HANDOFF_2026_11_17.md), le
+[point pilote consolidé](../progress/PILOT_STATUS_2026_11_14.md) et le
 [backlog actif](../progress/PRODUCT_BACKLOG_2026_11_06.md) font foi pour les statuts.
-La navigation approuvée, le Journal et son moteur descriptif, les images produits
-et la mémoire automatique sont livrés dans leurs périmètres indiqués. Le prochain
-lot est le [pilotage quotidien avec pense-bêtes privés](DAILY_PILOTING_BRIEF_2026_11_14.md),
-cadré mais non implémenté. Les anciennes mentions « reste ouvert » ci-dessous
-conservent leur date et ne rouvrent pas les recettes validées.
+Navigation, Journal, moteur descriptif, mémoire automatique, images produits,
+pilotage quotidien/pense-bêtes privés et rappels sont livrés dans leurs périmètres
+validés. Les finitions Réglages/Mon magasin/Synchronisation (build 74) et les
+indices INSEE F&L (build 75, correctif serveur PR 534) sont acceptés.
+
+Le prochain sujet proposé est le cadrage des actualités nationales utiles au
+Journal ; aucune nouvelle source ou mise en œuvre n'est encore arbitrée. Les
+réserves PA, implantation détaillée, Atlas et M9 restent reportées. Le détourage
+des photos existantes est retiré du backlog ; les images de TG restent V2.
+Les anciens états ci-dessous sont historiques et ne rouvrent pas les lots clos.
 
 ## Historique des arbitrages et des lots
 

@@ -70,3 +70,31 @@ Regression coverage: real reader to answer renderer, two-row Markdown table with
 independent source details and no unrelated transport/local/coverage prose in
 visible text; exact monthly arithmetic and null values remain tested. Delivery
 and a new model-generated answer must be verified separately.
+
+## Delivery and owner acceptance — 17 November 2026: CLOSED
+
+- Feature PR 533 merged at `29a147f81e1e7f63da9fd020f84208fe6335039e`.
+- iOS 0.1.0 (75), compiled on the owner's Mac, uploaded and available in the
+  existing private owner-only TestFlight group. IPA SHA-256:
+  `37c269f414ab9754cb605bab7bf49c714d3cfdd8d6d8fc9ae7f756a5c7927a4f`.
+  No paid EAS cloud build was started.
+- Server-only correction PR 534 merged at
+  `bfe72e377a181ec84f18cdbc1df359efff7e1c67`; final feature head
+  `b6f93b3420462ef7f0a452c47484d6cc9e6cf1d5`. Exact push/PR/master checks
+  passed: 44029334867 / 44029340083 / 44031294456.
+- Live API: `dpl_9yursQsjTFWMPfaJfJ1WCoej6wsZ`, `cdg1`,
+  `https://fl-copilot.vercel.app`. READY, public health/database connection and
+  unauthenticated private-route rejection verified before/after promotion as
+  applicable. Previous API deployment retained:
+  `dpl_7jPFLn2V1mYs2Gs1FXtQUxwGbpqw`.
+- Local correction verification: 73 focused tests, 18 reader/durable Mongo Journal
+  tests (overlapping reader coverage, not an additive distinct-test count), all
+  ten workspace typechecks, lint/format/structure and API build passed.
+- Owner retest after publication: **« Oui c'est fixé 👍 »**, then agreed lot
+  closure. The expected native/Journal/Copilot feature scope is accepted; do not
+  request the same recipe again without a new regression. This is not a
+  statistical/causal validation of external effects on sales.
+
+No model prompt, new provider call, paid model test, archive rewrite, migration
+or new native build accompanied PR 534. Previously sent raw-context messages
+remain unchanged. See `../progress/HANDOFF_2026_11_17.md` for continuation.
