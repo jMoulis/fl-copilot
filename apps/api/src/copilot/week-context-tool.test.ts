@@ -9,6 +9,7 @@ import { it, expect, vi } from "vitest";
 import { weeklyContextFixture } from "../../../../scripts/test-weekly-context-fixtures";
 import { AuthError } from "../auth/service";
 import { readCopilotWeek } from "./week-context-tool";
+import { renderAnswerContent } from "./answer-text";
 
 it("projects scoped weekly providers, forecast coverage and public sources without the GPS fingerprint", async () => {
   const c = weeklyContextFixture();
@@ -109,7 +110,7 @@ it("asks for unsynchronized settings while rejecting invalid dates, foreign stor
     { weekStart: c.weekStart },
   );
   expect(missing.context).toBeNull();
-  expect(missing.evidence[0]!.value).toContain("commune");
+  expect(missing.evidence[0]!.detail).toContain("commune");
   await expect(
     readCopilotWeek(
       {
@@ -135,15 +136,22 @@ it("adds compact national monthly facts without widening the old context shape o
     { weekStart: c.weekStart },
     new Date("2026-11-13T09:00:00Z"),
   );
-  expect(result.evidence).toHaveLength(4);
+  expect(result.evidence).toHaveLength(10);
   expect(result.context).not.toHaveProperty("economy");
+  const economic = result.evidence.filter((e) => e.id.includes("/economy/"));
+  expect(economic.map((e) => e.value)).toEqual([
+    "2026-09",
+    "102",
+    "2.00",
+    "2026-10",
+    "80",
+    "-5.00",
+  ]);
   const fact = result.evidence.at(-1)!;
-  expect(fact.value).toContain("2026-09, indice 102");
-  expect(fact.value).toContain("2.00 %");
-  expect(fact.value).toContain("2026-10, indice 80");
-  expect(fact.value).toContain("-5.00 points");
-  expect(fact.value).toContain("inconnues");
-  expect(fact.sourceId).toContain("bdm.insee.fr");
+  expect(economic[0]!.detail).toContain("inconnues");
+  expect(economic[0]!.sourceId).toBe(
+    "https://www.insee.fr/fr/statistiques/serie/011813720",
+  );
   expect(JSON.stringify(result)).not.toContain('"points":');
   c.economy.series[0]!.points.at(-1)!.value = "103";
   expect(
@@ -200,11 +208,11 @@ it("keeps bounded journal summaries in existing evidence, never repeats revision
   );
   expect(result.context).not.toHaveProperty("journal");
   expect(result.evidence).toHaveLength(4);
-  expect(result.evidence[3]!.value).toContain("Consommation 2026-09");
-  expect(result.evidence[3]!.value).toContain("6.59 kg/ménage");
-  expect(result.evidence[3]!.value).toContain("Salon local");
-  expect(result.evidence[3]!.value).toContain("Transport non configuré");
-  expect(String(result.evidence[3]!.value).length).toBeLessThan(7000);
+  expect(result.evidence[3]!.detail).toContain("Consommation 2026-09");
+  expect(result.evidence[3]!.detail).toContain("6.59 kg/ménage");
+  expect(result.evidence[3]!.detail).toContain("Salon local");
+  expect(result.evidence[3]!.detail).toContain("Transport non configuré");
+  expect(String(result.evidence[3]!.detail).length).toBeLessThan(7000);
   expect(JSON.stringify(result)).not.toContain('"history"');
 });
 
@@ -247,8 +255,8 @@ it("bounds transit context for many long messages without leaking coordinates or
     new Date("2026-11-13T10:01:00Z"),
   );
   expect(result.evidence).toHaveLength(4);
-  expect(String(result.evidence[3]!.value).length).toBeLessThan(10000);
-  expect(result.evidence[3]!.value).toContain("Extrait partiel");
+  expect(String(result.evidence[3]!.detail).length).toBeLessThan(10000);
+  expect(result.evidence[3]!.detail).toContain("Extrait partiel");
   expect(result.context).not.toHaveProperty("journal");
 });
 
@@ -264,15 +272,71 @@ it("reuses archived produce indices as compact facts with their scope and origin
     weekStart: context.weekStart,
   });
   expect(read).not.toHaveBeenCalled();
-  const fact = result.evidence.find(
-    (e) => e.sourceId === context.economy!.sourceUrl,
-  )!;
-  expect(fact.value).toContain("Fruits et fruits à coque");
-  expect(fact.value).toContain("5.25 %");
-  expect(fact.value).toContain("-10.00 %");
-  expect(fact.value).toContain(
+  expect(result.evidence).toHaveLength(16);
+  const economic = result.evidence.filter((e) => e.id.includes("/economy/"));
+  expect(economic.map((e) => e.value)).toContain("5.25");
+  expect(economic.map((e) => e.value)).toContain("-10.00");
+  const fruit = economic.find((e) => e.id.endsWith("011814957/index"))!;
+  expect(fruit.detail).toContain(
     "ne correspondent pas strictement au rayon frais",
+  );
+  expect(fruit.sourceId).toBe(
+    "https://www.insee.fr/fr/statistiques/serie/011814957",
   );
   expect(result.context).not.toHaveProperty("economy");
   expect(JSON.stringify(result)).not.toContain('"points":');
+});
+
+it("renders only the requested economic values in a table while keeping unrelated Journal context inside source details", async () => {
+  const c = weeklyContextFixture();
+  c.weekStart = "2026-11-09";
+  c.weekEnd = "2026-11-15";
+  c.economy = economicProduceContextFixture();
+  c.weather.days = [];
+  c.journal = journalContextFixture();
+  const result = await readCopilotWeek(
+    { readStored: async () => c, read: vi.fn() },
+    c.storeId,
+    { weekStart: c.weekStart },
+  );
+  const selected = result.evidence.filter((e) =>
+    /economy\/(011814957|011815032)\//.test(e.id),
+  );
+  const content = renderAnswerContent(
+    "| Indicateur | Mois | Indice | Évolution annuelle |\n|---|---|---:|---:|\n| Fruits | {{value:0}} | {{value:1}} | {{value:2}} % {{source:1}} |\n| Légumes | {{value:3}} | {{value:4}} | {{value:5}} % {{source:4}} |",
+    selected.map((e) => ({ evidenceId: e.id })),
+    result.evidence,
+  );
+  expect(content.text).toContain("105,25");
+  expect(content.text).toContain("5,25 %");
+  expect(content.text).toContain("-10,00 %");
+  const visible = content.text.replace(
+    /\[Source\]\(copilot-source:[^)]+\)/g,
+    "Source",
+  );
+  expect(visible).not.toMatch(
+    /Semaine du lundi|Salon local|Transport|rafraîchissement|fournisseur|inconnues/,
+  );
+  const sources = [...content.text.matchAll(/copilot-source:([^)]*)/g)].map(
+    (m) => JSON.parse(decodeURIComponent(m[1]!)) as { value: string },
+  );
+  expect(sources).toHaveLength(2);
+  expect(sources[0]!.value).toContain(
+    "ne correspondent pas strictement au rayon frais",
+  );
+  expect(result.evidence.at(-1)!.detail).toContain("Salon local");
+});
+
+it("keeps missing economic values null instead of turning them into zero", async () => {
+  const c = weeklyContextFixture();
+  c.economy = economicContextFixture();
+  c.economy.series[0]!.points = [];
+  const result = await readCopilotWeek({ read: async () => c }, c.storeId, {
+    weekStart: c.weekStart,
+  });
+  expect(
+    result.evidence
+      .filter((e) => e.id.includes("economy/011813720/"))
+      .map((e) => e.value),
+  ).toEqual([null, null, null]);
 });

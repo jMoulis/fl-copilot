@@ -130,7 +130,7 @@ describe.skipIf(!uri)("durable daily shop context", () => {
     );
     expect(
       model.evidence.some((e) =>
-        String(e.value).includes("Consommation 2026-09"),
+        String(e.detail).includes("Consommation 2026-09"),
       ),
     ).toBe(true);
     expect(model.context?.weather.days[0]!.type).toBe("FORECAST");
