@@ -35,18 +35,20 @@ leurs cases non cochées ne sont plus des tâches actives.
       par le propriétaire sur build 75 le 17 novembre, après correctif serveur
       PR 534. [Sources, livraison et validation](../qa/JOURNAL_PRODUCE_PRICES_2026_11_16.md).
 
-## Prochaine proposition — cadrage, pas de chantier actif
+## Lot approuvé — actualités nationales utiles au Journal
 
-**Actualités nationales utiles au Journal** : proposition présentée au propriétaire,
-non encore arbitrée ni implémentée. Commencer par sélectionner les événements
-utiles, leurs sources, dates/périmètres et limites de collecte. Éviter un fil
-d'actualité généraliste, les doublons, une nouvelle orchestration IA et toute
-promesse de causalité. Réutiliser les archives et lecteurs existants seulement
-après vérification de leur adéquation. Aucun fournisseur, coût ou abonnement
-supplémentaire n'est autorisé par cette inscription.
+Le propriétaire approuve le 17 novembre le premier périmètre : mouvements sociaux
+et restrictions nationales utiles aux déplacements ou à l’approvisionnement,
+avec trois informations pertinentes maximum par jour. Réutiliser collecte,
+archives et lecteurs existants ; aucune collecte IA, nouvelle orchestration ou
+souscription payante. Les grands rendez-vous sportifs/électoraux restent hors de
+ce premier lot. Les lots précédemment acceptés restent clos.
 
-La [passation du 17 novembre](HANDOFF_2026_11_17.md) fixe le point de reprise.
-Aucun lot livré ne reste artificiellement ouvert après la validation INSEE.
+[Qualification des sources et critères du lot](../qa/JOURNAL_NATIONAL_NEWS_2026_11_17.md).
+Premier incrément implémenté et vérifié localement : collecte bornée, archives,
+lecture Copilote et affichage natif. Dates incertaines explicitement conservées ;
+déduplication par URL canonique, pas de regroupement sémantique automatique.
+CI distante, fusion, publication et recette du nouveau binaire restent à réaliser.
 
 ## Réserves et sujets explicitement reportés
 

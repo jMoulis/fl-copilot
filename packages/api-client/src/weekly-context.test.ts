@@ -72,6 +72,7 @@ it.each([
     expect(headers.get("x-context-economy")).toBe(enabled ? "1" : null);
     expect(headers.get("x-context-produce-prices")).toBe(enabled ? "1" : null);
     expect(headers.get("x-context-journal")).toBe(enabled ? "1" : null);
+    expect(headers.get("x-context-national-news")).toBe(enabled ? "1" : null);
     expect(headers.get("x-store-id")).toBe(context.storeId);
   },
 );

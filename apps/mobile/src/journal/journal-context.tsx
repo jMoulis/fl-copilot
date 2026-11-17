@@ -11,6 +11,8 @@ import {
 import { BottomSheet, SecondaryButton } from "../components/ui";
 import { journalColors as c } from "./journal-theme";
 const labels = {
+  NATIONAL_SOCIAL: "Mouvements sociaux",
+  NATIONAL_RESTRICTIONS: "Restrictions et déplacements",
   WORKS: "Travaux et accès",
   AGENDA: "Autour du magasin",
   CONSUMPTION: "Achats de fruits et légumes",

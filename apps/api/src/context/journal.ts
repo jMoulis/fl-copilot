@@ -19,6 +19,7 @@ import {
   parseAgenda,
   boundedHtml,
 } from "./journal-sources.js";
+import { nationalSourceSpecs } from "./national-news.js";
 type Revision = {
   url: string;
   snapshotOf: string;
@@ -34,6 +35,7 @@ export async function readJournalContext(
   settings: StoreContextSettings,
   weekEnd: string,
   now: Date,
+  includeNational = false,
 ): Promise<JournalContext> {
   const local =
     settings.postalCode === "92600" &&
@@ -42,7 +44,15 @@ export async function readJournalContext(
       .replace(/[\u0300-\u036f]/g, "")
       .toLowerCase()
       .replace(/[^a-z]/g, "") === "asnieressurseine";
-  const specs = [
+  const specs: {
+    kind: JournalSource["kind"];
+    url: string;
+    provider: string;
+    parse: (body: string) => JournalSourcePayload;
+    enabled: boolean;
+    ttl: number;
+    accept?: string;
+  }[] = [
     {
       kind: "WORKS" as const,
       url: worksUrl,
@@ -68,6 +78,7 @@ export async function readJournalContext(
       ttl: 86400000,
     },
   ];
+  if (includeNational) specs.push(...nationalSourceSpecs);
   const snapshots = db.collection<Revision>("contextProviderCache");
   const results = await Promise.all(
     specs.map(async (spec): Promise<JournalSource> => {
@@ -91,9 +102,10 @@ export async function readJournalContext(
           journalSourcePayloadSchema,
           spec.ttl,
           {
-            accept: "text/html",
+            accept: spec.accept ?? "text/html",
             respectExpires: false,
-            decode: async (r) => spec.parse(await boundedHtml(r)),
+            decode: async (r) =>
+              spec.parse(await boundedHtml(r, spec.accept !== undefined)),
           },
         );
         if (result.data && !result.failed && result.retrievedAt) {
@@ -184,7 +196,8 @@ export async function readJournalContext(
     }),
   );
   return journalContextSchema.parse({
-    sources: results,
+    sources: results.slice(0, 3),
+    ...(includeNational ? { national: results.slice(3) } : {}),
     transport: "NOT_CONFIGURED",
   });
 }

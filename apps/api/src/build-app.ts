@@ -2196,7 +2196,15 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       return {
         ...legacy,
         ...(request.headers["x-context-journal"] === "1" && journal
-          ? { journal }
+          ? {
+              journal: {
+                ...journal,
+                national:
+                  request.headers["x-context-national-news"] === "1"
+                    ? journal.national
+                    : undefined,
+              },
+            }
           : {}),
         ...(request.headers["x-context-economy"] === "1" && economy
           ? {

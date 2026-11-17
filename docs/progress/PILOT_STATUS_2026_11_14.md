@@ -79,11 +79,15 @@ est clôturé. Voir [la fiche du lot](../qa/JOURNAL_PRODUCE_PRICES_2026_11_16.md
 
 ## Prochaine reprise
 
-Les actualités nationales pertinentes pour le Journal sont une **proposition
-à cadrer**, pas un chantier commencé ni une intégration de source approuvée.
-Les [évolutions restantes](PRODUCT_BACKLOG_2026_11_06.md) conservent leurs priorités
-et reports explicites. Lire la [passation du 17 novembre](HANDOFF_2026_11_17.md)
-pour reprendre sans reconstruire l'historique de cette conversation.
+Le propriétaire a approuvé le premier périmètre des actualités nationales le
+17 novembre : mouvements sociaux et restrictions utiles aux déplacements ou à
+l’approvisionnement. Le premier incrément est implémenté et vérifié localement,
+avec collecte/archives existantes, compatibilité build 75 et affichage natif.
+Il n’est **ni publié ni accepté sur iPhone**. CI distante, fusion, publication API
+et build iPhone local restent à réaliser. Voir la
+[fiche du lot](../qa/JOURNAL_NATIONAL_NEWS_2026_11_17.md) pour les preuves et limites
+(dates incertaines, couverture partielle, déduplication par URL).
+Le [backlog actif](PRODUCT_BACKLOG_2026_11_06.md) conserve les reports explicites.
 
 ## Sources du point
 

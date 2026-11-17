@@ -340,3 +340,45 @@ it("keeps missing economic values null instead of turning them into zero", async
       .map((e) => e.value),
   ).toEqual([null, null, null]);
 });
+it("keeps four economic series and three national citations bounded, reading archives only", async () => {
+  const c = weeklyContextFixture();
+  c.economy = economicProduceContextFixture();
+  c.journal = journalContextFixture();
+  c.journal.national = [
+    {
+      ...structuredClone(c.journal.sources[0]!),
+      kind: "NATIONAL_SOCIAL",
+      history: [],
+      payload: {
+        consumption: null,
+        items: Array.from({ length: 3 }, (_, i) => ({
+          title: `Appel ${i}`,
+          summary: "Mobilisation annoncée",
+          sourceUrl: `https://www.cgt.fr/appel-${i}`,
+          publishedAt: "2026-10-08T10:00:00.000Z",
+          periodLabel: "Date à vérifier",
+          startDate: null,
+          endDate: null,
+        })),
+      },
+    },
+  ];
+  const read = vi.fn();
+  const readStored = vi.fn(async () => c);
+  const result = await readCopilotWeek(
+    { read, readStored },
+    c.storeId,
+    { weekStart: c.weekStart },
+    new Date("2026-10-09T12:00:00Z"),
+  );
+  expect(read).not.toHaveBeenCalled();
+  expect(result.evidence).toHaveLength(19);
+  expect(
+    result.evidence.filter((e) => e.sourceId.startsWith("https://www.cgt.fr/")),
+  ).toHaveLength(3);
+  expect(
+    result.evidence
+      .filter((e) => e.sourceId.startsWith("https://www.cgt.fr/"))
+      .every((e) => e.detail?.includes("Période exacte inconnue")),
+  ).toBe(true);
+});

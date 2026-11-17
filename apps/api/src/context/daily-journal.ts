@@ -163,20 +163,38 @@ export function mergeDailyWeek(
     merged.observedWeather = { ...old.observedWeather, status: "STALE" };
   if (next.journal) {
     merged.journal = structuredClone(next.journal);
-    merged.journal.sources = next.journal.sources.map((s) => {
-      const prior = old.journal?.sources.find((p) => p.kind === s.kind);
-      const value = retained(prior, s);
-      return {
-        ...value,
-        history: distinct(
-          [...s.history, ...(prior?.history ?? [])].sort((a, b) =>
-            b.firstCapturedAt.localeCompare(a.firstCapturedAt),
+    const mergeSources = (
+      sources: NonNullable<WeeklyContext["journal"]>["sources"],
+      previous: NonNullable<WeeklyContext["journal"]>["sources"],
+    ) =>
+      sources.map((s) => {
+        const prior = previous.find((p) => p.kind === s.kind);
+        const value = retained(prior, s);
+        return {
+          ...value,
+          history: distinct(
+            [...s.history, ...(prior?.history ?? [])].sort((a, b) =>
+              b.firstCapturedAt.localeCompare(a.firstCapturedAt),
+            ),
+            (h) => `${h.firstCapturedAt}:${h.revision}`,
+            12,
           ),
-          (h) => `${h.firstCapturedAt}:${h.revision}`,
-          12,
-        ),
-      };
-    });
+        };
+      });
+    merged.journal.sources = mergeSources(
+      next.journal.sources,
+      old.journal?.sources ?? [],
+    );
+    if (next.journal.national)
+      merged.journal.national = mergeSources(
+        next.journal.national,
+        old.journal?.national ?? [],
+      );
+    else if (old.journal?.national)
+      merged.journal.national = old.journal.national.map((s) => ({
+        ...s,
+        status: "STALE",
+      }));
     const current = next.journal.transport,
       previous = old.journal?.transport;
     if (
@@ -214,7 +232,10 @@ export function mergeDailyWeek(
     }
   } else if (old.journal) {
     merged.journal = structuredClone(old.journal);
-    for (const source of merged.journal.sources)
+    for (const source of [
+      ...merged.journal.sources,
+      ...(merged.journal.national ?? []),
+    ])
       if (source.status === "AVAILABLE") source.status = "STALE";
     const transport = merged.journal.transport;
     if (typeof transport !== "string") {
@@ -308,7 +329,11 @@ export async function readDailyJournalWeek(
     result.observedWeather,
   ])
     if (provider) age(provider);
-  for (const source of result.journal?.sources ?? []) age(source);
+  for (const source of [
+    ...(result.journal?.sources ?? []),
+    ...(result.journal?.national ?? []),
+  ])
+    age(source);
   const traffic = result.journal?.transport;
   if (traffic && typeof traffic !== "string") {
     for (const line of traffic.lines) age(line);

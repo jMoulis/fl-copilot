@@ -1,3 +1,4 @@
+import { JournalNationalNews } from "./journal-national-news";
 import { DailyTaskList } from "./daily-task-list";
 import { copilotBusinessDateSchema } from "@fl-copilot/domain";
 import { JournalTransports } from "./journal-transports";
@@ -300,6 +301,7 @@ function StoreJournal({
         <Ionicons name="calendar-outline" size={32} color={c.accent} />
         <Ionicons name="chevron-forward" size={18} color={c.accent} />
       </Pressable>
+      <JournalNationalNews context={context?.journal} date={date} />
       <JournalExternalContext
         date={date}
         context={context?.journal}
