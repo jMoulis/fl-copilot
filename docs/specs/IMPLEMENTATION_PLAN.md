@@ -1,3 +1,14 @@
+## Current execution checkpoint — 17 November 2026
+
+Read `../progress/HANDOFF_2026_11_17.md`, the consolidated pilot status and active
+backlog before the dated implementation history below. Private daily tasks and
+reminders, settings polish and INSEE produce context are owner-accepted. Build 75
+remains current; the last server-only fix PR 534 is live and owner-accepted.
+No implementation lot is open. National news for the Journal is a proposed
+scoping discussion, not an approved provider/model/collection change. Keep the
+explicit PA, detailed implantation, Atlas and M9 deferrals; do not repeat accepted
+M0–M8 recipes without a regression.
+
 ## Owner-approved Journal produce price context — 16 November 2026
 
 Extend the existing monthly INSEE context with metropolitan base-2025 COICOP
@@ -120,7 +131,7 @@ provider, recurrence or automatic task writer is added. See
 `../qa/JOURNAL_DAILY_PILOTING_2026_11_14.md` for the scoped acceptance and delivery.
 The scoped-only checkpoint below is historical to the documentation increment.
 
-## Current checkpoint and next scoped increment — 14 November 2026
+## Historical checkpoint and next scoped increment — 14 November 2026
 
 Use `../progress/PILOT_STATUS_2026_11_14.md` and the active product backlog for
 current delivery/closure. The Journal descriptive engine and automatic memory

@@ -1,6 +1,6 @@
 # M8 — hardening and pilot release
 
-Current delivery and post-pilot increments are consolidated in [the 14 November status](PILOT_STATUS_2026_11_14.md). The iPhone pilot closure and owner-deferred Atlas reserve below remain unchanged. Older open-task entries are dated evidence, not new acceptance requests.
+Current delivery and post-pilot increments are consolidated in [the current consolidated status](PILOT_STATUS_2026_11_14.md). The iPhone pilot closure and owner-deferred Atlas reserve below remain unchanged. Older open-task entries are dated evidence, not new acceptance requests.
 
 ## Pilote iPhone accepté — 11 novembre
 

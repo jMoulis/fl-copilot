@@ -2,14 +2,21 @@
 
 Initial roadmap: 9 October 2026. Historical delivery log retained below.
 
-## Current checkpoint — 14 November 2026
+## Current checkpoint — 17 November 2026
 
-Use [the consolidated pilot status](progress/PILOT_STATUS_2026_11_14.md) and
-[active backlog](progress/PRODUCT_BACKLOG_2026_11_06.md) for current delivery and
-remaining work. M0–M6 and the agreed M7/M8 iPhone pilot scopes are accepted, with
-explicit PA/implantation/Atlas/M9 reserves. Journal v1, descriptive study and
-automatic memory are now accepted in their stated scope. The next daily-piloting
-increment is scoped, not implemented.
+Start with the [current handoff](progress/HANDOFF_2026_11_17.md),
+[consolidated pilot status](progress/PILOT_STATUS_2026_11_14.md) and
+[active backlog](progress/PRODUCT_BACKLOG_2026_11_06.md). M0–M6 and the agreed
+M7/M8 iPhone pilot scopes are accepted, with explicit PA/implantation/Atlas/M9
+reserves. Journal v1, descriptive study, automatic memory, private daily tasks
+and optional reminders are accepted in their stated scopes. Settings polish
+(build 74) and INSEE produce indices (build 75 plus API PR 534) are closed.
+
+No implementation lot is currently open. National news relevant to the Journal
+is the proposed next discussion: first agree useful events, sources, dates,
+scope and low-noise retention. Source activation, spending and implementation
+are not approved merely by listing this proposal. Preserve existing Journal
+archives, deterministic analytics and scoped uncertainty.
 
 The dated delivery/pending statuses below are historical. Product requirements
 remain subject to later owner arbitrations; these notes do not reopen accepted

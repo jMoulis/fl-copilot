@@ -1,4 +1,4 @@
-# État courant — pilote iPhone, actualisé le 16 novembre 2026
+# État courant — pilote iPhone, actualisé le 17 novembre 2026
 
 Ce point consolide les arbitrages et validations du propriétaire. Il remplace les
 anciens statuts « en attente » des journaux datés, sans transformer une validation
@@ -6,12 +6,17 @@ fonctionnelle en certification de tous les appareils ou scénarios.
 
 ## Version utilisée
 
-- iOS **0.1.0 (74)**, distribué dans le groupe TestFlight privé habituel et
-  accepté par le propriétaire. Source native `ff01b9462228c3bc99625eb4a7b03889275be78e`.
-  Les finitions Réglages, Mon magasin et Synchronisation sont clôturées.
-- Le point serveur du 14 novembre documentait la publication du moteur du Journal
-  depuis `9429f2b42951e7ec1be8752e265d53254095939f` ; les évolutions suivantes
-  distinguent leur propre livraison de la version native.
+- iOS **0.1.0 (75)**, compilé localement sur le Mac, distribué dans le groupe
+  TestFlight privé habituel. Source native
+  `29a147f81e1e7f63da9fd020f84208fe6335039e`. Le lot INSEE et sa restitution
+  corrigée côté serveur sont acceptés par le propriétaire le 17 novembre.
+  Le build 74 reste la précédente version acceptée ; ses finitions Réglages,
+  Mon magasin et Synchronisation sont clôturées.
+- API en service : `bfe72e377a181ec84f18cdbc1df359efff7e1c67` (PR 534),
+  déploiement `dpl_9yursQsjTFWMPfaJfJ1WCoej6wsZ`, région `cdg1`,
+  `https://fl-copilot.vercel.app`. État public et base connectée vérifiés ;
+  accès privé non authentifié refusé. Le correctif n'exige pas de nouveau
+  binaire et n'altère pas les messages déjà enregistrés.
 - Pas de nouvelle recette générale M0–M8 demandée sans régression identifiée.
 
 ## Socle validé
@@ -61,18 +66,24 @@ validation d'une restauration cloud Atlas. Cette réserve reste visible.
   suffisant reste à mesurer ; aucune causalité, prévision ou stabilité empirique
   n'est déclarée validée par ce test.
 
-## Pilotage quotidien livré ; contexte économique en cours
+## Pilotage quotidien et indices INSEE clôturés
 
 Les tâches commerciales, pense-bêtes privés et leur rappel facultatif sont
 validés par le propriétaire. Ils ne constituent plus un lot en attente.
 
-Le lot suivant ajoute les indices INSEE mensuels des catégories fruits/légumes
-au collecteur et aux archives existantes, en conservant leurs périmètres exacts
-et la compatibilité native. Voir [le lot](../qa/JOURNAL_PRODUCE_PRICES_2026_11_16.md)
-pour les preuves et la distinction entre code, livraison et recette.
+Les indices mensuels fruits/fruits à coque et légumes/tubercules/bananes à cuire/
+légumineuses sont collectés et archivés par les services existants. Leurs
+périmètres officiels restent plus larges que le rayon frais. Le propriétaire
+confirme « Oui c'est fixé » après le correctif de restitution PR 534 : ce lot
+est clôturé. Voir [la fiche du lot](../qa/JOURNAL_PRODUCE_PRICES_2026_11_16.md).
 
-Les [évolutions restantes](PRODUCT_BACKLOG_2026_11_06.md) sont séparées des anciens
-lots clôturés. Aucune nouvelle date de livraison ou dépense n'est engagée ici.
+## Prochaine reprise
+
+Les actualités nationales pertinentes pour le Journal sont une **proposition
+à cadrer**, pas un chantier commencé ni une intégration de source approuvée.
+Les [évolutions restantes](PRODUCT_BACKLOG_2026_11_06.md) conservent leurs priorités
+et reports explicites. Lire la [passation du 17 novembre](HANDOFF_2026_11_17.md)
+pour reprendre sans reconstruire l'historique de cette conversation.
 
 ## Sources du point
 
