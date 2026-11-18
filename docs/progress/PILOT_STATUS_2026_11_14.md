@@ -1,20 +1,34 @@
 # État courant — pilote iPhone, actualisé le 18 novembre 2026
 
-**18 novembre — PA quotidiens en réalisation, non livrés :** le propriétaire
-approuve les mêmes parcours que Mercalys (fichier local, ZIP et boîte mail magasin).
-Le format et les prix à vérifier sont arbitrés ; le report PA est levé pour cet
-import. Réutilisation des validations, historiques, sources et synchronisation.
+**Régression signalée sur build 79 :** synchronisation en erreur, PA reçu par
+email en attente et menus parfois inactifs. Omission de la capacité PA dans la
+validation du bootstrap reproduite et corrigée localement, test rouge puis vert.
+Correctif non encore livré ; cause du blocage tactile non confirmée.
+
+**18 novembre — PA quotidiens livrés, build 79 disponible :** PR 539
+fusionnée après CI push/PR/master vertes. Import local XLSX/ZIP et boîte mail
+magasin réutilisent les parcours Mercalys ; date d’application, sources,
+historique produit, doublons, corrections et prix à vérifier sont conservés.
+Build 79 compilé sur le Mac, archive vérifiée et envoi accepté par Apple ;
+disponible en TestFlight privé (`VALID` / `IN_BETA_TESTING`). Recette propriétaire en attente.
 Les simulations chiffrées restent reportées. Voir
 [le lot PA](../qa/PURCHASE_PRICE_SOURCE_2026_11_18.md).
-
-Ce point consolide les arbitrages et validations du propriétaire. Il remplace les
-anciens statuts « en attente » des journaux datés, sans transformer une validation
-fonctionnelle en certification de tous les appareils ou scénarios.
 
 Build 78 confirmé disponible en test interne TestFlight (`VALID` /
 `IN_BETA_TESTING`, non expiré). La recette du propriétaire reste à recueillir.
 
 ## Version utilisée
+
+- Nouveau build **0.1.0 (79)** : PR 539, source
+  `6f67d2a701d77923b07ec71aa4f64fd5970b7c1a`, compilé localement et vérifié,
+  envoi accepté par Apple. TestFlight privé `VALID` / `IN_BETA_TESTING` ; recette propriétaire
+  en attente. Lot PA quotidiens, incluant les évolutions du build 78.
+- API courante : même source PR 539, déploiement
+  `dpl_4WGdCzjpJc47sCrb1QE3q2eUUwYn`, région `cdg1`, alias
+  `https://fl-copilot.vercel.app`. Santé/base connectée et refus privé 401 vérifiés.
+  Déploiement antérieur conservé : `dpl_2RknNqVV9fa3ajnMemx14sfrjaBS`.
+
+Les versions suivantes décrivent les livraisons antérieures :
 
 - Nouveau build **0.1.0 (78)** : PR 538 fusionnée, CI push/PR/master vertes,
   archive compilée localement et vérifiée, envoi accepté par Apple. Source
@@ -40,14 +54,14 @@ Build 78 confirmé disponible en test interne TestFlight (`VALID` /
 
 ## Socle validé
 
-| Périmètre               | Statut courant                                                        | Réserve conservée                                                                                                             |
-| ----------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| M0–M6                   | Clôturés pour le pilote iPhone                                        | La qualification multiplateforme reste distincte.                                                                             |
-| M7, chantiers 1/3/4/5/7 | Clôturés pour leur périmètre fonctionnel pilote                       | Les nouvelles évolutions ne rouvrent pas les recettes acceptées.                                                              |
-| M7, chantier 2          | Conseil qualitatif accepté ; approfondissement numérique reporté      | PA quotidiens demandés après le lot graphiques ; simulations futures reportées. Les calculateurs existants restent conservés. |
-| M7, chantier 6          | Contexte magasin déclaré disponible ; implantation détaillée reportée | Plan merchandising du groupement, mesures et faisabilité physique.                                                            |
-| M8                      | Pilote iPhone clôturé                                                 | Sauvegarde serveur Atlas et restauration isolée explicitement reportées.                                                      |
-| M9                      | Non démarré, reporté                                                  | Android et qualification dédiée d'accessibilité.                                                                              |
+| Périmètre               | Statut courant                                                        | Réserve conservée                                                                                                                 |
+| ----------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| M0–M6                   | Clôturés pour le pilote iPhone                                        | La qualification multiplateforme reste distincte.                                                                                 |
+| M7, chantiers 1/3/4/5/7 | Clôturés pour leur périmètre fonctionnel pilote                       | Les nouvelles évolutions ne rouvrent pas les recettes acceptées.                                                                  |
+| M7, chantier 2          | Conseil qualitatif accepté ; approfondissement numérique reporté      | PA quotidiens livrés (recette build 79 en attente) ; simulations futures reportées. Les calculateurs existants restent conservés. |
+| M7, chantier 6          | Contexte magasin déclaré disponible ; implantation détaillée reportée | Plan merchandising du groupement, mesures et faisabilité physique.                                                                |
+| M8                      | Pilote iPhone clôturé                                                 | Sauvegarde serveur Atlas et restauration isolée explicitement reportées.                                                          |
+| M9                      | Non démarré, reporté                                                  | Android et qualification dédiée d'accessibilité.                                                                                  |
 
 Les copies/restaurations locales et les conflits iPhone/simulateur ne valent pas
 validation d'une restauration cloud Atlas. Cette réserve reste visible.
@@ -100,8 +114,8 @@ est clôturé. Voir [la fiche du lot](../qa/JOURNAL_PRODUCE_PRICES_2026_11_16.md
 
 Le propriétaire valide la maquette des graphiques et ses ajustements de catégories,
 répartition circulaire et navigation. Voir [le lot Analyses](../qa/ANALYTICS_POLISH_2026_11_18.md).
-Il demande ensuite l’upload quotidien des prix d’achat ; le cadrage de cet import
-succédera au lot graphiques, sans lever le report des simulations chiffrées.
+L’upload quotidien des PA est désormais livré en PR 539/build 79, sans lever
+le report des simulations chiffrées.
 
 ## Derniers lots acceptés
 

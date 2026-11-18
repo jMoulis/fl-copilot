@@ -1,3 +1,12 @@
+## Build 79 synchronization regression — 18 November 2026
+
+Owner reports failed synchronization, emailed PA awaiting reading and intermittent
+unresponsive menus/sheets. The client bootstrap allowlist omitted `purchasePrices`
+although both transport and server advertise it. Add that capability and prove
+once-only adoption on an existing device followed by ordinary pull. Preserve all
+local data and pending commands. General touch freezes remain under investigation;
+passing older simulator sheet checks is not build 79 physical-device acceptance.
+
 ## Daily purchase prices — owner-approved implementation, 18 November 2026
 
 Extend the canonical Mercalys XLSX/ZIP intake and email handoff with article-base

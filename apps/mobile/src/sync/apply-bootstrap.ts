@@ -647,6 +647,7 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
     "productAliases",
     "wasteReceiptPublications",
     "mercalysPublications",
+    "purchasePrices",
   ]);
   if (
     Object.entries(bootstrap.entities).some(
