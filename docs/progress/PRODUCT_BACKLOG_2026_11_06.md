@@ -1,16 +1,18 @@
 # Backlog produit — point du 18 novembre 2026
 
-**18 novembre — PA quotidiens en réalisation, non livrés :** le propriétaire
-approuve les mêmes parcours que Mercalys (fichier local, ZIP et boîte mail magasin).
-Le format et les prix à vérifier sont arbitrés ; le report PA est levé pour cet
-import. Réutilisation des validations, historiques, sources et synchronisation.
+**Régression signalée sur build 79 :** synchronisation en erreur, PA reçu par
+email en attente et menus parfois inactifs. Omission de la capacité PA dans la
+validation du bootstrap reproduite et corrigée localement, test rouge puis vert.
+Correctif non encore livré ; cause du blocage tactile non confirmée.
+
+**18 novembre — PA quotidiens livrés, build 79 disponible :** PR 539
+fusionnée après CI push/PR/master vertes. Import local XLSX/ZIP et boîte mail
+magasin réutilisent les parcours Mercalys ; date d’application, sources,
+historique produit, doublons, corrections et prix à vérifier sont conservés.
+Build 79 compilé sur le Mac, archive vérifiée et envoi accepté par Apple ;
+disponible en TestFlight privé (`VALID` / `IN_BETA_TESTING`). Recette propriétaire en attente.
 Les simulations chiffrées restent reportées. Voir
 [le lot PA](../qa/PURCHASE_PRICE_SOURCE_2026_11_18.md).
-
-Ce fichier conserve son chemin historique pour les liens existants. Le statut
-courant du pilote et les preuves sont dans [le point consolidé](PILOT_STATUS_2026_11_14.md).
-Les anciennes étapes de préparation sont [archivées ici](PRODUCT_BACKLOG_HISTORY_THROUGH_2026_11_14.md) ;
-leurs cases non cochées ne sont plus des tâches actives.
 
 Build 78 confirmé disponible en test interne TestFlight (`VALID` /
 `IN_BETA_TESTING`, non expiré). La recette du propriétaire reste à recueillir.
@@ -83,28 +85,24 @@ restent déterministes. PR 538 fusionnée, CI push/PR/master vertes ; build 78
 compilé localement, vérifié et accepté à l’envoi par Apple. Recette propriétaire
 encore en attente. [Suivi](../qa/ANALYTICS_POLISH_2026_11_18.md).
 
-## Prochain chantier demandé — upload quotidien des prix d’achat
+## Lot PA livré — recette iPhone en attente
 
-Le propriétaire demande de l’attaquer après le lot graphiques. Le report de cet
-upload est levé pour ce prochain cadrage : examiner un vrai fichier, ses dates,
-identifiants et unités, puis réutiliser Imports et ses validations. Aucun format
-source ou calcul supplémentaire n’est encore arbitré. Le fichier réel
-`base article.xlsx` est reçu et examiné le 18 novembre : 1 226 articles, date
-d’application du 14 novembre. Le propriétaire confirme les PA HT par kg ou
-pièce/conditionnement vendu selon l’article. Les PA exactement à 0,01 € ou
-0,001 € sont conservés « Prix à vérifier », exclus des calculs jusqu’à
-confirmation, sans désactiver les produits (règle explicitement approuvée).
-Les questions d’interprétation du fichier sont résolues. Voir la
-[qualification du fichier](../qa/PURCHASE_PRICE_SOURCE_2026_11_18.md).
-L’approfondissement chiffré
-des contre-promotions reste distinct et reporté.
+PR 539 fusionnée, CI push/PR/master vertes. API en production ; build local 79
+vérifié et accepté à l’envoi par Apple. Imports locaux XLSX/ZIP et email magasin,
+aperçu des variations, rapprochement, doublons/corrections, sources/historique,
+confirmation des PA à vérifier et synchronisation sont inclus. Les PA sont HT
+par unité produit validée. ACTIF ne modifie pas le catalogue ; les montants exacts
+0,01/0,001 restent exclus jusqu’à confirmation explicite. Pas de nouvelle
+simulation ni de recalcul des marges officielles Mercalys. Le fichier privé
+fourni a été qualifié en base de test, pas importé en production.
+[Qualification, tests et livraison](../qa/PURCHASE_PRICE_SOURCE_2026_11_18.md).
 
 ## Réserves et sujets explicitement reportés
 
 - [ ] **Sauvegarde/restauration Atlas** : réserve M8 maintenue à la demande du
       propriétaire. Activation et restauration isolée ne sont pas qualifiées.
 - [ ] **Approfondissement des contre-promotions chiffrées** : report maintenu.
-      L’upload quotidien des PA devient le prochain chantier demandé ci-dessus.
+      L’upload quotidien des PA est livré dans le lot ci-dessus.
 - [ ] **Implantation détaillée** : chantier M7-6 reporté, à reprendre avec le plan
       merchandising et les mesures utiles. Le contexte déclaré actuel reste disponible.
 - [ ] **M9** : Android et qualification dédiée d'accessibilité, non démarrés.

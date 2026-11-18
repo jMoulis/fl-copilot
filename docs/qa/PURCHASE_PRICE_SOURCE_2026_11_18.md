@@ -101,7 +101,48 @@ will be recorded after completion. No native or owner acceptance is claimed yet.
 - Review preserves the existing legacy publication size rule; only the new PA
   format uses the bounded 3 MB UTF-8 envelope. No dependency/provider added.
 
-Delivery remains pending CI/merge, API release and local iPhone archive. These
-checks do not constitute physical iPhone acceptance. Historical snapshots with
+Delivery details are recorded below. These checks do not constitute physical
+iPhone acceptance. Historical snapshots with
 unknown units remain excluded; correcting the catalogue qualifies subsequent
 imports, not the interpretation of old source records automatically.
+
+## Delivery — 18 November 2026
+
+- PR 539: feature `da33909299b3c7585e8a924af51c0f4d6e4a750b`, merged source
+  `6f67d2a701d77923b07ec71aa4f64fd5970b7c1a`; identical tested trees.
+- Exact push 44305486200, PR 44305523421 and master 44307366697 all successful.
+  Full GitHub run: 641 test files / 6,359 tests passed, six tests skipped.
+- API `dpl_4WGdCzjpJc47sCrb1QE3q2eUUwYn`, production configuration, Paris `cdg1`.
+  Staged health/database and unauthenticated private 401 checked before promotion;
+  public alias, JSON health/database and private 401 checked after promotion.
+  Predecessor retained: `dpl_2RknNqVV9fa3ajnMemx14sfrjaBS`. Any rollback after PA
+  publication must retain the new source reader/capability contracts.
+- iPhone **0.1.0 (79)** compiled on the Mac with the existing production profile;
+  verified signature, provenance, API configuration and PA feature markers.
+  Archive SHA-256 `4a7f2cff1325fd0ef59a57595f15f1443c306bfec80e49fbff83c13353775d23`.
+  Cloud inventories before/after show no new EAS cloud build.
+- Apple accepted the exact local archive; build 79 is `VALID` / `IN_BETA_TESTING`,
+  non-expired, present in the existing internal group with its single owner tester.
+  No tester/group/public-distribution changes were made. Physical iPhone acceptance
+  remains for the owner; it is not inferred from Apple availability.
+- Evidence: private `maintenance/purchase-prices-2026-11-18/` outside Git.
+  The supplied workbook has not been imported into the owner's live store.
+
+Short owner recipe: import a dated file locally, inspect a product's PA/source,
+repeat it to check duplicate handling, and receive the same format through the
+existing store email inbox. Review/correction and explicit tiny-price confirmation
+remain available from the canonical native paths.
+
+## Build 79 incident — 18 November
+
+Owner reports synchronization failure, emailed PA awaiting reading and intermittent
+nonresponsive menus/sheets. `applyBootstrap` rejected the advertised
+`purchasePrices` capability as unsupported. The new MobileSyncService regression
+reproduced the exact rejection before the allowlist fix, then passed: an existing
+device adopts PA once and subsequent sync resumes ordinary pull. Focused suites
+(sync service, bootstrap, iOS sheet) passed 46 tests. No production data changed.
+
+Older simulator runtime closes weather and sequential import sheets with X; this
+does not qualify build 79 or explain the physical-device intermittent touch issue.
+Sentry build 79 reports sanitized LOCAL_OPERATION_FAILED in synchronization.
+No claim of a complete freeze fix; screenshot and device follow-up remain pending.
