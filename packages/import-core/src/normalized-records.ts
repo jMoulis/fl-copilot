@@ -23,6 +23,7 @@ export function canonicalMercalysRecords(
       vatValue: record.vatValue,
       marginValue: record.marginValue,
       marginRate: record.marginRate,
+      ...(record.purchasePrice ? { purchasePrice: record.purchasePrice } : {}),
     }))
     .sort((left, right) =>
       JSON.stringify(left).localeCompare(JSON.stringify(right)),

@@ -62,11 +62,19 @@ export const mercalysBatchResultSchema = z.discriminatedUnion("status", [
   z.strictObject({
     status: z.literal("DUPLICATE"),
     sourceDocumentId: uuid,
-    sourceType: z.enum(["MERCALYS_SALES", "MERCALYS_WASTE"]),
+    sourceType: z.enum([
+      "MERCALYS_SALES",
+      "MERCALYS_WASTE",
+      "MERCALYS_PURCHASE_PRICES",
+    ]),
   }),
   z.strictObject({
     status: z.literal("REVIEW"),
-    sourceType: z.enum(["MERCALYS_SALES", "MERCALYS_WASTE"]),
+    sourceType: z.enum([
+      "MERCALYS_SALES",
+      "MERCALYS_WASTE",
+      "MERCALYS_PURCHASE_PRICES",
+    ]),
     parserVersion: z.string().min(1).max(120),
     businessPeriodStart: z.string().date(),
     businessPeriodEnd: z.string().date(),

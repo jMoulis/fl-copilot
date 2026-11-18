@@ -1,3 +1,18 @@
+## Daily purchase prices — owner-approved implementation, 18 November 2026
+
+Extend the canonical Mercalys XLSX/ZIP intake and email handoff with article-base
+purchase prices. Reuse original retention, deterministic validation, matching,
+partial continuation, overlap approval, publication Outbox and remote original
+verification. Store dated purchase-price observations separately from sales/waste;
+never overwrite official sales margins. Keep currency EUR, HT and validated
+product-unit basis. Exact 0.01/0.001 amounts require explicit price confirmation;
+source ACTIF does not change catalogue status. Product detail exposes local dated
+history/source links. Add SQLite/Mongo migrations and client capability gating so
+older clients never receive a new source format they cannot read. Prove file,
+email, correction, deduplication, restart and synchronization on synthetic fixtures
+and qualify the private supplied workbook outside Git. No AI parsing or numerical
+counter-promotion scope. See ../qa/PURCHASE_PRICE_SOURCE_2026_11_18.md.
+
 ## Current execution checkpoint — 18 November 2026
 
 Read the consolidated pilot status and active backlog before dated history.

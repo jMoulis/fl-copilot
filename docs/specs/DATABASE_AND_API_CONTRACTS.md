@@ -1,3 +1,28 @@
+## Owner-approved extension — 18 November 2026: dated purchase prices
+
+`MERCALYS_PURCHASE_PRICES` extends canonical Mercalys XLSX/ZIP/email intake.
+SQLite migration 66 creates `purchase_price_observations`; Mongo migration 63
+indexes `purchasePriceObservations`. `mercalysPublicationSchema.prices` carries
+stable IDs, source/record lineage, application date, exact decimal amount, EUR/HT,
+validated product unit, KNOWN/TO_VERIFY, explicit confirmation timestamp and
+ordinary version/sync metadata. Price snapshots never create sales/waste or
+recompute official margins. Original ACTIF/nomenclature remain source metadata.
+
+Existing `MERCALYS_PUBLISH` owns atomic local observation/Outbox writes and
+remote original verification, CAS, idempotent replay and incremental pull.
+Same-day replacements require the existing reconciliation approval and tombstones;
+no silent overwrites. Confirmation is a manager action using the same continuation
+command, blocked on stale versions/conflicts. Source amount and recorded unit
+are immutable across revisions. Exact 0.01/0.001 prices and unknown units remain
+TO_VERIFY; known-unit tiny prices require explicit dated confirmation.
+
+`purchasePrices=true` negotiates bootstrap/pull. Old clients skip new-format
+publications; adoption forces a fresh bootstrap/replay so skipped history is not
+lost. Upgrade the API before native distribution. Original download/retention
+uses existing private source storage. Price publication is bounded to 3,000,000
+UTF-8 bytes, within the existing 4 MiB single-command push boundary; legacy
+publications retain their existing 1,000,000-character ceiling. No new API endpoint or provider.
+
 ## Owner-approved extension — 14 November 2026: private daily tasks
 
 `personalTasks=true` independently negotiates owner/store-private task bootstrap

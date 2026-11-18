@@ -305,15 +305,16 @@ export function createMongoSyncPushService(
             outcome.command.resultStatus === "APPLIED"
           ) {
             const p = mercalysPublicationSchema.parse(command.payload);
-            await createMongoRemoteAnalyticsConfirmationService(
-              database,
-            ).confirm(
-              input.storeId,
-              [...p.sales, ...p.waste].map((o) => ({
-                productId: o.productId,
-                businessDate: o.businessDate,
-              })),
-            );
+            if (p.sales.length || p.waste.length)
+              await createMongoRemoteAnalyticsConfirmationService(
+                database,
+              ).confirm(
+                input.storeId,
+                [...p.sales, ...p.waste].map((o) => ({
+                  productId: o.productId,
+                  businessDate: o.businessDate,
+                })),
+              );
           }
           results.push(
             toCommandResult(outcome.command, outcome.alreadyApplied),

@@ -6,7 +6,7 @@ import type {
 
 export type MercalysSourceType = Extract<
   SourceType,
-  "MERCALYS_SALES" | "MERCALYS_WASTE"
+  "MERCALYS_SALES" | "MERCALYS_WASTE" | "MERCALYS_PURCHASE_PRICES"
 >;
 
 export type MercalysGranularity =
@@ -78,6 +78,57 @@ export function detectMercalysSource(
   workbook: SpreadsheetWorkbook,
 ): MercalysSourceDetection {
   const rows = semanticRows(workbook);
+  const priceHeaders = rows.filter((row) =>
+    [
+      "ITM",
+      "EAN",
+      "LIBELLE",
+      "NOMENCLATURE",
+      "PRIX ACHAT PAR UNITE",
+      "ACTIF",
+    ].every((h) => row.cells.includes(h)),
+  );
+  if (priceHeaders.length) {
+    const header = priceHeaders[0]!;
+    const context = rows.filter(
+      (r) => r.sheetName === header.sheetName && r.rowIndex < header.rowIndex,
+    );
+    const dates = context.flatMap((r) => {
+      const match = r.text.match(
+        /DATE D APPLICATION (\d{1,2}) (\d{1,2}) (\d{4})\b/,
+      );
+      return match ? [isoDate(match[1], match[2], match[3])] : [];
+    });
+    if (
+      priceHeaders.length !== 1 ||
+      rows.some((r) => /FLUX (VENTE NETTE|CASSE)/.test(r.text))
+    )
+      return unsupportedDetection({
+        status: "AMBIGUOUS",
+        sourceType: null,
+        reason: "CONFLICTING_FLOW_MARKERS",
+      });
+    if (dates.length !== 1 || !dates[0])
+      return unsupportedDetection({
+        status: "UNSUPPORTED",
+        sourceType: "MERCALYS_PURCHASE_PRICES",
+        reason: "MISSING_SELECTION_PERIOD",
+      });
+    return {
+      status: "DETECTED",
+      sourceType: "MERCALYS_PURCHASE_PRICES",
+      confidence: 1,
+      formatVersion: "mercalys-purchase-prices.v1",
+      granularity: "SINGLE_DAY",
+      sheetName: header.sheetName,
+      headerRowIndex: header.rowIndex,
+      selectionPeriodText: context.find((r) =>
+        r.text.includes("DATE D APPLICATION"),
+      )!.rawText,
+      businessDate: dates[0],
+      reasons: [],
+    };
+  }
   const salesFluxRows = rows.filter((row) =>
     row.text.includes("FLUX VENTE NETTE"),
   );

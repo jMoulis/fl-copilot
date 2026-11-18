@@ -10,6 +10,7 @@ export type ReconciliationCategory =
   "UNCHANGED" | "ADDED" | "REMOVED" | "MODIFIED" | "AMBIGUOUS";
 
 export interface ReconciliationValues {
+  purchasePrice?: string | null;
   quantity: string | null;
   purchaseValue: string | null;
   rceValue: string | null;
@@ -257,6 +258,42 @@ async function loadExistingObservations(
   storeId: string,
   summary: MercalysImportValidationSummary,
 ): Promise<ExistingObservation[]> {
+  if (summary.sourceType === "MERCALYS_PURCHASE_PRICES") {
+    const rows = await database.getAllAsync<{
+      id: string;
+      source_document_id: string;
+      source_record_id: string;
+      product_id: string;
+      product_label: string;
+      business_date: string;
+      amount: string;
+      normalized_payload_json: string;
+    }>(
+      `SELECT o.*, p.label AS product_label, r.normalized_payload_json FROM purchase_price_observations o JOIN products p ON p.id=o.product_id JOIN source_documents d ON d.id=o.source_document_id LEFT JOIN source_records r ON r.id=o.source_record_id AND r.store_id=o.store_id WHERE o.store_id=? AND o.business_date BETWEEN ? AND ? AND o.deleted_at IS NULL AND d.deleted_at IS NULL AND d.local_processing_status='PUBLISHED' ORDER BY o.business_date,o.product_id,o.id`,
+      storeId,
+      summary.businessPeriodStart,
+      summary.businessPeriodEnd,
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      sourceDocumentId: row.source_document_id,
+      sourceRecordId: row.source_record_id,
+      productId: row.product_id,
+      productLabel: row.product_label,
+      businessDate: row.business_date,
+      sourceIdentity: storedSourceIdentity(row.normalized_payload_json),
+      values: {
+        quantity: null,
+        purchaseValue: null,
+        rceValue: null,
+        salesValue: null,
+        vatValue: null,
+        marginValue: null,
+        marginRate: null,
+        purchasePrice: row.amount,
+      },
+    }));
+  }
   if (summary.sourceType === "MERCALYS_SALES") {
     const rows = await database.getAllAsync<SalesObservationRow>(
       `
@@ -345,7 +382,10 @@ function valuesFromIncoming(
 ): ReconciliationValues {
   const record = line.record;
   return {
-    quantity: decimal(record.quantity),
+    quantity: nullableDecimal(record.quantity),
+    ...(record.purchasePrice
+      ? { purchasePrice: record.purchasePrice.amount }
+      : {}),
     purchaseValue: nullableDecimal(record.purchaseValue),
     rceValue:
       summary.sourceType === "MERCALYS_SALES"

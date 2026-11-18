@@ -542,7 +542,10 @@ export class CopilotMercalysImportController {
         item.status === "PUBLISHED" ||
         (item.status === "REVIEW" && item.priorSourceDocumentId)
           ? await this.db.getFirstAsync<{
-              source_type: "MERCALYS_SALES" | "MERCALYS_WASTE";
+              source_type:
+                | "MERCALYS_SALES"
+                | "MERCALYS_WASTE"
+                | "MERCALYS_PURCHASE_PRICES";
               business_period_start: string;
               business_period_end: string;
             }>(
@@ -1069,9 +1072,11 @@ export class CopilotMercalysImportController {
           if (!overlap.safeToApply || overlap.rows.length > 2000)
             throw Error("IMPORT_AMBIGUOUS");
           const table =
-            current.summary.sourceType === "MERCALYS_SALES"
-              ? "sales_observations"
-              : "waste_observations";
+            current.summary.sourceType === "MERCALYS_PURCHASE_PRICES"
+              ? "purchase_price_observations"
+              : current.summary.sourceType === "MERCALYS_SALES"
+                ? "sales_observations"
+                : "waste_observations";
           for (const row of overlap.rows)
             for (const id of row.existingObservationIds) {
               const existing = await tx.getFirstAsync<{ sync_state: string }>(

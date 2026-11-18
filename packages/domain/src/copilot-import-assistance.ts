@@ -177,7 +177,13 @@ export const copilotImportStatusSchema = z.strictObject({
         sourceDocumentId: z.uuid().nullable(),
         publishedCount: z.number().int().nonnegative().optional(),
         remainingCount: z.number().int().nonnegative().optional(),
-        sourceType: z.enum(["MERCALYS_SALES", "MERCALYS_WASTE"]).nullable(),
+        sourceType: z
+          .enum([
+            "MERCALYS_SALES",
+            "MERCALYS_WASTE",
+            "MERCALYS_PURCHASE_PRICES",
+          ])
+          .nullable(),
         start: z.iso.date().nullable(),
         end: z.iso.date().nullable(),
       }),

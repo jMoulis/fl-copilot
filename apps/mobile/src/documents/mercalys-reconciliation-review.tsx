@@ -31,6 +31,7 @@ const labels = {
   AMBIGUOUS: "À résoudre",
 };
 const fields = [
+  ["purchasePrice", "PA HT par unité (€)"],
   ["quantity", "Quantité"],
   ["salesValue", "Vente (€)"],
   ["purchaseValue", "Achat (€)"],

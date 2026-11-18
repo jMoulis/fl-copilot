@@ -26,6 +26,7 @@ export async function attachRecoveredSourceOriginal(
     ![
       "MERCALYS_SALES",
       "MERCALYS_WASTE",
+      "MERCALYS_PURCHASE_PRICES",
       "WASTE_RECEIPT",
       "WEEKLY_COMMERCIAL_PDF",
     ].includes(source.source_type)

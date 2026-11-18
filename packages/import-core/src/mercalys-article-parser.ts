@@ -32,14 +32,23 @@ export interface ParsedMercalysArticleRecord {
   ean: string | null;
   rawLabel: string;
   businessDate: string;
-  quantity: number;
+  quantity: number | null;
+  purchasePrice?: {
+    amount: string;
+    sourceActive: boolean;
+    nomenclature: string;
+  };
   purchaseValue: number | null;
   rceValue: number | null;
   salesValue: number | null;
   vatValue: number | null;
   marginValue: number | null;
   marginRate: number | null;
-  rawValues: Record<MercalysArticleField, RawMercalysValue>;
+  rawValues: Record<MercalysArticleField, RawMercalysValue> & {
+    priceAmount?: RawMercalysValue;
+    sourceActive?: RawMercalysValue;
+    nomenclature?: RawMercalysValue;
+  };
 }
 
 export interface MercalysArticleControlTotals {

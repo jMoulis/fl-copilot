@@ -152,6 +152,7 @@ describe("local SQLite migrations", () => {
       "product_substitutions",
       "product_visual_links",
       "products",
+      "purchase_price_observations",
       "sales_observations",
       "source_documents",
       "source_original_manifests",

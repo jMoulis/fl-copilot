@@ -1,3 +1,4 @@
+import * as XLSX from "xlsx";
 import { afterEach, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
@@ -55,7 +56,7 @@ async function fixture(
     invalidMember?: boolean;
     emptyMember?: boolean;
     synced?: boolean;
-    flow?: "MERCALYS_SALES" | "MERCALYS_WASTE";
+    flow?: "MERCALYS_SALES" | "MERCALYS_WASTE" | "MERCALYS_PURCHASE_PRICES";
     filename?: string;
   } = {},
 ) {
@@ -84,14 +85,16 @@ async function fixture(
   const cache = makeCache(),
     decisionRepo = new EmailDecisionRepository(cache);
   const workbook = (date = "2026-10-07") =>
-    mercalysWorkbook(
-      scope.storeId,
-      s.productId,
-      options.flow,
-      date,
-      12.4,
-      false,
-    ).bytes;
+    options.flow === "MERCALYS_PURCHASE_PRICES"
+      ? priceWorkbook(date)
+      : mercalysWorkbook(
+          scope.storeId,
+          s.productId,
+          options.flow,
+          date,
+          12.4,
+          false,
+        ).bytes;
   const original = options.zip
     ? zipSync(
         {
@@ -331,7 +334,11 @@ it("finds only the actual owned email import without re-reading bytes, importing
     read.mockRestore();
   }
 });
-it.each(["MERCALYS_SALES", "MERCALYS_WASTE"] as const)(
+it.each([
+  "MERCALYS_SALES",
+  "MERCALYS_WASTE",
+  "MERCALYS_PURCHASE_PRICES",
+] as const)(
   "hands verified email bytes to the existing %s engine, preserves the draft and publishes once",
   async (flow) => {
     const f = await fixture({ flow });
@@ -351,7 +358,11 @@ it.each(["MERCALYS_SALES", "MERCALYS_WASTE"] as const)(
     expect(report.items[0]?.status).toBe("PUBLISHED");
     const observations = count(
       f,
-      flow === "MERCALYS_SALES" ? "sales_observations" : "waste_observations",
+      flow === "MERCALYS_PURCHASE_PRICES"
+        ? "purchase_price_observations"
+        : flow === "MERCALYS_SALES"
+          ? "sales_observations"
+          : "waste_observations",
     );
     expect(observations).toBe(1);
     const commands = count(f, "sync_outbox");
@@ -386,48 +397,65 @@ it("restores the same handoff after a physical SQLite close/reopen without a net
     ).messages,
   ).toHaveLength(0);
 });
-it("processes good members immediately and retains the same ordered manifest/card after a missing copy resumes", async () => {
-  const f = await fixture({ zip: true });
-  f.failNextMember();
-  const partial = await f.handoff.attach(f.ref);
-  expect(partial).toMatchObject({
-    status: "ATTACHED",
-    failures: [expect.objectContaining({ path: "Exports/ventes.xlsx" })],
-  });
-  if (partial.status !== "ATTACHED")
-    throw Error("expected partial import card");
-  const first = await f.engine().run(partial.message);
-  expect(first.items.map((item) => item.status)).toEqual([
-    "ERROR",
-    "PUBLISHED",
-  ]);
-  expect(count(f, "sales_observations")).toBe(1);
-  const before = await new MercalysBatchRepository(f.a, f.scope).header(
-    partial.batchId,
-  );
-  expect(
-    before.files.map((file) => [file.filename, file.localUri === null]),
-  ).toEqual([
-    ["Exports/ventes.xlsx", true],
-    ["Exports/suite.xlsx", false],
-  ]);
-  expect(count(f, "copilot_messages")).toBe(0);
-  const resumed = await f.handoff.attach(f.ref);
-  if (resumed.status !== "ATTACHED")
-    throw Error("expected completed extraction");
-  expect(resumed.message).toEqual(partial.message);
-  expect(
-    (await f.engine().run(resumed.message)).items.map((item) => item.status),
-  ).toEqual(["PUBLISHED", "PUBLISHED"]);
-  expect(count(f, "sales_observations")).toBe(2);
-  const commands = count(f, "sync_outbox");
-  await f
-    .engine()
-    .run(((await f.handoff.attach(f.ref)) as typeof resumed).message);
-  expect(count(f, "sync_outbox")).toBe(commands);
-  expect(count(f, "mercalys_intake_batches")).toBe(1);
-  expect(f.zip.retain).not.toHaveBeenCalled();
-});
+it.each(["MERCALYS_SALES", "MERCALYS_PURCHASE_PRICES"] as const)(
+  "processes %s ZIP members and resumes without duplicate publication",
+  async (flow) => {
+    const f = await fixture({ zip: true, flow, storeMailbox: true });
+    f.failNextMember();
+    const partial = await f.handoff.attach(f.ref);
+    expect(partial).toMatchObject({
+      status: "ATTACHED",
+      failures: [expect.objectContaining({ path: "Exports/ventes.xlsx" })],
+    });
+    if (partial.status !== "ATTACHED")
+      throw Error("expected partial import card");
+    const first = await f.engine().run(partial.message);
+    expect(first.items.map((item) => item.status)).toEqual([
+      "ERROR",
+      "PUBLISHED",
+    ]);
+    expect(
+      count(
+        f,
+        flow === "MERCALYS_PURCHASE_PRICES"
+          ? "purchase_price_observations"
+          : "sales_observations",
+      ),
+    ).toBe(1);
+    const before = await new MercalysBatchRepository(f.a, f.scope).header(
+      partial.batchId,
+    );
+    expect(
+      before.files.map((file) => [file.filename, file.localUri === null]),
+    ).toEqual([
+      ["Exports/ventes.xlsx", true],
+      ["Exports/suite.xlsx", false],
+    ]);
+    expect(count(f, "copilot_messages")).toBe(0);
+    const resumed = await f.handoff.attach(f.ref);
+    if (resumed.status !== "ATTACHED")
+      throw Error("expected completed extraction");
+    expect(resumed.message).toEqual(partial.message);
+    expect(
+      (await f.engine().run(resumed.message)).items.map((item) => item.status),
+    ).toEqual(["PUBLISHED", "PUBLISHED"]);
+    expect(
+      count(
+        f,
+        flow === "MERCALYS_PURCHASE_PRICES"
+          ? "purchase_price_observations"
+          : "sales_observations",
+      ),
+    ).toBe(2);
+    const commands = count(f, "sync_outbox");
+    await f
+      .engine()
+      .run(((await f.handoff.attach(f.ref)) as typeof resumed).message);
+    expect(count(f, "sync_outbox")).toBe(commands);
+    expect(count(f, "mercalys_intake_batches")).toBe(1);
+    expect(f.zip.retain).not.toHaveBeenCalled();
+  },
+);
 it("does not double-publish a file already imported normally in this store", async () => {
   const f = await fixture(),
     normal = await f.add({ review: false });
@@ -812,25 +840,32 @@ it("does not let an empty workbook block its valid sibling or fabricate a retain
   expect(existsSync(fileURLToPath(f.uri))).toBe(true);
 });
 
-it("imports a store-mailbox workbook through the existing engine without a persisted chat or duplicate publication", async () => {
-  const f = await fixture({ storeMailbox: true });
-  const result = await f.handoff.attach(f.ref);
-  if (result.status !== "ATTACHED") throw Error("Expected retained import");
-  const report = await f.engine().run(result.message);
-  expect(report.items[0]?.status, JSON.stringify(report.items)).toBe(
-    "PUBLISHED",
-  );
-  await f.engine().run(result.message);
-  expect(f.db.prepare("SELECT COUNT(*) n FROM copilot_messages").get()!.n).toBe(
-    0,
-  );
-  expect(
-    f.db.prepare("SELECT COUNT(*) n FROM copilot_conversations").get()!.n,
-  ).toBe(0);
-  expect(
-    f.db.prepare("SELECT COUNT(*) n FROM sales_observations").get()!.n,
-  ).toBe(1);
-});
+it.each(["MERCALYS_SALES", "MERCALYS_PURCHASE_PRICES"] as const)(
+  "imports a store-mailbox %s through the existing engine without a persisted chat or duplicate publication",
+  async (flow) => {
+    const f = await fixture({ storeMailbox: true, flow });
+    const result = await f.handoff.attach(f.ref);
+    if (result.status !== "ATTACHED") throw Error("Expected retained import");
+    const report = await f.engine().run(result.message);
+    expect(report.items[0]?.status, JSON.stringify(report.items)).toBe(
+      "PUBLISHED",
+    );
+    await f.engine().run(result.message);
+    expect(
+      f.db.prepare("SELECT COUNT(*) n FROM copilot_messages").get()!.n,
+    ).toBe(0);
+    expect(
+      f.db.prepare("SELECT COUNT(*) n FROM copilot_conversations").get()!.n,
+    ).toBe(0);
+    expect(
+      f.db
+        .prepare(
+          `SELECT COUNT(*) n FROM ${flow === "MERCALYS_PURCHASE_PRICES" ? "purchase_price_observations" : "sales_observations"}`,
+        )
+        .get()!.n,
+    ).toBe(1);
+  },
+);
 
 it("rolls store-email publication and its Outbox back if access changes during operation-ledger commit", async () => {
   const f = await fixture({ storeMailbox: true });
@@ -846,3 +881,32 @@ it("rolls store-email publication and its Outbox back if access changes during o
   expect(count(f, "source_documents")).toBe(0);
   expect(count(f, "copilot_messages")).toBe(0);
 });
+
+function priceWorkbook(date: string) {
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    book,
+    XLSX.utils.aoa_to_sheet([
+      ["Numéro point de vente : 9083"],
+      [`Date d'application :${date.split("-").reverse().join("/")}`],
+      [
+        "ITM",
+        "EAN",
+        "LIBELLE",
+        "NOMENCLATURE",
+        "PRIX ACHAT PAR UNITE",
+        "ACTIF",
+      ],
+      [
+        "00000001",
+        "0000000000012",
+        "TOMATE VRAC",
+        "LEGUMES FRAIS",
+        1.235,
+        "Oui",
+      ],
+    ]),
+    "Mercalys",
+  );
+  return new Uint8Array(XLSX.write(book, { type: "buffer", bookType: "xlsx" }));
+}

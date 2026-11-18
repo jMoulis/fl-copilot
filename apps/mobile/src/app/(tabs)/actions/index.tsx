@@ -126,8 +126,17 @@ export default function ImportsHub() {
       >
         <MenuRow
           title="Ventes Mercalys"
-          description="Ventes ou casse · Excel ou ZIP"
+          description="Ventes, casse ou prix d’achat · Excel ou ZIP"
           icon="document-text-outline"
+          onPress={() => {
+            nextMercalys.current = true;
+            setChoosing(false);
+          }}
+        />
+        <MenuRow
+          title="Prix d’achat quotidiens"
+          description="Base articles Mercalys · Excel ou ZIP"
+          icon="pricetag-outline"
           onPress={() => {
             nextMercalys.current = true;
             setChoosing(false);

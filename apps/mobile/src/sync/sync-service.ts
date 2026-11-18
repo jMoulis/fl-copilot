@@ -149,6 +149,7 @@ export interface MobileSyncServiceOptions {
   deviceId: string;
   mercalysPublications?: boolean;
   mercalysRecordUpdates?: boolean;
+  purchasePrices?: boolean;
   maxRetries?: number;
   baseRetryDelayMs?: number;
   now?: () => string;
@@ -350,6 +351,12 @@ export class MobileSyncService {
       !this.options.copilotOwnerId
     )
       throw Error("COPILOT_HISTORY_OWNER_REQUIRED");
+    const purchasePricesAdopted =
+      !this.options.purchasePrices ||
+      !!(await this.database.getFirstAsync(
+        "SELECT value FROM app_metadata WHERE key=?",
+        `purchase-prices:${storeId}`,
+      ));
     const mercalysAdopted = this.options.mercalysPublications
       ? await this.database.getFirstAsync(
           "SELECT value FROM app_metadata WHERE key=?",
@@ -501,6 +508,7 @@ export class MobileSyncService {
       !linksAdopted ||
       !actionsAdopted ||
       !mercalysAdopted ||
+      !purchasePricesAdopted ||
       !mercalysUpdatesAdopted ||
       !executionAdopted ||
       !actualsAdopted ||
@@ -591,6 +599,16 @@ export class MobileSyncService {
         code: "TG_PRESENTATION_UPGRADE_REQUIRED",
         messageFr:
           "Le service doit être mis à jour pour enregistrer les répartitions TG. Tes modifications locales sont conservées.",
+        retryable: false,
+      });
+    if (
+      this.options.purchasePrices &&
+      snapshot.entities.purchasePrices !== true
+    )
+      throw new ApiClientError(426, {
+        code: "PURCHASE_PRICES_SERVER_UPGRADE_REQUIRED",
+        messageFr:
+          "Le service doit être mis à jour pour synchroniser les prix d’achat. Tes imports locaux sont conservés.",
         retryable: false,
       });
     await applyBootstrap(

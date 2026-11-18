@@ -1,3 +1,4 @@
+import { ProductPurchasePrices } from "./product-purchase-prices";
 import { ProductPerformance } from "./product-performance";
 import { IconButton, DetailsDisclosure } from "../components/dashboard";
 import { useAuth } from "../auth/auth-provider";
@@ -160,6 +161,11 @@ function ScopedProductDetailScreen({
               selection={selection}
             />
           ) : null}
+          <ProductPurchasePrices
+            key={`${p.storeId}:${id}`}
+            storeId={p.storeId}
+            productId={id}
+          />
           <DetailsDisclosure title="Informations du référentiel">
             <SectionCard title="Identité">
               <Detail label="Catégorie" value={categoryLabels[p.category]} />

@@ -583,6 +583,7 @@ export class ApiClient {
     transportAlertFilters = false,
     automaticMemory = false,
     personalTasks = false,
+    purchasePrices = false,
   ) {
     const query = new URLSearchParams();
     if (commercialReview) query.set("commercialReview", "true");
@@ -631,6 +632,7 @@ export class ApiClient {
     if (copilotActionExecutions) query.set("copilotActionExecutions", "true");
     if (mercalysPublications) query.set("mercalysPublications", "true");
     if (mercalysRecordUpdates) query.set("mercalysRecordUpdates", "true");
+    if (purchasePrices) query.set("purchasePrices", "true");
     if (documentArchives) query.set("documentArchives", "true");
     if (cursor) query.set("cursor", cursor);
     if (limit !== undefined) query.set("limit", String(limit));
@@ -701,6 +703,7 @@ export class ApiClient {
     transportAlertFilters = false,
     automaticMemory = false,
     personalTasks = false,
+    purchasePrices = false,
   ) {
     const query = new URLSearchParams();
     if (rawObservationDays !== undefined)
@@ -751,6 +754,7 @@ export class ApiClient {
     if (copilotActionExecutions) query.set("copilotActionExecutions", "true");
     if (mercalysPublications) query.set("mercalysPublications", "true");
     if (mercalysRecordUpdates) query.set("mercalysRecordUpdates", "true");
+    if (purchasePrices) query.set("purchasePrices", "true");
     const suffix = query.toString() ? `?${query}` : "";
     return this.request(
       `/api/v1/sync/bootstrap${suffix}`,

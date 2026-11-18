@@ -27,7 +27,7 @@ export async function readMercalysPublication(
   id: string,
 ): Promise<MercalysPublication | null> {
   const source = await tx.getFirstAsync<Row>(
-    "SELECT * FROM source_documents WHERE id=? AND store_id=? AND source_type IN ('MERCALYS_SALES','MERCALYS_WASTE') AND local_processing_status='PUBLISHED' AND deleted_at IS NULL",
+    "SELECT * FROM source_documents WHERE id=? AND store_id=? AND source_type IN ('MERCALYS_SALES','MERCALYS_WASTE','MERCALYS_PURCHASE_PRICES') AND local_processing_status='PUBLISHED' AND deleted_at IS NULL",
     id,
     storeId,
   );
@@ -56,6 +56,7 @@ export async function readMercalysPublication(
     })),
     sales: await read("sales_observations"),
     waste: await read("waste_observations"),
+    prices: await read("purchase_price_observations"),
   });
 }
 /** Called inside the publication transaction; also repairs pre-upgrade publications. */
@@ -72,7 +73,7 @@ export async function enqueueMercalysPublications(
   );
   if (!device) throw Error("MERCALYS_DEVICE_ID_REQUIRED");
   const sources = await tx.getAllAsync<{ id: string }>(
-    `SELECT id FROM source_documents WHERE store_id=? AND source_type IN ('MERCALYS_SALES','MERCALYS_WASTE') AND local_processing_status='PUBLISHED' AND deleted_at IS NULL ${sourceIds ? `AND id IN (${sourceIds.map(() => "?").join(",")})` : ""} ORDER BY created_at,id`,
+    `SELECT id FROM source_documents WHERE store_id=? AND source_type IN ('MERCALYS_SALES','MERCALYS_WASTE','MERCALYS_PURCHASE_PRICES') AND local_processing_status='PUBLISHED' AND deleted_at IS NULL ${sourceIds ? `AND id IN (${sourceIds.map(() => "?").join(",")})` : ""} ORDER BY created_at,id`,
     storeId,
     ...(sourceIds ?? []),
   );
@@ -130,7 +131,7 @@ export async function repairMercalysPublications(
   // independently valid publications, product commands, or the subsequent sync.
   const sources = await db.getAllAsync<{ id: string }>(
     `SELECT d.id FROM source_documents d WHERE d.store_id=?
-     AND d.source_type IN ('MERCALYS_SALES','MERCALYS_WASTE')
+     AND d.source_type IN ('MERCALYS_SALES','MERCALYS_WASTE','MERCALYS_PURCHASE_PRICES')
      AND d.local_processing_status='PUBLISHED' AND d.deleted_at IS NULL
      AND (d.dirty=1 OR NOT EXISTS (SELECT 1 FROM mercalys_publication_sync s
        WHERE s.store_id=d.store_id AND s.source_document_id=d.id AND s.remote_version IS NOT NULL)
@@ -351,6 +352,7 @@ export async function applyMercalysPublication(
   for (const [table, observations] of [
     ["sales_observations", p.sales],
     ["waste_observations", p.waste],
+    ["purchase_price_observations", p.prices],
   ] as const) {
     for (const o of observations) {
       const current = await tx.getFirstAsync<{
@@ -404,13 +406,14 @@ export async function applyMercalysPublication(
       storeId,
     );
   }
-  await enqueueAnalyticsRecomputationJob(tx, {
-    jobId: `mercalys-publication:${snapshot.id}:${snapshot.remoteVersion}`,
-    storeId,
-    scopes: [...p.sales, ...p.waste].map((o) => ({
-      productId: o.productId,
-      businessDate: o.businessDate,
-    })),
-    createdAt: p.source.createdAt,
-  });
+  if (p.sales.length || p.waste.length)
+    await enqueueAnalyticsRecomputationJob(tx, {
+      jobId: `mercalys-publication:${snapshot.id}:${snapshot.remoteVersion}`,
+      storeId,
+      scopes: [...p.sales, ...p.waste].map((o) => ({
+        productId: o.productId,
+        businessDate: o.businessDate,
+      })),
+      createdAt: p.source.createdAt,
+    });
 }
