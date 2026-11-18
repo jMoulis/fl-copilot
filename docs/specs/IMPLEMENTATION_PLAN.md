@@ -1,3 +1,14 @@
+## Email original relocation regression — 18 November 2026
+
+Owner reports freezes apparently resolved on build 81; two EMAIL_INTAKE_ORIGINAL_CHANGED
+jobs remain and the retained PA review cannot find its original. Reproduce an iOS
+container move: native original verification returns the current path while the
+manifest cache and immutable batch retain the former path. Repair only the verified
+cache locator, keep immutable batch identity and resolve scoped email .bin files
+through the existing private-folder reader. Preserve hash/size/ownership/admission
+checks. Prove manual retry completes the existing PA once and duplicate retries do
+not republish. Do not clear genuine integrity failures or mutate production data.
+
 ## Import responsiveness investigation — 18 November 2026
 
 Owner reports freezes persisting on build 80. No infinite email-processing loop

@@ -1,3 +1,4 @@
+import { retainedOriginalFile } from "../documents/read-retained-mercalys";
 import { z } from "zod";
 import {
   emailIntakeOriginalManifestSchema,
@@ -77,8 +78,7 @@ export async function readNativeEmailProcessingBytes(
   uri: string,
   limit: number,
 ) {
-  const { File } = await import("expo-file-system");
-  const file = new File(uri);
+  const file = await retainedOriginalFile(uri);
   if (!file.exists || file.size <= 0 || file.size > limit)
     throw Error("EMAIL_INTAKE_FILE_SIZE_INVALID");
   return file.bytes();

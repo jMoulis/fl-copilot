@@ -2,6 +2,11 @@ import { sourceFileDirectory } from "./source-file-directory";
 
 /** Read an immutable retained original after a native app-container move. */
 export async function readRetainedMercalysBytes(uri: string) {
+  return (await retainedOriginalFile(uri)).bytes();
+}
+
+/** Resolve a verified app-owned locator; callers enforce size/hash before use. */
+export async function retainedOriginalFile(uri: string) {
   if (
     !uri.startsWith("file://") ||
     uri.includes("%") ||
@@ -15,14 +20,15 @@ export async function readRetainedMercalysBytes(uri: string) {
     const directory = sourceFileDirectory(uri, "mercalys-imports");
     const name = uri.split("/").at(-1) ?? "";
     // Never search by a user filename or follow traversal into another folder.
-    const retainedName =
-      /^(?:[a-f0-9-]{36}|(?:original|view)-[a-f0-9]{64})\.xlsx$/;
+    const retainedName = directory.startsWith("email-originals/")
+      ? /^original-[a-f0-9]{64}\.bin$/
+      : /^(?:[a-f0-9-]{36}|(?:original|view)-[a-f0-9]{64})\.xlsx$/;
     if (retainedName.test(name) && uri.endsWith(`/${directory}/${name}`))
       file = new File(Paths.document, directory, name);
   }
   if (!file.exists) throw missingOriginal();
   // Callers still verify the immutable checksum and, for preparation, the size.
-  return file.bytes();
+  return file;
 }
 
 function missingOriginal() {

@@ -187,5 +187,52 @@ Tests cover exact matching parity, UI heartbeat throughout a large rematch,
 cancellation and closing a reading sheet without late analysis/publication.
 Focused review/matcher/email/controller suites: 90 passed. Earlier review mocks
 were updated to the asynchronous entry point and to await scheduled UI yields.
-Build 81 not yet compiled/distributed; exact sync error and device acceptance
+Build 81 delivery is recorded below; exact sync error and device acceptance
 remain outstanding. Private synthetic probe: maintenance/import-responsiveness-2026-11-18/.
+
+### Build 81 delivery
+
+PR 541 merged as `0ee68ddc862e2811e2069e1c431b31aa5ce6077d`. Exact-head
+push 44323652812, PR 44323731137 and master 44326002451 all passed.
+Local lint/typecheck/format and 5,471 tests passed (899 environment-dependent
+tests skipped); CI passed 641 suites, one skipped.
+
+Equivalent synthetic responsive probe: 172 rows / 1,226 products, 1,411 ms
+total, 103 timer callbacks, maximum observed gap 17 ms, versus 1,174 ms and
+zero callbacks before. Mac measurements, not device timing guarantees.
+
+Build 0.1.0 (81), local STORE archive verified, SHA-256
+`d16c353e808edc20f16a979dc9aeb1e2558ab410b6a6904d0829fe35fb302683`.
+Apple accepted upload. Build 81 is VALID / IN_BETA_TESTING, not expired,
+and present in the existing owner-only private internal group (one tester).
+API unchanged from PR 539. Private evidence in
+`maintenance/import-responsiveness-2026-11-18/`, outside Git.
+
+Focused device acceptance: update without uninstalling/resetting; allow the
+existing admitted file to resume, test navigation during identification and
+closing file review. Do not claim the synchronization error or every freeze
+resolved without this follow-up. No production data was manually modified.
+
+## Owner follow-up: build 81 responsive, email originals inaccessible
+
+Owner reports freezes seem gone. Screenshots show last sync 18 November 15:57,
+zero pending sends/conflicts and two failed EMAIL_INTAKE_PROCESS jobs with
+EMAIL_INTAKE_ORIGINAL_CHANGED. File review reports the retained original missing.
+
+Regression reproduced both messages after relocating an intact original: the native
+adapter verifies its current scoped path but the manifest cache retained the old
+path; the Mercalys reader only relocated XLSX paths, excluding email .bin originals.
+A retry also needs to preserve the original immutable batch locator/identity.
+
+Fix repairs only a physically verified cache locator, rechecks scope and manifest
+inside the write transaction, accepts an equivalent concurrent repair, and reuses
+the existing private-folder resolution for the four-level scoped email path/hash.
+File review and background processing use the same resolver and keep size/hash
+checks. The immutable XLSX intake batch keeps its initial locator. No file is
+replaced, no original integrity error is silently erased, no server change.
+
+Red proof: relocation and review tests failed with the exact two reported errors.
+Green focused coverage also retries a failed admitted PA, publishes it once and
+retains idempotency on a second retry; changed bytes and foreign folder remain
+rejected. Existing failed jobs require the ordinary “Reprendre ce fichier” action
+after delivery; no automatic rearming of unclassified integrity failures.

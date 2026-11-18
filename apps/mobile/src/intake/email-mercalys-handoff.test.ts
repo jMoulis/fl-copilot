@@ -8,6 +8,7 @@ import {
   writeFileSync,
   rmSync,
   existsSync,
+  renameSync,
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -108,8 +109,9 @@ async function fixture(
         { level: 0 },
       )
     : workbook();
-  const uri = pathToFileURL(join(dir, "original.bin")).href;
+  let uri = pathToFileURL(join(dir, "original.bin")).href;
   writeFileSync(fileURLToPath(uri), original);
+  const originalUri = uri;
   const binding = {
     id: randomUUID(),
     storeId: scope.storeId,
@@ -261,7 +263,8 @@ async function fixture(
     new CopilotMercalysImportController(a, scope, {
       ...s.deps,
       authorize,
-      read: async (local) => s.bytes.get(local) ?? read(local),
+      read: async (local) =>
+        s.bytes.get(local) ?? read(local === originalUri ? uri : local),
     });
   return {
     ...s,
@@ -274,7 +277,14 @@ async function fixture(
     receipt,
     decision,
     manifest,
-    uri,
+    get uri() {
+      return uri;
+    },
+    relocateOriginal: () => {
+      const next = pathToFileURL(join(dir, "relocated-original.bin")).href;
+      renameSync(fileURLToPath(uri), fileURLToPath(next));
+      uri = next;
+    },
     deps,
     workbook,
     zip,
@@ -910,3 +920,108 @@ function priceWorkbook(date: string) {
   );
   return new Uint8Array(XLSX.write(book, { type: "buffer", bookType: "xlsx" }));
 }
+
+it("reuses the admitted PA and immutable batch after its verified local original moves", async () => {
+  const f = await fixture({
+    storeMailbox: true,
+    flow: "MERCALYS_PURCHASE_PRICES",
+  });
+  const initial = await f.handoff.attach(f.ref);
+  expect(initial.status).toBe("ATTACHED");
+  if (initial.status !== "ATTACHED") throw Error("Expected attached batch");
+  const before = await new MercalysBatchRepository(f.a, f.scope).header(
+    initial.batchId,
+  );
+  f.relocateOriginal();
+  const resumed = await f.makeHandoff().attach(f.ref);
+  expect(resumed).toEqual(initial);
+  expect(
+    await new MercalysBatchRepository(f.a, f.scope).header(initial.batchId),
+  ).toEqual(before);
+  expect(await f.originals(f.cache).local(f.ref)).toEqual({ localUri: f.uri });
+  const retained = await f.a.getFirstAsync<{ local_uri: string }>(
+    "SELECT local_uri FROM email_original_manifests WHERE file_id=?",
+    f.ref.fileId,
+  );
+  expect(retained?.local_uri).toBe(f.uri);
+  expect(count(f, "mercalys_intake_batches")).toBe(1);
+  expect(count(f, "source_documents")).toBe(0);
+});
+
+it("retries a failed admitted PA after relocation and publishes exactly once", async () => {
+  const f = await fixture({
+    storeMailbox: true,
+    flow: "MERCALYS_PURCHASE_PRICES",
+  });
+  await f.handoff.attach(f.ref);
+  const p = durableEmailRuntime(f)();
+  const input = {
+    ...f.ref,
+    actionId: f.decision.actionId,
+    processingId: f.decision.files[0]!.processingId,
+  };
+  await p.runtime.seed(f.scope.storeId, f.scope.ownerId, p.jobs);
+  await f.a.runAsync(
+    "UPDATE local_jobs SET status='FAILED',last_error='EMAIL_INTAKE_ORIGINAL_CHANGED' WHERE type='EMAIL_INTAKE_PROCESS'",
+  );
+  f.relocateOriginal();
+  await p.jobs.requestEmailProcessing(input, true);
+  await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+  expect(await p.jobs.emailProcessingState(input)).toMatchObject({
+    status: "COMPLETED",
+    code: null,
+  });
+  expect(count(f, "purchase_price_observations")).toBe(1);
+  expect(count(f, "source_documents")).toBe(1);
+  const commands = count(f, "sync_outbox");
+  await p.jobs.requestEmailProcessing(input, true);
+  await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+  expect(count(f, "purchase_price_observations")).toBe(1);
+  expect(count(f, "sync_outbox")).toBe(commands);
+});
+
+it("coalesces equivalent relocated proofs without weakening original integrity", async () => {
+  const f = await fixture({
+    storeMailbox: true,
+    flow: "MERCALYS_PURCHASE_PRICES",
+  });
+  f.relocateOriginal();
+  const facade = {
+    execAsync: f.a.execAsync.bind(f.a),
+    runAsync: f.a.runAsync.bind(f.a),
+    getFirstAsync: f.a.getFirstAsync.bind(f.a),
+    getAllAsync: f.a.getAllAsync.bind(f.a),
+    withExclusiveTransactionAsync: f.a.withExclusiveTransactionAsync.bind(f.a),
+  };
+  const db = serializeLocalWrites(
+    facade as unknown as Parameters<typeof serializeLocalWrites>[0],
+  ) as unknown as typeof facade;
+  const cache = new EmailIntakeCache(db, () => ({
+    storeId: f.scope.storeId,
+    userId: f.scope.ownerId,
+    canWrite: true,
+  }));
+  const transfer = f.originals(cache);
+  expect(
+    await Promise.all([transfer.local(f.ref), transfer.local(f.ref)]),
+  ).toEqual([{ localUri: f.uri }, { localUri: f.uri }]);
+});
+it("does not repair the locator when the relocated bytes no longer match the admitted original", async () => {
+  const f = await fixture({
+    storeMailbox: true,
+    flow: "MERCALYS_PURCHASE_PRICES",
+  });
+  const old = f.uri;
+  f.relocateOriginal();
+  writeFileSync(fileURLToPath(f.uri), new Uint8Array([1, 2, 3]));
+  await expect(f.originals(f.cache).local(f.ref)).rejects.toThrow(
+    "original damaged",
+  );
+  expect(
+    await f.a.getFirstAsync(
+      "SELECT local_uri FROM email_original_manifests WHERE file_id=?",
+      f.ref.fileId,
+    ),
+  ).toEqual({ local_uri: old });
+  expect(count(f, "source_documents")).toBe(0);
+});

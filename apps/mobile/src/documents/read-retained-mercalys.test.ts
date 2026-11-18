@@ -1,3 +1,4 @@
+import { readNativeEmailProcessingBytes } from "../intake/email-original-files";
 import { beforeEach, expect, it, vi } from "vitest";
 import { readRetainedMercalysBytes } from "./read-retained-mercalys";
 import { localOperationFailureCode } from "../observability/local-operation-failure";
@@ -15,6 +16,9 @@ vi.mock("expo-file-system", () => ({
     }
     get exists() {
       return p.files.has(this.uri);
+    }
+    get size() {
+      return p.files.get(this.uri)?.length ?? 0;
     }
     async bytes() {
       return p.files.get(this.uri)!;
@@ -77,4 +81,34 @@ it("reports a fixed missing-file category when neither retained address exists",
   expect(localOperationFailureCode(failure)).toBe("LOCAL_FILE_MISSING");
   expect(String(failure)).not.toContain("file://");
   expect(p.files.size).toBe(0);
+});
+
+it("reads an email XLSX retained as a scoped bin after app update", async () => {
+  const relative = `email-originals/${id}/${id}/${id}/${id}/original-${"a".repeat(64)}.bin`;
+  p.files.set(`file:///new/Documents/${relative}`, bytes);
+  expect(
+    await readRetainedMercalysBytes(`file:///old/Documents/${relative}`),
+  ).toEqual(bytes);
+});
+it("does not search another email file or owner when the scoped original is missing", async () => {
+  const relative = `email-originals/${id}/${id}/${id}/${id}/original-${"a".repeat(64)}.bin`;
+  p.files.set(
+    `file:///new/Documents/${relative.replace(id, "22222222-2222-4222-8222-222222222222")}`,
+    bytes,
+  );
+  await expect(
+    readRetainedMercalysBytes(`file:///old/Documents/${relative}`),
+  ).rejects.toThrow();
+});
+
+it("uses the relocated email original in background processing and enforces its byte limit", async () => {
+  const relative = `email-originals/${id}/${id}/${id}/${id}/original-${"a".repeat(64)}.bin`;
+  p.files.set(`file:///new/Documents/${relative}`, bytes);
+  const old = `file:///old/Documents/${relative}`;
+  expect(await readNativeEmailProcessingBytes(old, bytes.length)).toEqual(
+    bytes,
+  );
+  await expect(
+    readNativeEmailProcessingBytes(old, bytes.length - 1),
+  ).rejects.toThrow("EMAIL_INTAKE_FILE_SIZE_INVALID");
 });

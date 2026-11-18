@@ -217,6 +217,26 @@ export class EmailMercalysHandoff {
         memberFailures = result.outcome.failures;
       }
     } else {
+      let retainedUri = proof.localUri;
+      try {
+        const prior = await batches.header(batchId);
+        const item = prior.files[0];
+        // A batch is immutable. Only preserve its original locator when the
+        // freshly verified bytes are identical; create() checks every other field.
+        if (
+          prior.files.length === 1 &&
+          item?.checksum === manifest.checksum &&
+          item.sizeBytes === manifest.sizeBytes &&
+          item.localUri
+        )
+          retainedUri = item.localUri;
+      } catch (error) {
+        if (
+          !(error instanceof Error) ||
+          error.message !== "MERCALYS_BATCH_UNAVAILABLE"
+        )
+          throw error;
+      }
       await batches.create({
         id: batchId,
         ...scope,
@@ -225,7 +245,7 @@ export class EmailMercalysHandoff {
           {
             id: emailProcessingIdentity(scope, origin, "ITEM"),
             filename: label,
-            localUri: proof.localUri,
+            localUri: retainedUri,
             sizeBytes: manifest.sizeBytes,
             checksum: manifest.checksum,
           },
