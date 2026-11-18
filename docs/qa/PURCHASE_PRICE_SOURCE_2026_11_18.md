@@ -377,9 +377,14 @@ Close/reopen and full route unmount/reopen directly show the review in respectiv
 Those two captures preceded the final index optimization. Grouped creation of
 106 products takes 15,113 ms (11,819 ms matching), with visible numeric progress.
 Native SQLite contains 565 products, exactly one newly created AIL and 321 pending
-Outbox commands. Final group completion/reopening visual check is still pending:
-the Mac locked before that last capture. Do not claim a complete native acceptance
-or publish a new iPhone binary before finishing it.
+Outbox commands. After unlocking, final-version native UI confirms 577 remaining
+products, 649 ready rows and zero errors. Closing/reopening and full component
+unmount/remount/reopening directly display the same review without the initial
+identification screen. Captures: `native/final-batch-complete.png`,
+`native/final-batch-reopened.png`, `native/final-batch-summary.png`; the final
+unmount/reopen was also observed through CUA. This is simulator qualification,
+not physical iPhone acceptance. A group of 106 is not instantaneous (15.1 s);
+progress remains visible throughout the operation.
 
 All 5,500 local tests pass (899 service-dependent skips), with lint and all ten
 TypeScript projects passing. The supplied-data Mac benchmark confirms exact

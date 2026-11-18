@@ -2,9 +2,11 @@
 
 **Retour propriétaire sur build 84 : non accepté pour les PA.** Une création
 relance encore la recherche complète, et la réouverture montre de nouveau
-l’identification. Correctif incrémental en cours de recette native sur copie
-isolée du catalogue et fichier fourni (1 226 lignes). Aucun nouveau build livré
-à ce stade ; les lots validés restent clos.
+l’identification. Correctif incrémental PR 545 vérifié dans le simulateur sur
+copie isolée du catalogue et fichier fourni (1 226 lignes) : création individuelle
+427 ms ; lot de 106 produits terminé en 15,1 s avec progression ; réouvertures
+directes, y compris après sortie complète de l’écran. Aucun nouveau build livré
+à ce stade ; validation iPhone à venir, lots précédemment validés toujours clos.
 
 **Création et réouverture des imports — build 84 disponible :** PR 544
 fusionnée, CI push/PR/master vertes. Archive compilée localement et vérifiée.
