@@ -1,4 +1,4 @@
-# État courant — pilote iPhone, actualisé le 17 novembre 2026
+# État courant — pilote iPhone, actualisé le 18 novembre 2026
 
 Ce point consolide les arbitrages et validations du propriétaire. Il remplace les
 anciens statuts « en attente » des journaux datés, sans transformer une validation
@@ -6,17 +6,20 @@ fonctionnelle en certification de tous les appareils ou scénarios.
 
 ## Version utilisée
 
-- iOS **0.1.0 (75)**, compilé localement sur le Mac, distribué dans le groupe
+- iOS **0.1.0 (76)**, compilé localement sur le Mac, distribué dans le groupe
   TestFlight privé habituel. Source native
-  `29a147f81e1e7f63da9fd020f84208fe6335039e`. Le lot INSEE et sa restitution
+  `adb7efb80278a3ebf0e6b36b56444f6ab574ff26`. Les actualités nationales sont
+  acceptées (« tout fonctionne »). Le lot INSEE et sa restitution
   corrigée côté serveur sont acceptés par le propriétaire le 17 novembre.
-  Le build 74 reste la précédente version acceptée ; ses finitions Réglages,
+  Le build 75 reste la précédente version acceptée ; ses finitions Réglages,
   Mon magasin et Synchronisation sont clôturées.
-- API en service : `bfe72e377a181ec84f18cdbc1df359efff7e1c67` (PR 534),
-  déploiement `dpl_9yursQsjTFWMPfaJfJ1WCoej6wsZ`, région `cdg1`,
+- API en service : `adb7efb80278a3ebf0e6b36b56444f6ab574ff26` (PR 536),
+  déploiement `dpl_2RknNqVV9fa3ajnMemx14sfrjaBS`, région `cdg1`,
   `https://fl-copilot.vercel.app`. État public et base connectée vérifiés ;
-  accès privé non authentifié refusé. Le correctif n'exige pas de nouveau
-  binaire et n'altère pas les messages déjà enregistrés.
+  accès privé non authentifié refusé. Le correctif INSEE PR 534 reste acquis.
+  Le build 76 ajoute la rubrique native d’actualités, testée par le propriétaire.
+  Les erreurs internes des deux lectures Apple antérieures restent consignées
+  comme telles, sans remettre en cause ce retour d’usage.
 - Pas de nouvelle recette générale M0–M8 demandée sans régression identifiée.
 
 ## Socle validé
@@ -83,8 +86,11 @@ Le propriétaire a approuvé le premier périmètre des actualités nationales l
 17 novembre : mouvements sociaux et restrictions utiles aux déplacements ou à
 l’approvisionnement. Le premier incrément est implémenté et vérifié localement,
 avec collecte/archives existantes, compatibilité build 75 et affichage natif.
-Il n’est **ni publié ni accepté sur iPhone**. CI distante, fusion, publication API
-et build iPhone local restent à réaliser. Voir la
+PR 536 fusionnée avec CI push/PR/master vertes ; API publiée et saine. Le build
+76 est compilé localement, vérifié, envoyé à Apple et accepté par le propriétaire.
+La prochaine évolution approuvée regroupe les rubriques sur une page
+« Repères du jour » ; météo compacte et analyse restent dans le Journal.
+Voir [le lot UX](../qa/JOURNAL_CONTEXT_PAGE_2026_11_18.md). Voir la
 [fiche du lot](../qa/JOURNAL_NATIONAL_NEWS_2026_11_17.md) pour les preuves et limites
 (dates incertaines, couverture partielle, déduplication par URL).
 Le [backlog actif](PRODUCT_BACKLOG_2026_11_06.md) conserve les reports explicites.

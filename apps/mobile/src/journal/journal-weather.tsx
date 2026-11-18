@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { parisDate, type WeeklyContext } from "@fl-copilot/domain";
@@ -26,6 +26,8 @@ export function JournalWeather({
   configured,
   onRefresh,
   onSettings,
+  renderTrigger,
+  section = "all",
 }: {
   date: string;
   context: WeeklyContext | null;
@@ -35,6 +37,8 @@ export function JournalWeather({
   configured: boolean;
   onRefresh(): void;
   onSettings(): void;
+  section?: "all" | "weather" | "calendar";
+  renderTrigger?: (open: () => void) => ReactNode;
 }) {
   const [detail, setDetail] = useState(false),
     [linkError, setLinkError] = useState(false),
@@ -107,54 +111,68 @@ export function JournalWeather({
   }
   return (
     <View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Ouvrir le détail de la météo et du calendrier"
-        onPress={() => {
+      {renderTrigger ? (
+        renderTrigger(() => {
+          setLinkError(false);
           setShowForecast(false);
           setDetail(true);
-        }}
-        className="active:opacity-70"
-        style={[styles.weather, { backgroundColor: background, opacity: 1 }]}
-      >
-        <Ionicons name={presentation.icon} size={39} color={ink} />
-        <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
-          <Text style={[styles.eyebrow, { color: ink }]}>
-            {observing
-              ? `Météo observée${stale ? " · ancienne" : ""}`
-              : available
-                ? `${journalWeatherDate(date, now)}${symbolTime ? ` · ${symbolTime}` : ""}${stale ? " · ancienne" : error ? " · à actualiser" : ""}`
-                : "Météo"}
-          </Text>
-          <Text numberOfLines={1} style={[styles.condition, { color: ink }]}>
-            {observing
-              ? available
-                ? context?.observedWeather?.reference?.station.name
-                : "Mesure indisponible"
-              : day?.symbol
-                ? presentation.label
-                : day?.temperatureSampleCount
-                  ? "Températures prévues"
-                  : configured
-                    ? "Prévision indisponible"
-                    : "Magasin à configurer"}
-          </Text>
-        </View>
-        {maximum != null ? (
-          <View style={{ alignItems: "center", gap: 2 }}>
-            <Text style={[styles.temperature, { color: ink }]}>
-              {weatherNumber(maximum)}°
+        })
+      ) : (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Ouvrir le détail de la météo et du calendrier"
+          onPress={() => {
+            setShowForecast(false);
+            setDetail(true);
+          }}
+          className="active:opacity-70"
+          style={[styles.weather, { backgroundColor: background, opacity: 1 }]}
+        >
+          <Ionicons name={presentation.icon} size={39} color={ink} />
+          <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+            <Text style={[styles.eyebrow, { color: ink }]}>
+              {observing
+                ? `Météo observée${stale ? " · ancienne" : ""}`
+                : available
+                  ? `${journalWeatherDate(date, now)}${symbolTime ? ` · ${symbolTime}` : ""}${stale ? " · ancienne" : error ? " · à actualiser" : ""}`
+                  : "Météo"}
             </Text>
-            <Text style={{ color: ink, fontSize: 10 }}>
-              {observing ? "max. mesurée" : "max. indic."}
+            <Text numberOfLines={1} style={[styles.condition, { color: ink }]}>
+              {observing
+                ? available
+                  ? context?.observedWeather?.reference?.station.name
+                  : "Mesure indisponible"
+                : day?.symbol
+                  ? presentation.label
+                  : day?.temperatureSampleCount
+                    ? "Températures prévues"
+                    : configured
+                      ? "Prévision indisponible"
+                      : "Magasin à configurer"}
             </Text>
           </View>
-        ) : null}
-        <Ionicons name="chevron-forward" size={16} color={ink} />
-      </Pressable>
+          {maximum != null ? (
+            <View style={{ alignItems: "center", gap: 2 }}>
+              <Text style={[styles.temperature, { color: ink }]}>
+                {weatherNumber(maximum)}°
+              </Text>
+              <Text style={{ color: ink, fontSize: 10 }}>
+                {observing ? "max. mesurée" : "max. indic."}
+              </Text>
+            </View>
+          ) : null}
+          <Ionicons name="chevron-forward" size={16} color={ink} />
+        </Pressable>
+      )}
       <BottomSheet
         visible={detail}
-        title="Météo et calendrier"
+        title={
+          section === "calendar"
+            ? "Calendrier"
+            : section === "weather"
+              ? "Météo"
+              : "Météo et calendrier"
+        }
         swipeToClose
         onClose={() => setDetail(false)}
       >
@@ -165,25 +183,29 @@ export function JournalWeather({
         {error ? (
           <InlineAlert title="Contexte à actualiser" message={error} />
         ) : null}
-        {observing ? (
-          <JournalObservedWeather
-            context={context!.observedWeather!}
-            date={date}
-            onSource={(url) => void source(url)}
-          />
-        ) : (
-          <Text className="text-ink">
-            {day?.precipitationMm == null
-              ? "Cumul de pluie indisponible"
-              : `${weatherNumber(day.precipitationMm)} mm prévus sur la journée`}
-          </Text>
-        )}
-        {calendar.map((line) => (
-          <Text key={line} className="text-ink">
-            {line}
-          </Text>
-        ))}
-        {observing && day?.temperatureSampleCount ? (
+        {section !== "calendar" ? (
+          observing ? (
+            <JournalObservedWeather
+              context={context!.observedWeather!}
+              date={date}
+              onSource={(url) => void source(url)}
+            />
+          ) : (
+            <Text className="text-ink">
+              {day?.precipitationMm == null
+                ? "Cumul de pluie indisponible"
+                : `${weatherNumber(day.precipitationMm)} mm prévus sur la journée`}
+            </Text>
+          )
+        ) : null}
+        {section !== "weather"
+          ? calendar.map((line) => (
+              <Text key={line} className="text-ink">
+                {line}
+              </Text>
+            ))
+          : null}
+        {section !== "calendar" && observing && day?.temperatureSampleCount ? (
           <SecondaryButton
             label={
               showForecast
@@ -193,7 +215,7 @@ export function JournalWeather({
             onPress={() => setShowForecast((v) => !v)}
           />
         ) : null}
-        {!observing || showForecast ? (
+        {section !== "calendar" && (!observing || showForecast) ? (
           <>
             {observing ? (
               <Text className="text-lg font-semibold text-ink">
@@ -240,36 +262,40 @@ export function JournalWeather({
         ) : null}
         {context ? (
           <>
-            {!observing || showForecast ? (
+            {section !== "calendar" && (!observing || showForecast) ? (
               <SecondaryButton
                 label="Source météo · MET Norway · CC BY 4.0"
                 onPress={() => void source(context.weather.sourceUrl)}
               />
             ) : null}
-            <Text className="text-muted">
-              Calendrier national :{" "}
-              {context.publicHolidays.status === "UNAVAILABLE"
-                ? "indisponible"
-                : contextIsStale(context.publicHolidays, now)
-                  ? "ancien"
-                  : "disponible"}
-              . Calendrier scolaire :{" "}
-              {context.schoolHolidays.status === "UNAVAILABLE" ||
-              context.schoolHolidays.status === "NOT_CONFIGURED"
-                ? "à configurer ou indisponible"
-                : contextIsStale(context.schoolHolidays, now)
-                  ? "ancien"
-                  : "disponible"}
-              .
-            </Text>
-            <SecondaryButton
-              label="Source · calendrier national"
-              onPress={() => void source(context.publicHolidays.sourceUrl)}
-            />
-            <SecondaryButton
-              label="Source · Éducation nationale"
-              onPress={() => void source(context.schoolHolidays.sourceUrl)}
-            />
+            {section !== "weather" ? (
+              <>
+                <Text className="text-muted">
+                  Calendrier national :{" "}
+                  {context.publicHolidays.status === "UNAVAILABLE"
+                    ? "indisponible"
+                    : contextIsStale(context.publicHolidays, now)
+                      ? "ancien"
+                      : "disponible"}
+                  . Calendrier scolaire :{" "}
+                  {context.schoolHolidays.status === "UNAVAILABLE" ||
+                  context.schoolHolidays.status === "NOT_CONFIGURED"
+                    ? "à configurer ou indisponible"
+                    : contextIsStale(context.schoolHolidays, now)
+                      ? "ancien"
+                      : "disponible"}
+                  .
+                </Text>
+                <SecondaryButton
+                  label="Source · calendrier national"
+                  onPress={() => void source(context.publicHolidays.sourceUrl)}
+                />
+                <SecondaryButton
+                  label="Source · Éducation nationale"
+                  onPress={() => void source(context.schoolHolidays.sourceUrl)}
+                />
+              </>
+            ) : null}
           </>
         ) : null}
         {linkError ? (

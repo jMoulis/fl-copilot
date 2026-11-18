@@ -1,8 +1,9 @@
 # Journal — national events, approved scope and source qualification
 
-Status: scope approved by owner (“Ok go”) on 17 November 2026. First increment
-implemented locally; production activation, exact-head CI/merge and native
-release remain pending. Build 75 / PR 534 acceptance is unchanged.
+Status: PR 536 merged after exact-head push and PR CI; merged master CI passed.
+API published and healthy. Local iPhone build 0.1.0 (76) verified and uploaded to
+Apple. TestFlight availability and owner acceptance are not yet confirmed.
+Build 75 / PR 534 acceptance remains closed.
 
 ## Approved first increment
 
@@ -111,5 +112,42 @@ Native component review: bounded rendering, stable URL keys, hooks at component
 scope, accessible buttons and errors, existing BottomSheet dismissal and local
 context reads. Physical iPhone appearance and gestures are not yet accepted.
 
-No native build, remote deployment, paid provider call or new orchestration was
-performed. This is locally verified code, not a published or device-accepted lot.
+The checks above preceded delivery. Publication and native delivery are recorded
+below; device acceptance remains a separate owner gate.
+
+## Delivery — 17 November 2026
+
+- Feature `e21dcec922317d4f257df9fa86b2d4f7da5dc2da`, PR 536; push
+  44145246327 and PR 44145325145 passed. Feature branch deleted.
+- Merged source `adb7efb80278a3ebf0e6b36b56444f6ab574ff26`, same tested tree;
+  master CI 44147650250 passed.
+- API `dpl_2RknNqVV9fa3ajnMemx14sfrjaBS`, READY, production configuration,
+  `cdg1`. Staged health 200 / DB connected and private route 401 checked before
+  promotion; production alias resolves to this deployment and health passes.
+  Retained fallback: `dpl_9yursQsjTFWMPfaJfJ1WCoej6wsZ`.
+- Two sandboxed archive uploads failed before deployment creation. The subsequent
+  approved upload outside the sandbox succeeded. No protection was disabled.
+- Local build **0.1.0 (76)**, clean merged source above. Signature, STORE profile,
+  team/bundle, production APNs/API and native news markers verified. SHA-256:
+  `1effe0a4bb0ccad53d6bac575ca29eef327f23086ce115466ffdd043df435c30`.
+- Apple upload accepted; no public release, tester invitation or EAS submission
+  job. Fifteen cloud build IDs are identical before/after; no paid cloud build.
+- Two TestFlight status reads hit Apple internal server errors. No replacement
+  key or re-upload was attempted; availability is pending read-back.
+- Private receipts: workspace `maintenance/journal-national-news-2026-11-17/`.
+
+Focused owner recipe after availability: install build 76, refresh Journal,
+open “Actualités et déplacements”, inspect attribution/dates/source link, then
+check retained content offline. A source outage or empty selection is explicitly
+partial coverage, not proof that no national event occurred. No general M0–M8
+retest or paid chat generation is required.
+
+## Owner feedback after delivery
+
+The owner reports “tout fonctionne” after delivery. Functional acceptance is
+recorded from this report; the earlier Apple API read failures are not a
+remaining delivery blocker. The owner requests a mockup for grouping all
+context entries behind a “Repères du jour” page. The owner subsequently approves
+implementation on 18 November, with compact weather and the day analysis action
+retained in Journal. This separate UX lot is tracked in
+`JOURNAL_CONTEXT_PAGE_2026_11_18.md`; accepted national-news functionality stays closed.

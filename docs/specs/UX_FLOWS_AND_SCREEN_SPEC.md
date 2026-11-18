@@ -1,3 +1,17 @@
+## Journal context navigation — owner approved, 18 November 2026
+
+This supersedes the earlier inline national-context placement. Journal keeps
+compact weather, tasks, Ma semaine, field observations/notes and “Analyser cette
+journée” after those notes. A single “Repères du jour” entry pushes within the
+Journal Stack with the selected date. The secondary page groups weather,
+calendar, transports, works/access and local events, then prices/conjuncture,
+FranceAgriMer purchases and national news. Each opens its existing source sheet;
+weather/calendar may be viewed separately without changing source semantics.
+Back pops to the preserved Journal; a direct link falls back to Journal with the
+same date. Existing SQLite cache, refresh, missing/stale/error states and archives
+remain authoritative. No new collector or AI request. See
+`../qa/JOURNAL_CONTEXT_PAGE_2026_11_18.md`.
+
 ## Store transport refinement — 14 November: alert types
 
 The transport editor adds six effect-category switches, all selected initially,

@@ -1,8 +1,6 @@
-import { JournalNationalNews } from "./journal-national-news";
+import { JournalContextRow } from "./journal-context-row";
 import { DailyTaskList } from "./daily-task-list";
 import { copilotBusinessDateSchema } from "@fl-copilot/domain";
-import { JournalTransports } from "./journal-transports";
-import { JournalExternalContext } from "./journal-context";
 import { JournalNotes } from "./journal-notes";
 import journalArt from "../../assets/journal/banana.png";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -33,7 +31,6 @@ import { colors } from "../design/tokens";
 import { journalColors as c } from "./journal-theme";
 import { SeverityBars } from "../needs/event-severity";
 import { storeEventSyncState } from "../needs/store-event-presentation";
-import { JournalEconomy } from "./journal-economy";
 import { JournalWeather } from "./journal-weather";
 import { journalDateLabel, journalWeekDates } from "./journal-presentation";
 import { journalObservations } from "./journal-observations";
@@ -301,22 +298,16 @@ function StoreJournal({
         <Ionicons name="calendar-outline" size={32} color={c.accent} />
         <Ionicons name="chevron-forward" size={18} color={c.accent} />
       </Pressable>
-      <JournalNationalNews context={context?.journal} date={date} />
-      <JournalExternalContext
-        date={date}
-        context={context?.journal}
-        busy={busy}
-        configured={settings?.syncState === "SYNCED"}
-        onRefresh={() => void refresh()}
-      />
-      <JournalTransports
-        configuredLines={settings?.entity.transports?.lines}
-        alertTypes={settings?.entity.transportAlertTypes}
-        context={context?.journal}
-        date={date}
-        busy={busy}
-        onRefresh={() => void refresh()}
-      />
+      <View style={{ marginTop: 12 }}>
+        <JournalContextRow
+          title="Repères du jour"
+          subtitle="Météo, vie locale, prix et actualités"
+          icon="compass-outline"
+          onPress={() =>
+            router.push({ pathname: "/today/reperes", params: { date } })
+          }
+        />
+      </View>
 
       <View style={styles.terrain}>
         <View style={styles.sectionHead}>
@@ -396,14 +387,6 @@ function StoreJournal({
           key={`${storeId}:${ownerId}:${date}`}
           storeId={storeId}
           date={date}
-        />
-        <JournalEconomy
-          date={date}
-          context={context?.economy}
-          busy={busy}
-          error={error}
-          configured={settings?.syncState === "SYNCED"}
-          onRefresh={() => void refresh()}
         />
         <JournalLink
           label={
