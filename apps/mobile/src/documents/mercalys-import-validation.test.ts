@@ -9,6 +9,8 @@ import {
   MercalysImportValidationError,
   rematchMercalysImport,
   validateMercalysImport,
+  validateMercalysImportResponsive,
+  rematchMercalysImportResponsive,
 } from "./mercalys-import-validation";
 import { SheetJsSpreadsheetParser } from "./sheetjs-spreadsheet-parser";
 
@@ -178,3 +180,64 @@ function workbook(flow: string, selection: string) {
     }) as ArrayBuffer,
   );
 }
+
+it("responsive matching yields to UI and preserves deterministic results", async () => {
+  const source = workbook("Vente Nette", "Du 26/09/2026 Au 26/09/2026");
+  const expected = validateMercalysImport(source, storeId, catalog());
+  let responded = false;
+  const timer = setTimeout(() => {
+    responded = true;
+  }, 0);
+  try {
+    expect(
+      await validateMercalysImportResponsive(source, storeId, catalog()),
+    ).toEqual(expected);
+    expect(responded).toBe(true);
+    expect(
+      await rematchMercalysImportResponsive(expected, storeId, catalog()),
+    ).toEqual(rematchMercalysImport(expected, storeId, catalog()));
+  } finally {
+    clearTimeout(timer);
+  }
+});
+it("responsive matching can be interrupted from the UI before completion", async () => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 0);
+  try {
+    await expect(
+      validateMercalysImportResponsive(
+        workbook("Vente Nette", "Du 26/09/2026 Au 26/09/2026"),
+        storeId,
+        catalog(),
+        controller.signal,
+      ),
+    ).rejects.toThrow("MERCALYS_BATCH_CANCELLED");
+  } finally {
+    clearTimeout(timer);
+  }
+});
+
+it("keeps dispatching UI work throughout a large rematch", async () => {
+  const seed = validateMercalysImport(
+    workbook("Vente Nette", "Du 26/09/2026 Au 26/09/2026"),
+    storeId,
+    catalog(),
+  );
+  const large = {
+    ...seed,
+    lines: Array.from({ length: 100 }, () => seed.lines).flat(),
+  };
+  let ticks = 0;
+  const heartbeat = setInterval(() => ticks++, 0);
+  try {
+    const result = await rematchMercalysImportResponsive(
+      large,
+      storeId,
+      catalog(),
+    );
+    expect(result).toEqual(rematchMercalysImport(large, storeId, catalog()));
+    expect(ticks).toBeGreaterThan(2);
+  } finally {
+    clearInterval(heartbeat);
+  }
+});

@@ -42,11 +42,7 @@ export interface MercalysImportValidationSummary {
   sourceStoreCode?: string | null;
 }
 
-export function validateMercalysImport(
-  workbook: SpreadsheetWorkbook,
-  storeId: string,
-  catalog: ProductMatchCatalog,
-): MercalysImportValidationSummary {
+function parseImport(workbook: SpreadsheetWorkbook) {
   const detection = detectMercalysSource(workbook);
   if (detection.status !== "DETECTED" || !detection.sourceType) {
     if (detection.reasons.includes("AGGREGATED_PERIOD_WITHOUT_DAILY_DATES")) {
@@ -63,26 +59,6 @@ export function validateMercalysImport(
       : detection.sourceType === "MERCALYS_SALES"
         ? parseMercalysSales(workbook)
         : parseMercalysWaste(workbook);
-  const lines = parsed.records.map((record) => ({
-    record,
-    match: matchProduct(
-      {
-        storeId,
-        identifiers: [
-          ...(record.itm8
-            ? [{ type: "ITM8" as const, value: record.itm8 }]
-            : []),
-          ...(record.ean ? [{ type: "EAN" as const, value: record.ean }] : []),
-        ],
-        label: record.rawLabel,
-      },
-      catalog,
-    ),
-  }));
-  const readyCount = lines.filter(
-    (line) => line.match.state === "AUTO_MATCH",
-  ).length;
-
   return {
     sourceType: detection.sourceType,
     ...("storeCode" in parsed ? { sourceStoreCode: parsed.storeCode } : {}),
@@ -91,20 +67,18 @@ export function validateMercalysImport(
     businessPeriodEnd: parsed.businessPeriodEnd,
     detectedLineCount:
       parsed.declaredLineCount ?? parsed.records.length + parsed.issues.length,
-    readyCount,
-    productReviewCount: lines.length - readyCount,
+    records: parsed.records,
     errorCount: parsed.issues.length,
-    lines,
     issueCodes: [...new Set(parsed.issues.map((issue) => issue.code))],
   };
 }
 
-export function rematchMercalysImport(
-  summary: MercalysImportValidationSummary,
+function matchRecord(
+  record: ParsedMercalysArticleRecord,
   storeId: string,
   catalog: ProductMatchCatalog,
-): MercalysImportValidationSummary {
-  const lines = summary.lines.map(({ record }) => ({
+): MercalysImportValidationLine {
+  return {
     record,
     match: matchProduct(
       {
@@ -119,14 +93,102 @@ export function rematchMercalysImport(
       },
       catalog,
     ),
-  }));
+  };
+}
+function withMatches(
+  summary: Omit<
+    MercalysImportValidationSummary,
+    "lines" | "readyCount" | "productReviewCount"
+  >,
+  lines: MercalysImportValidationLine[],
+): MercalysImportValidationSummary {
   const readyCount = lines.filter(
-    ({ match }) => match.state === "AUTO_MATCH",
+    (line) => line.match.state === "AUTO_MATCH",
   ).length;
   return {
-    ...summary,
+    sourceType: summary.sourceType,
+    ...("sourceStoreCode" in summary
+      ? { sourceStoreCode: summary.sourceStoreCode }
+      : {}),
+    parserVersion: summary.parserVersion,
+    businessPeriodStart: summary.businessPeriodStart,
+    businessPeriodEnd: summary.businessPeriodEnd,
+    detectedLineCount: summary.detectedLineCount,
     readyCount,
     productReviewCount: lines.length - readyCount,
+    errorCount: summary.errorCount,
     lines,
+    issueCodes: summary.issueCodes,
   };
+}
+export function validateMercalysImport(
+  workbook: SpreadsheetWorkbook,
+  storeId: string,
+  catalog: ProductMatchCatalog,
+): MercalysImportValidationSummary {
+  const { records, ...summary } = parseImport(workbook);
+  return withMatches(
+    summary,
+    records.map((record) => matchRecord(record, storeId, catalog)),
+  );
+}
+export function rematchMercalysImport(
+  summary: MercalysImportValidationSummary,
+  storeId: string,
+  catalog: ProductMatchCatalog,
+): MercalysImportValidationSummary {
+  return withMatches(
+    summary,
+    summary.lines.map(({ record }) => matchRecord(record, storeId, catalog)),
+  );
+}
+
+/** Preserve the deterministic matcher, but return control to native UI between slices. */
+async function matchResponsive(
+  records: ParsedMercalysArticleRecord[],
+  storeId: string,
+  catalog: ProductMatchCatalog,
+  signal?: AbortSignal,
+) {
+  const lines: MercalysImportValidationLine[] = [];
+  let sliceStarted = Date.now();
+  for (let index = 0; index < records.length; index++) {
+    if (signal?.aborted) throw Error("MERCALYS_BATCH_CANCELLED");
+    if (index === 0 || Date.now() - sliceStarted >= 8 || index % 20 === 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      if (signal?.aborted) throw Error("MERCALYS_BATCH_CANCELLED");
+      sliceStarted = Date.now();
+    }
+    lines.push(matchRecord(records[index]!, storeId, catalog));
+  }
+  return lines;
+}
+export async function validateMercalysImportResponsive(
+  workbook: SpreadsheetWorkbook,
+  storeId: string,
+  catalog: ProductMatchCatalog,
+  signal?: AbortSignal,
+) {
+  if (signal?.aborted) throw Error("MERCALYS_BATCH_CANCELLED");
+  const { records, ...summary } = parseImport(workbook);
+  return withMatches(
+    summary,
+    await matchResponsive(records, storeId, catalog, signal),
+  );
+}
+export async function rematchMercalysImportResponsive(
+  summary: MercalysImportValidationSummary,
+  storeId: string,
+  catalog: ProductMatchCatalog,
+  signal?: AbortSignal,
+) {
+  return withMatches(
+    summary,
+    await matchResponsive(
+      summary.lines.map(({ record }) => record),
+      storeId,
+      catalog,
+      signal,
+    ),
+  );
 }

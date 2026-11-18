@@ -162,7 +162,7 @@ vi.mock("./sheetjs-spreadsheet-parser", () => ({
 }));
 vi.mock("./mercalys-import-validation", async (importActual) => ({
   ...(await importActual<typeof import("./mercalys-import-validation")>()),
-  validateMercalysImport: p.validate,
+  validateMercalysImportResponsive: p.validate,
 }));
 vi.mock("./mercalys-import-publication", async (importActual) => ({
   ...(await importActual<typeof import("./mercalys-import-publication")>()),
@@ -209,6 +209,7 @@ async function press(label: string) {
     expect(b, label).toBeDefined();
     expect(b.props.disabled).not.toBe(true);
     b.props.onPress();
+    await new Promise((resolve) => setTimeout(resolve, 20));
   });
 }
 function compare(
@@ -681,5 +682,32 @@ it("checks the recovered old import checksum before parsing or publishing it", a
   expect(p.recover).toHaveBeenCalledTimes(1);
   expect(text(renderer!.root)).toContain("L’original conservé a changé");
   expect(p.validate).not.toHaveBeenCalled();
+  expect(p.publish).not.toHaveBeenCalled();
+});
+
+it("keeps retained-file review dismissible during matching and aborts on unmount", async () => {
+  const summary = p.validate();
+  let resolve!: (value: MercalysImportValidationSummary) => void;
+  p.validate.mockImplementation(
+    () =>
+      new Promise<MercalysImportValidationSummary>((r) => {
+        resolve = r;
+      }),
+  );
+  await mount();
+  expect(text(renderer!.root)).toContain("Identification des produits");
+  const signal = p.validate.mock.calls.at(-1)?.[3] as AbortSignal;
+  expect(signal.aborted).toBe(false);
+  await press("Fermer le fichier");
+  expect(p.close).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    renderer!.unmount();
+  });
+  renderer = undefined;
+  expect(signal.aborted).toBe(true);
+  await act(async () => {
+    resolve(summary);
+  });
+  expect(p.analyze).not.toHaveBeenCalled();
   expect(p.publish).not.toHaveBeenCalled();
 });

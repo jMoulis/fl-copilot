@@ -47,8 +47,8 @@ import {
 } from "../components/ui";
 import {
   MercalysImportValidationError,
-  rematchMercalysImport,
-  validateMercalysImport,
+  rematchMercalysImportResponsive,
+  validateMercalysImportResponsive,
   type MercalysImportValidationSummary,
 } from "./mercalys-import-validation";
 import {
@@ -223,9 +223,15 @@ export function MercalysImportScreen({
   );
   const loading = ["READING", "MATCHING", "VALIDATING"].includes(stage);
   const busy = loading || publishing || resolvingProducts || batchBusy;
+  // Reading is cancellable and must not trap the user in the review sheet.
+  const blocksDismissal = retainedAsset
+    ? publishing || resolvingProducts || batchBusy
+    : busy;
   useEffect(() => {
-    onBusyChange?.(busy);
-  }, [onBusyChange, busy]);
+    onBusyChange?.(blocksDismissal);
+  }, [onBusyChange, blocksDismissal]);
+  const reading = useRef<AbortController | undefined>(undefined);
+  useEffect(() => () => reading.current?.abort(), [storeId]);
 
   useEffect(() => {
     if (storeId && !initialBatchId) void analyticsScheduler.process(storeId);
@@ -234,6 +240,12 @@ export function MercalysImportScreen({
   const chooseWorkbook = useCallback(
     async (asset: NativeDocumentPickerAsset & { expectedChecksum: string }) => {
       if (!hasNativeFilePicker || !storeId) return;
+      reading.current?.abort();
+      const controller = new AbortController();
+      reading.current = controller;
+      const assertReading = () => {
+        if (controller.signal.aborted) throw Error("MERCALYS_BATCH_CANCELLED");
+      };
       setFilename(undefined);
       setSummary(undefined);
       setProductCatalog(undefined);
@@ -264,12 +276,19 @@ export function MercalysImportScreen({
           `sha256:${await sha256Hex(bytes)}` !== asset.expectedChecksum
         )
           throw new Error("MERCALYS_BATCH_FILE_CHANGED");
+        assertReading();
         const workbook = new SheetJsSpreadsheetParser().parse(bytes);
 
         setStage("MATCHING");
         await yieldToInterface();
         const catalog = await loadProductCatalog(repository, storeId);
-        const nextSummary = validateMercalysImport(workbook, storeId, catalog);
+        const nextSummary = await validateMercalysImportResponsive(
+          workbook,
+          storeId,
+          catalog,
+          controller.signal,
+        );
+        assertReading();
         setProductCatalog(catalog);
 
         setStage("VALIDATING");
@@ -280,6 +299,7 @@ export function MercalysImportScreen({
           nextSummary.sourceType,
           checksum,
         );
+        assertReading();
         setSelectedChecksum(checksum);
         if (priorImport) {
           const pending = await publicationRepository.continuation(
@@ -287,6 +307,7 @@ export function MercalysImportScreen({
             checksum,
             nextSummary,
           );
+          assertReading();
           if (pending && pending.remainingCount > 0) {
             setContinuation(pending);
             setSummary(pending.summary);
@@ -302,6 +323,7 @@ export function MercalysImportScreen({
           storeId,
           nextSummary,
         );
+        assertReading();
         setSummary(nextSummary);
         setSelectedBytes(bytes);
         setReconciliation(overlap ?? undefined);
@@ -314,6 +336,7 @@ export function MercalysImportScreen({
         );
         setStage("COMPLETE");
       } catch (caught) {
+        if (controller.signal.aborted) return;
         setError(importErrorMessage(caught));
         setStage("ERROR");
       }
@@ -357,7 +380,11 @@ export function MercalysImportScreen({
   ) {
     if (!storeId) throw new Error("Aucun magasin actif.");
     const catalog = await loadProductCatalog(repository, storeId);
-    const rematched = rematchMercalysImport(currentSummary, storeId, catalog);
+    const rematched = await rematchMercalysImportResponsive(
+      currentSummary,
+      storeId,
+      catalog,
+    );
     const pending =
       continuation && selectedChecksum
         ? await publicationRepository.continuation(
@@ -746,7 +773,7 @@ export function MercalysImportScreen({
       closeLabel={
         closeLabel ?? (retainedAsset ? "Fermer le fichier" : "Retour au chat")
       }
-      disabled={busy}
+      disabled={blocksDismissal}
       closeIcon={retainedAsset ? "close-outline" : "chevron-back"}
     />
   );
