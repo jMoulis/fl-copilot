@@ -1,3 +1,5 @@
+import { MercalysReviewCache } from "./mercalys-review-cache";
+import type { MercalysBatchResult } from "@fl-copilot/domain";
 import { PurchasePriceRepository } from "../products/purchase-price-repository";
 import { tradingToday } from "../dates/calendar";
 import { purchasePriceNeedsReview } from "@fl-copilot/domain";
@@ -132,7 +134,11 @@ export function MercalysImportScreen({
   importMenu,
   embedded = false,
   externalScrollRef,
+  reviewCache,
+  onReviewResult,
 }: {
+  reviewCache?: MercalysReviewCache;
+  onReviewResult?(result: MercalysBatchResult | undefined): void;
   header?: ReactNode;
   landing?: ReactNode;
   footer?: ReactNode;
@@ -167,6 +173,15 @@ export function MercalysImportScreen({
   const { syncNow, lastSyncedAt, originals } = useSync();
   const storeId = session?.stores[0]?.storeId;
   const actorUserId = session?.user.id;
+  const ownedReviewCache = useMemo(
+    () =>
+      sqlite && storeId && actorUserId ? new MercalysReviewCache() : undefined,
+    [sqlite, storeId, actorUserId],
+  );
+  const validationCache = reviewCache ?? ownedReviewCache;
+  const [resolutionPhase, setResolutionPhase] = useState<"SAVING" | "MATCHING">(
+    "SAVING",
+  );
   const archiveFocused = useIsFocused();
   const archiveAuthority = useRef({
     session,
@@ -243,7 +258,7 @@ export function MercalysImportScreen({
 
   const chooseWorkbook = useCallback(
     async (asset: NativeDocumentPickerAsset & { expectedChecksum: string }) => {
-      if (!hasNativeFilePicker || !storeId) return;
+      if (!hasNativeFilePicker || !storeId || !validationCache) return;
       reading.current?.abort();
       const controller = new AbortController();
       reading.current = controller;
@@ -276,10 +291,8 @@ export function MercalysImportScreen({
           sqlite,
           originals,
         );
-        if (
-          asset.expectedChecksum &&
-          `sha256:${await sha256Hex(bytes)}` !== asset.expectedChecksum
-        )
+        const checksum = `sha256:${await sha256Hex(bytes)}`;
+        if (asset.expectedChecksum && checksum !== asset.expectedChecksum)
           throw new Error("MERCALYS_BATCH_FILE_CHANGED");
         assertReading();
         const workbook = new SheetJsSpreadsheetParser().parse(bytes);
@@ -287,21 +300,24 @@ export function MercalysImportScreen({
         setStage("MATCHING");
         await yieldToInterface();
         const catalog = await loadProductCatalog(repository, storeId);
-        const nextSummary = await validateMercalysImportResponsive(
-          workbook,
-          storeId,
-          catalog,
-          controller.signal,
-          (progress) => {
-            if (!controller.signal.aborted) setMatchingProgress(progress);
-          },
-        );
+        const cacheKey = validationCache.key(storeId, checksum, catalog);
+        const nextSummary =
+          validationCache.get(cacheKey) ??
+          (await validateMercalysImportResponsive(
+            workbook,
+            storeId,
+            catalog,
+            controller.signal,
+            (progress) => {
+              if (!controller.signal.aborted) setMatchingProgress(progress);
+            },
+          ));
         assertReading();
+        validationCache.put(cacheKey, nextSummary);
         setProductCatalog(catalog);
 
         setStage("VALIDATING");
         await yieldToInterface();
-        const checksum = `sha256:${await sha256Hex(bytes)}`;
         const priorImport = await publicationRepository.findExactDuplicate(
           storeId,
           nextSummary.sourceType,
@@ -349,7 +365,14 @@ export function MercalysImportScreen({
         setStage("ERROR");
       }
     },
-    [storeId, repository, publicationRepository, sqlite, originals],
+    [
+      storeId,
+      repository,
+      publicationRepository,
+      sqlite,
+      originals,
+      validationCache,
+    ],
   );
 
   const seeded = useRef(false);
@@ -386,13 +409,23 @@ export function MercalysImportScreen({
   async function refreshProductMatches(
     currentSummary: MercalysImportValidationSummary,
   ) {
-    if (!storeId) throw new Error("Aucun magasin actif.");
+    if (!storeId || !validationCache) throw new Error("Aucun magasin actif.");
+    setResolutionPhase("MATCHING");
+    setMatchingProgress(undefined);
+    await yieldToInterface();
     const catalog = await loadProductCatalog(repository, storeId);
     const rematched = await rematchMercalysImportResponsive(
       currentSummary,
       storeId,
       catalog,
+      undefined,
+      setMatchingProgress,
     );
+    if (selectedChecksum)
+      validationCache.put(
+        validationCache.key(storeId, selectedChecksum, catalog),
+        rematched,
+      );
     const pending =
       continuation && selectedChecksum
         ? await publicationRepository.continuation(
@@ -432,9 +465,16 @@ export function MercalysImportScreen({
       return;
     }
     setResolvingProducts(true);
-    setResolutionProgress(undefined);
+    setResolutionPhase("SAVING");
+    setResolutionProgress({
+      completed: 0,
+      total: selectedResolutions.filter(
+        (r) => r.canCreate || (allowExplicitDistinct && r.canCreateAsDistinct),
+      ).length,
+    });
     setError(undefined);
     try {
+      await yieldToInterface();
       await createMercalysProducts(
         repository,
         selectedResolutions,
@@ -472,9 +512,12 @@ export function MercalysImportScreen({
     }
     if (!storeId || !summary) return;
     setResolvingProducts(true);
+    setResolutionPhase("SAVING");
+    setResolutionProgress({ completed: 0, total: 1 });
     setError(undefined);
     let saved = false;
     try {
+      await yieldToInterface();
       await correctMercalysProductMapping(sqlite, resolution, null, {
         storeId,
         deviceId,
@@ -501,8 +544,11 @@ export function MercalysImportScreen({
   ) {
     if (!storeId || !summary) return;
     setResolvingProducts(true);
+    setResolutionPhase("SAVING");
+    setResolutionProgress({ completed: 0, total: 1 });
     setError(undefined);
     try {
+      await yieldToInterface();
       const options = {
         storeId,
         deviceId,
@@ -664,6 +710,40 @@ export function MercalysImportScreen({
     analyticsScheduler,
     syncNow,
     onChanged,
+  ]);
+  const reviewResultCallback = useRef(onReviewResult);
+  reviewResultCallback.current = onReviewResult;
+  useEffect(() => {
+    const report = reviewResultCallback.current;
+    if (!report) return;
+    if (stage !== "COMPLETE" || resolvingProducts || publishing || error)
+      return report(undefined);
+    if (duplicate)
+      return report({
+        status: "DUPLICATE",
+        sourceType: duplicate.sourceType,
+        sourceDocumentId: duplicate.sourceDocumentId,
+      });
+    if (summary)
+      report({
+        status: "REVIEW",
+        sourceType: summary.sourceType,
+        parserVersion: summary.parserVersion,
+        businessPeriodStart: summary.businessPeriodStart,
+        businessPeriodEnd: summary.businessPeriodEnd,
+        readyCount: summary.readyCount,
+        productReviewCount: summary.productReviewCount,
+        errorCount: summary.errorCount,
+        overlap: !!reconciliation,
+      });
+  }, [
+    stage,
+    resolvingProducts,
+    publishing,
+    error,
+    duplicate,
+    summary,
+    reconciliation,
   ]);
   const autoAttempts = useRef(new Set<string>());
   useEffect(() => {
@@ -851,9 +931,12 @@ export function MercalysImportScreen({
             reportBusy,
             reportChanged,
             reviewScroll,
+            reportResult,
           ) => (
             <MercalysImportScreen
               key={asset.uri}
+              reviewCache={validationCache}
+              onReviewResult={reportResult}
               retainedAsset={asset}
               embedded
               externalScrollRef={reviewScroll}
@@ -995,6 +1078,13 @@ export function MercalysImportScreen({
             onNavigate={scrollToStart}
             loading={resolvingProducts}
             progress={resolutionProgress}
+            activity={
+              resolutionPhase === "SAVING"
+                ? `Enregistrement des produits… ${resolutionProgress?.completed ?? 0}/${resolutionProgress?.total ?? 1}`
+                : matchingProgress
+                  ? `Actualisation du fichier… ${matchingProgress.completed}/${matchingProgress.total} lignes examinées`
+                  : "Actualisation du catalogue…"
+            }
             onCreate={(resolutions) => {
               void createMissingProducts(resolutions);
             }}
@@ -1466,6 +1556,7 @@ function ProductResolutionSummary({
   onNavigate,
   loading,
   progress,
+  activity,
   onCreate,
   onCreateDistinct,
   onConfirm,
@@ -1477,6 +1568,7 @@ function ProductResolutionSummary({
   onNavigate(): void;
   loading: boolean;
   progress?: { completed: number; total: number };
+  activity: string;
   onCreate(resolutions: readonly MercalysProductResolution[]): void;
   onCreateDistinct(resolution: MercalysProductResolution): void;
   onConfirm(resolution: MercalysProductResolution, productId: string): void;
@@ -1536,6 +1628,14 @@ function ProductResolutionSummary({
         une catégorie, une nature et une unité inconnues jusqu’à leur
         enrichissement.
       </Text>
+      {loading ? (
+        <Text
+          accessibilityLiveRegion="polite"
+          className="text-base font-semibold text-ink"
+        >
+          {activity}
+        </Text>
+      ) : null}
       {creatable.length > 0 ? (
         <PrimaryButton
           label={
@@ -1576,6 +1676,14 @@ function ProductResolutionSummary({
             </Pressable>
             {isExpanded ? (
               <View className="gap-3 border-l-2 border-warning-soft pl-3">
+                {loading ? (
+                  <Text
+                    accessibilityLiveRegion="polite"
+                    className="text-base font-semibold text-ink"
+                  >
+                    {activity}
+                  </Text>
+                ) : null}
                 <Text className="text-sm text-muted">
                   {resolution.identifiers
                     .map(({ type, value }) => `${type} ${value}`)

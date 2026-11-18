@@ -482,11 +482,18 @@ function panel(patch: Partial<ComponentProps<typeof MercalysBatchPanel>> = {}) {
     ownerId: "owner",
     pick: vi.fn(),
     ...patch,
-    renderReview: (asset, close, reportBusy, changed) => {
+    renderReview: (
+      asset,
+      close,
+      reportBusy,
+      changed,
+      _scroll,
+      reportResult,
+    ) => {
       fileBusy = reportBusy;
       return createElement(
         "FileReview",
-        { asset, close, changed },
+        { asset, close, changed, reportResult },
         "Examen de " + asset.name,
       );
     },
@@ -663,7 +670,7 @@ it("retains extraction failures under batch actions and the archive timestamp wh
   expect(text(renderer!.root)).toContain("fichiers système ignorés");
 });
 
-it("reprepares only the changed file after a committed mapping/publication, once the sheet is dismissed", async () => {
+it("queues a changed incomplete review on dismissal without blocking on preparation", async () => {
   batchFixture();
   await act(async () => {
     renderer = create(panel());
@@ -677,11 +684,7 @@ it("reprepares only the changed file after a committed mapping/publication, once
   await act(async () => file.props.close());
   await act(async () => dismiss());
   expect(ports.refresh).toHaveBeenCalledExactlyOnceWith("batch", "item-0", 1);
-  expect(ports.prepare).toHaveBeenCalledExactlyOnceWith(
-    "batch",
-    "item-0",
-    expect.any(AbortSignal),
-  );
+  expect(ports.prepare).not.toHaveBeenCalled();
 });
 
 it("archives and restores lots/files through the retained list without publishing, rereading bytes or leaving the modal", async () => {
@@ -788,5 +791,50 @@ it("does not start a queued picker after the import view has unmounted", async (
   renderer = undefined;
   await act(async () => dismiss());
   expect(pick).not.toHaveBeenCalled();
+  expect(ports.prepare).not.toHaveBeenCalled();
+});
+
+it("uses the finished review on close without preparing the file again", async () => {
+  const items = batchFixture();
+  await act(async () => {
+    renderer = create(panel());
+  });
+  await openBatch();
+  await press("Ouvrir le fichier export-0.xlsx");
+  const file = renderer!.root.findByType("FileReview" as ElementType);
+  const dismiss = file.parent!.props.onDismiss;
+  const result = {
+    ...items[0]!.result,
+    readyCount: 141,
+    productReviewCount: 0,
+  };
+  await act(async () => {
+    file.props.changed();
+    file.props.reportResult(result);
+  });
+  await act(async () => file.props.close());
+  await act(async () => dismiss());
+  expect(ports.refresh).toHaveBeenCalledExactlyOnceWith(
+    "batch",
+    "item-0",
+    1,
+    result,
+  );
+  expect(ports.prepare).not.toHaveBeenCalled();
+});
+it("does not overwrite a newer background batch result on closing review", async () => {
+  const items = batchFixture();
+  await act(async () => {
+    renderer = create(panel());
+  });
+  await openBatch();
+  await press("Ouvrir le fichier export-0.xlsx");
+  const file = renderer!.root.findByType("FileReview" as ElementType);
+  const dismiss = file.parent!.props.onDismiss;
+  await act(async () => file.props.reportResult(items[0]!.result));
+  ports.get.mockResolvedValue({ ...items[0], version: 2 });
+  await act(async () => file.props.close());
+  await act(async () => dismiss());
+  expect(ports.refresh).not.toHaveBeenCalled();
   expect(ports.prepare).not.toHaveBeenCalled();
 });

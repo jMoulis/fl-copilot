@@ -277,3 +277,46 @@ yields. New validation after mutation gets a fresh snapshot. Review also display
 catalogue loading separately and examined-line progress. No matching thresholds or
 publication permissions change. Private probe outside Git:
 `maintenance/import-matching-2026-11-18/`. Device acceptance remains pending.
+
+### Build 83 delivery
+
+PR 543 merged as `07552c6c80187493573ec82fdd14ec67dc0ceb39`.
+Exact-head push 44364214737, PR 44364259889 and master 44366396326 passed.
+CI: 641 suites, 6,381 tests passed; one suite/six tests skipped.
+Local check: structure, lint, typecheck, 5,488 tests passed (899 environment-dependent
+skips); formatting passed. Additional native progress/cancellation tests passed.
+Private old/new matcher probe verifies complete output equality for the measured
+workload. Results do not establish actual iPhone duration or resolution of the stall.
+
+Build 0.1.0 (83) compiled locally, STORE archive verified. SHA-256:
+`fb4352a954b5c7e7d9c9ca1c0710442b7e9302ecc2d84697a3902b55f24ed039`.
+Apple accepted upload. Build 83 is VALID / IN_BETA_TESTING, not expired,
+and present in the existing owner-only private internal group (one tester).
+API remains unchanged from PR 539. Private delivery evidence:
+`maintenance/import-matching-2026-11-18/release/`.
+
+Owner follow-up: update without uninstalling or resending the workbook, open the
+existing import, observe catalogue-loading versus examined-line count and verify
+completion/publication/synchronization. Retry a failed email job only through the
+existing explicit action. No claim of device acceptance; last reported state is a
+four-minute identification wait on build 82.
+
+## Build 83 owner follow-up: product creation and repeated review
+
+Owner can load the workbook and see the approximately 1,200-row counter. Product
+creation (individual/distinct/batch) is slow without clear feedback. Closing the
+changed review locks batch controls while a second preparation runs, and reopening
+always rematches. A PA count eventually appears; this does not confirm full source
+publication or synchronization.
+
+Reuse one view-owned validation snapshot keyed by verified checksum, store and
+complete current catalogue contents; recheck original bytes and all publication,
+continuation and overlap rules on every open. Catalogue/source change invalidates
+reuse. Snapshot is bounded to one file and does not persist across app restart.
+Closing review writes its completed result with a version check instead of running
+another preparation; incomplete changed review stays queued for explicit reread.
+Do not overwrite a newer background result. Creation displays saving progress
+immediately, followed by examined-line progress during rematching, near the action.
+Matching still revalidates after product mutations because other candidates may
+change. Do not claim every product creation is instantaneous or all device freezes
+resolved. Device acceptance remains open.

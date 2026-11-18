@@ -1,3 +1,5 @@
+import * as productResolution from "./mercalys-product-resolution";
+import { MercalysReviewCache } from "./mercalys-review-cache";
 import { createElement, type ReactNode } from "react";
 import {
   act,
@@ -264,12 +266,19 @@ function compare(
     ],
   };
 }
-async function mount() {
+async function mount(
+  extra: Partial<NonNullable<Parameters<typeof MercalysImportScreen>[0]>> = {},
+) {
   await act(async () => {
     renderer = create(
       createElement<NonNullable<Parameters<typeof MercalysImportScreen>[0]>>(
         MercalysImportScreen,
-        { retainedAsset: asset, onClose: p.close, onChanged: p.changed },
+        {
+          retainedAsset: asset,
+          onClose: p.close,
+          onChanged: p.changed,
+          ...extra,
+        },
       ),
     );
   });
@@ -717,4 +726,72 @@ it("keeps retained-file review dismissible during matching and aborts on unmount
   });
   expect(p.analyze).not.toHaveBeenCalled();
   expect(p.publish).not.toHaveBeenCalled();
+});
+
+it("reopens a verified file without matching again, but rechecks bytes, publication and catalogue changes", async () => {
+  const reviewCache = new MercalysReviewCache();
+  await mount({ reviewCache });
+  expect(p.validate).toHaveBeenCalledTimes(1);
+  await act(async () => renderer!.unmount());
+  await mount({ reviewCache });
+  expect(p.validate).toHaveBeenCalledTimes(1);
+  expect(p.read).toHaveBeenCalledTimes(2);
+  expect(p.duplicate).toHaveBeenCalledTimes(2);
+  expect(p.analyze).toHaveBeenCalledTimes(2);
+  await act(async () => renderer!.unmount());
+  p.products = p.products.map((r) => ({
+    ...r,
+    entity: { ...r.entity, version: 2 },
+  }));
+  await mount({ reviewCache });
+  expect(p.validate).toHaveBeenCalledTimes(2);
+  await act(async () => renderer!.unmount());
+  p.digest.mockResolvedValueOnce(new Uint8Array(32).fill(1).buffer);
+  await mount({ reviewCache });
+  expect(text(renderer!.root)).toContain("L’original conservé a changé");
+  expect(p.validate).toHaveBeenCalledTimes(2);
+});
+it("reports a completed review result without giving it publication authority", async () => {
+  const onReviewResult = vi.fn();
+  await mount({ onReviewResult });
+  expect(onReviewResult).toHaveBeenLastCalledWith(
+    expect.objectContaining({ status: "REVIEW", productReviewCount: 1 }),
+  );
+  expect(p.publish).not.toHaveBeenCalled();
+});
+
+it("shows immediate saving feedback for distinct creation, then progress while refreshing the file", async () => {
+  let complete!: (count: number) => void;
+  const createProducts = vi
+    .spyOn(productResolution, "createMercalysProducts")
+    .mockImplementation(
+      () =>
+        new Promise<number>((resolve) => {
+          complete = resolve;
+        }),
+    );
+  await mount();
+  await press("Confirmer le produit");
+  await press("Créer comme nouveau produit");
+  expect(createProducts).toHaveBeenCalledTimes(1);
+  expect(text(renderer!.root)).toContain("Enregistrement des produits… 0/1");
+  expect(button("Créer comme nouveau produit").props.disabled).toBe(true);
+  let finish!: () => void;
+  p.analyze.mockImplementation(
+    (_store, summary) =>
+      new Promise((resolve) => {
+        finish = () => resolve(compare(summary));
+      }),
+  );
+  await act(async () => {
+    complete(1);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  expect(text(renderer!.root)).toContain(
+    "Actualisation du fichier… 1/1 lignes examinées",
+  );
+  await act(async () => {
+    finish();
+  });
+  expect(text(renderer!.root)).not.toContain("Enregistrement des produits…");
 });

@@ -186,6 +186,7 @@ export async function rematchMercalysImportResponsive(
   storeId: string,
   catalog: ProductMatchCatalog,
   signal?: AbortSignal,
+  onProgress?: (progress: MercalysMatchingProgress) => void,
 ) {
   return withMatches(
     summary,
@@ -194,6 +195,7 @@ export async function rematchMercalysImportResponsive(
       storeId,
       catalog,
       signal,
+      onProgress,
     ),
   );
 }
