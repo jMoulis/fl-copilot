@@ -1,3 +1,22 @@
+## Analytics charts and navigation — owner approved, 18 November 2026
+
+Show the whole selected period without horizontal chart scrolling. Selecting a
+bar or using previous/next changes the date/value readout; a separate detail
+action performs the existing scoped drill. Persist the selected bucket in local
+Explorer history. Keep signed values, missing versus zero and SUM/AVERAGE.
+Expose CA, Marge € and Casse PV as regular metric choices; remove Casse PA from
+the selectors without deleting its domain data or mislabelling old citations.
+Remove “Comprendre cette répartition”. Replace large category rows by compact
+wrapping filter controls, retaining category information sheets. Add a donut of
+available category amounts, with unknown amounts explicitly excluded and no pie
+for negative amounts, an absent/zero denominator or non-additive averages.
+The denominator is the sum of categories in the selected scope, never an
+unrelated department KPI or only one page of contributors.
+Keep the four existing tab Stacks. Match the approved mockup's continuous dark
+green navigation with outline icons and a light green active label/icon; preserve
+safe-area clearance and system font scaling. No new source or AI call.
+See `../qa/ANALYTICS_POLISH_2026_11_18.md`.
+
 ## Journal context navigation — owner approved, 18 November 2026
 
 This supersedes the earlier inline national-context placement. Journal keeps

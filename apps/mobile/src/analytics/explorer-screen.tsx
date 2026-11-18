@@ -388,6 +388,15 @@ function StoreExplorer({
               onWeek={(period) =>
                 change(drillExplorerWeek(current.current!, period))
               }
+              onChartSelect={(chartDate) => {
+                if (current.current) {
+                  current.current = {
+                    ...current.current,
+                    frame: { ...current.current.frame, chartDate },
+                  };
+                  save(current.current);
+                }
+              }}
               onChartScroll={(chartScroll) => {
                 if (current.current)
                   current.current = {

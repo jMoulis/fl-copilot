@@ -1,12 +1,16 @@
 ## Current execution checkpoint — 18 November 2026
 
 Read the consolidated pilot status and active backlog before dated history.
-Build 76 national news is owner-accepted. The approved current increment moves
-Journal context entries to a dedicated “Repères du jour” page, retaining compact
-weather and the day analysis action in Journal. Reuse source sheets and local
-weekly cache; preserve selected date and back navigation. No provider, API,
-schema, synchronization or AI change. See
-`../qa/JOURNAL_CONTEXT_PAGE_2026_11_18.md`. Keep all explicit deferrals.
+Build 76 national news and build 77 Repères du jour navigation are owner-accepted.
+PR 537 is merged; build 77 was compiled locally and is available in TestFlight.
+The owner confirms “Super ça fonctionne parfaitement”: this increment is closed.
+See `../qa/JOURNAL_CONTEXT_PAGE_2026_11_18.md`. The owner now approves the full-period
+Analyses chart mockup plus removal of the Casse PA selector and explanatory
+breakdown disclosure, compact category filters, a category donut and the mockup's
+continuous bottom navigation. See `../qa/ANALYTICS_POLISH_2026_11_18.md`.
+Daily purchase-price uploads are the next workstream after this UI lot; their
+former deferral is lifted for scoping, not for numerical counter-promotion work.
+Keep the other explicit deferrals and do not reopen accepted recipes.
 
 ## Owner-approved Journal produce price context — 16 November 2026
 

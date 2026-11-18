@@ -1,3 +1,4 @@
+import { CategoryDistribution } from "./category-distribution";
 import { useState } from "react";
 import { Text, View, Pressable } from "react-native";
 import {
@@ -11,11 +12,7 @@ import {
   type AnalyticsExplorerFilters,
 } from "@fl-copilot/domain";
 import { BottomSheet, InlineAlert, SecondaryButton } from "../components/ui";
-import {
-  DetailsDisclosure,
-  IconButton,
-  SegmentedControl,
-} from "../components/dashboard";
+import { SegmentedControl } from "../components/dashboard";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { colors } from "../design/tokens";
 import {
@@ -120,14 +117,6 @@ export function ExplorerBreakdown({
         Répartition par produit
       </Text>
       <Text style={{ color: colors.ink }}>{explorerScopeLabel(data)}</Text>
-      <DetailsDisclosure title="Comprendre cette répartition">
-        <Text style={{ color: colors.muted }}>
-          Classement selon les options choisies, sur l’ensemble des produits de
-          la sélection et selon le catalogue actuel. Des produits ou journées
-          sans montant restent inconnus, jamais à zéro. Ce détail peut différer
-          du total du rayon si les sources sont incomplètes.
-        </Text>
-      </DetailsDisclosure>
       {data.detailsUnavailable ? (
         <InlineAlert
           title="Détail trop volumineux"
@@ -142,44 +131,16 @@ export function ExplorerBreakdown({
               message="Aucun montant ne correspond à ces filtres sur la période et sa référence. Élargissez les filtres ou consultez les imports."
             />
           ) : null}
-          {!data.filters.productId
-            ? details.categories.map((c) => (
-                <View
-                  key={c.category}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 10,
-                    padding: 14,
-                    borderRadius: 14,
-                    backgroundColor: colors.surface,
-                    borderWidth: 1,
-                    borderColor: colors.line,
-                  }}
-                >
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`Explorer ${c.label}`}
-                    onPress={() => onCategory(c.category)}
-                    style={{ flex: 1, minHeight: 48, justifyContent: "center" }}
-                  >
-                    <Text style={{ color: colors.ink, fontWeight: "600" }}>
-                      {c.label} ·{" "}
-                      {c.analysis.total === null
-                        ? "Indisponible"
-                        : formatCurrency(c.analysis.total)}
-                    </Text>
-                  </Pressable>
-                  <IconButton
-                    label={`Informations sur les chiffres : ${c.label}`}
-                    icon="information-circle-outline"
-                    onPress={() =>
-                      setInfo({ kind: "category", id: c.category })
-                    }
-                  />
-                </View>
-              ))
-            : null}
+          {!data.filters.productId ? (
+            <CategoryDistribution
+              categories={details.categories}
+              average={
+                period.kind === "range" && period.aggregation === "AVERAGE"
+              }
+              onCategory={onCategory}
+              onInfo={(category) => setInfo({ kind: "category", id: category })}
+            />
+          ) : null}
           {onProductList ? (
             <View style={{ gap: 6 }}>
               <View

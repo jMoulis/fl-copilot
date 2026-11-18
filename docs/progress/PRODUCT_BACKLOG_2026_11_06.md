@@ -1,4 +1,4 @@
-# Backlog produit — point du 17 novembre 2026
+# Backlog produit — point du 18 novembre 2026
 
 Ce fichier conserve son chemin historique pour les liens existants. Le statut
 courant du pilote et les preuves sont dans [le point consolidé](PILOT_STATUS_2026_11_14.md).
@@ -52,20 +52,39 @@ PR 536 fusionnée après CI push/PR vertes ; CI master verte. API publiée et sa
 Build 76 compilé localement, vérifié et envoyé à Apple ; le propriétaire confirme
 « tout fonctionne ». Ce lot est clos.
 
-## Lot UX approuvé — Repères du jour
+## Livré et accepté — Repères du jour
 
 Un seul accès dans le Journal ouvre une page regroupant les huit rubriques.
 Le contexte INSEE devient « Prix et conjoncture » sur cette page. La météo
 compacte et « Analyser cette journée » après les notes restent dans le Journal.
 Conserver la date, le retour, les sources et archives existantes.
+PR 537 fusionnée, CI vertes ; build 77 compilé localement et accepté à l’envoi
+par Apple, confirmé disponible en test interne TestFlight (`VALID` /
+`IN_BETA_TESTING`). Le propriétaire confirme « Super ça fonctionne parfaitement » :
+lot clôturé.
 [Suivi et vérification](../qa/JOURNAL_CONTEXT_PAGE_2026_11_18.md).
+
+## Lot approuvé en cours — Analyses et graphiques
+
+Maquette validée, avec ajout demandé : retrait du sélecteur Casse PA et de
+« Comprendre cette répartition », catégories compactes, anneau de répartition,
+barre de navigation comme sur la maquette. Les montants et comparaisons existants
+restent déterministes. [Suivi](../qa/ANALYTICS_POLISH_2026_11_18.md).
+
+## Prochain chantier demandé — upload quotidien des prix d’achat
+
+Le propriétaire demande de l’attaquer après le lot graphiques. Le report de cet
+upload est levé pour ce prochain cadrage : examiner un vrai fichier, ses dates,
+identifiants et unités, puis réutiliser Imports et ses validations. Aucun format
+source ou calcul supplémentaire n’est encore arbitré. L’approfondissement chiffré
+des contre-promotions reste distinct et reporté.
 
 ## Réserves et sujets explicitement reportés
 
 - [ ] **Sauvegarde/restauration Atlas** : réserve M8 maintenue à la demande du
       propriétaire. Activation et restauration isolée ne sont pas qualifiées.
-- [ ] **PA quotidiens / approfondissement des contre-promotions chiffrées** :
-      chantier M7-2 reporté. Les calculs et conseils qualitatifs existants restent acquis.
+- [ ] **Approfondissement des contre-promotions chiffrées** : report maintenu.
+      L’upload quotidien des PA devient le prochain chantier demandé ci-dessus.
 - [ ] **Implantation détaillée** : chantier M7-6 reporté, à reprendre avec le plan
       merchandising et les mesures utiles. Le contexte déclaré actuel reste disponible.
 - [ ] **M9** : Android et qualification dédiée d'accessibilité, non démarrés.
@@ -73,8 +92,9 @@ Conserver la date, le retour, les sources et archives existantes.
 ## Évolutions à prioriser à l'usage
 
 - [ ] Finitions UX et graphiques à partir des maquettes et de défauts concrets.
-- [ ] Contexte économique F&L plus détaillé, actualités nationales pertinentes et
-      autres facteurs du Journal. Le socle actuel n'attend pas ces extensions.
+- [ ] Éventuelles extensions du contexte économique F&L ou des facteurs du
+      Journal, à cadrer sur un besoin concret. Les indices INSEE, les actualités
+      nationales du premier périmètre et leur navigation sont déjà livrés et acceptés.
 - [ ] Évaluation de l'utilité des associations quand un historique comparable
       suffisant existe ; pas de modèle causal/prédictif déclaré validé.
 - [ ] Étude du nouveau payload de la webapp Mousquetaires, gardée de côté.

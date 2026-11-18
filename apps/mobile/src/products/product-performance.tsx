@@ -235,6 +235,15 @@ function ScopedProductPerformance({
         }
       }}
       onExplore={explore}
+      onChartSelect={(chartDate) => {
+        if (current.current) {
+          current.current = {
+            ...current.current,
+            frame: { ...current.current.frame, chartDate },
+          };
+          save(current.current);
+        }
+      }}
       onScroll={(offset) => {
         if (current.current) {
           current.current = {

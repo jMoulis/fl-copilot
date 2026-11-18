@@ -18,6 +18,9 @@ import ImportsHub from "../app/(tabs)/actions";
 import JournalScreen from "../app/(tabs)/today";
 const runtime = vi.hoisted(() => ({ push: vi.fn(), sqlite: {}, os: "ios" }));
 vi.mock("expo-crypto", () => ({ randomUUID: () => "test-id" }));
+vi.mock("react-native-safe-area-context", () => ({
+  useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 24, left: 0 }),
+}));
 vi.mock("../providers/database-provider", () => ({
   useLocalDatabase: () => ({ sqlite: runtime.sqlite, deviceId: "test-device" }),
 }));

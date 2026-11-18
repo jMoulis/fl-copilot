@@ -1,3 +1,4 @@
+vi.mock("react-native-svg", () => ({ default: "Svg", Circle: "Circle" }));
 import { createElement, useState } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { it, expect, vi } from "vitest";
@@ -41,7 +42,8 @@ it("uses accessible real controls to select declines, percentage and reverse ord
   const storeId = "00000000-0000-4000-8000-000000000001",
     productId = "00000000-0000-4000-8000-000000000002";
   const changes = vi.fn(),
-    onOpenProduct = vi.fn();
+    onOpenProduct = vi.fn(),
+    onCategory = vi.fn();
   let tree: ReactTestRenderer | undefined;
   let referenceValue = "100";
   function Harness() {
@@ -93,7 +95,7 @@ it("uses accessible real controls to select declines, percentage and reverse ord
         changes(next);
         setList(next);
       },
-      onCategory: vi.fn(),
+      onCategory,
       onOpenProduct,
       onPage: vi.fn(),
     });
@@ -102,12 +104,18 @@ it("uses accessible real controls to select declines, percentage and reverse ord
     await act(() => {
       tree = create(createElement(Harness));
     });
+    expect(JSON.stringify(tree!.toJSON())).not.toContain(
+      "Comprendre cette répartition",
+    );
+    expect(tree!.root.findAll((n) => String(n.type) === "Svg")).toHaveLength(1);
     const find = (label: string) =>
       tree!.root.findAll(
         (n) =>
           String(n.type) === "Pressable" &&
           n.props.accessibilityLabel === label,
       )[0];
+    await act(() => find("Explorer Fruits").props.onPress());
+    expect(onCategory).toHaveBeenCalledWith("FRUIT");
     await act(() => find("Évolution des produits : En baisse").props.onPress());
     expect(changes).toHaveBeenLastCalledWith({
       trend: "DOWN",
