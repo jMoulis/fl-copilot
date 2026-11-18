@@ -29,3 +29,5 @@ export * from "./analytics-query-chart";
 
 export * from "./economic-context";
 export * from "./journal-associations";
+
+export * from "./category-shares";

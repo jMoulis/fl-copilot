@@ -56,6 +56,7 @@ export function ProductPerformanceView({
   onShift,
   onExplore,
   onScroll,
+  onChartSelect,
   onRefresh,
 }: {
   view: ExplorerView;
@@ -67,6 +68,7 @@ export function ProductPerformanceView({
   onShift(amount: number): void;
   onExplore(period?: ExplorerPeriod, metric?: AnalyticsExplorerMetric): void;
   onScroll(offset: number): void;
+  onChartSelect?(date: string): void;
   onRefresh(): void;
 }) {
   const [details, setDetails] = useState(false);
@@ -154,10 +156,12 @@ export function ProductPerformanceView({
       <SegmentedControl
         label="Chiffres du produit"
         value={view.metric}
-        options={Object.entries(labels).map(([value, label]) => ({
-          value: value as AnalyticsExplorerMetric,
-          label,
-        }))}
+        options={Object.entries(labels)
+          .filter(([value]) => value !== "wasteCost")
+          .map(([value, label]) => ({
+            value: value as AnalyticsExplorerMetric,
+            label,
+          }))}
         onChange={onMetric}
       />
       <View
@@ -254,13 +258,15 @@ export function ProductPerformanceView({
               period={view.frame.period}
               points={result.points}
               scrollOffset={view.frame.chartScroll}
+              selectedDate={view.frame.chartDate}
+              onSelect={onChartSelect}
               onChartScroll={onScroll}
               onDrill={(date) =>
                 onExplore(drillExplorerView(view, date).frame.period)
               }
             />
             <Text style={{ color: colors.muted, fontSize: 12 }}>
-              Touchez une colonne pour explorer · €
+              Sélectionne une valeur, puis ouvre son détail
             </Text>
           </>
         ) : null}

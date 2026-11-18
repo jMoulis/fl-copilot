@@ -22,6 +22,7 @@ const frame = z
     period: analyticsExplorerPeriodSchema,
     anchor: copilotBusinessDateSchema,
     filters: analyticsExplorerFiltersSchema.default(emptyExplorerFilters),
+    chartDate: copilotBusinessDateSchema.optional(),
     chartScroll: z.number().min(0).max(10000000).default(0),
     productList: analyticsProductListSchema.optional(),
     detailsOffset: z.number().int().min(0).max(10000).default(0),
@@ -207,7 +208,14 @@ export function drillExplorerScope(
 ): ExplorerView {
   return explorerViewSchema.parse({
     ...s,
-    frame: { ...s.frame, filters, scroll: 0, chartScroll: 0, detailsOffset: 0 },
+    frame: {
+      ...s.frame,
+      filters,
+      scroll: 0,
+      chartScroll: 0,
+      chartDate: undefined,
+      detailsOffset: 0,
+    },
     history: [...s.history, s.frame].slice(-16),
   });
 }
@@ -228,6 +236,7 @@ export function drillExplorerWeek(
     ...s,
     frame: {
       ...s.frame,
+      chartDate: undefined,
       period,
       anchor: child.start < parent.start ? parent.start : child.start,
       scroll: 0,

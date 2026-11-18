@@ -6,13 +6,14 @@ fonctionnelle en certification de tous les appareils ou scénarios.
 
 ## Version utilisée
 
-- iOS **0.1.0 (76)**, compilé localement sur le Mac, distribué dans le groupe
+- iOS **0.1.0 (77)**, compilé localement sur le Mac, distribué dans le groupe
   TestFlight privé habituel. Source native
-  `adb7efb80278a3ebf0e6b36b56444f6ab574ff26`. Les actualités nationales sont
+  `aa94fcfbdd6d26a729807936612d2aa7fa8b0ad8`. La navigation « Repères du jour »
+  est acceptée : « Super ça fonctionne parfaitement ». Les actualités nationales sont
   acceptées (« tout fonctionne »). Le lot INSEE et sa restitution
   corrigée côté serveur sont acceptés par le propriétaire le 17 novembre.
-  Le build 75 reste la précédente version acceptée ; ses finitions Réglages,
-  Mon magasin et Synchronisation sont clôturées.
+  Le build 76 reste la précédente version acceptée ; les finitions Réglages,
+  Mon magasin et Synchronisation du build 74 restent clôturées.
 - API en service : `adb7efb80278a3ebf0e6b36b56444f6ab574ff26` (PR 536),
   déploiement `dpl_2RknNqVV9fa3ajnMemx14sfrjaBS`, région `cdg1`,
   `https://fl-copilot.vercel.app`. État public et base connectée vérifiés ;
@@ -24,14 +25,14 @@ fonctionnelle en certification de tous les appareils ou scénarios.
 
 ## Socle validé
 
-| Périmètre               | Statut courant                                                        | Réserve conservée                                                                                               |
-| ----------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| M0–M6                   | Clôturés pour le pilote iPhone                                        | La qualification multiplateforme reste distincte.                                                               |
-| M7, chantiers 1/3/4/5/7 | Clôturés pour leur périmètre fonctionnel pilote                       | Les nouvelles évolutions ne rouvrent pas les recettes acceptées.                                                |
-| M7, chantier 2          | Conseil qualitatif accepté ; approfondissement numérique reporté      | Import quotidien des PA et qualification des simulations futures. Les calculateurs existants restent conservés. |
-| M7, chantier 6          | Contexte magasin déclaré disponible ; implantation détaillée reportée | Plan merchandising du groupement, mesures et faisabilité physique.                                              |
-| M8                      | Pilote iPhone clôturé                                                 | Sauvegarde serveur Atlas et restauration isolée explicitement reportées.                                        |
-| M9                      | Non démarré, reporté                                                  | Android et qualification dédiée d'accessibilité.                                                                |
+| Périmètre               | Statut courant                                                        | Réserve conservée                                                                                                             |
+| ----------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| M0–M6                   | Clôturés pour le pilote iPhone                                        | La qualification multiplateforme reste distincte.                                                                             |
+| M7, chantiers 1/3/4/5/7 | Clôturés pour leur périmètre fonctionnel pilote                       | Les nouvelles évolutions ne rouvrent pas les recettes acceptées.                                                              |
+| M7, chantier 2          | Conseil qualitatif accepté ; approfondissement numérique reporté      | PA quotidiens demandés après le lot graphiques ; simulations futures reportées. Les calculateurs existants restent conservés. |
+| M7, chantier 6          | Contexte magasin déclaré disponible ; implantation détaillée reportée | Plan merchandising du groupement, mesures et faisabilité physique.                                                            |
+| M8                      | Pilote iPhone clôturé                                                 | Sauvegarde serveur Atlas et restauration isolée explicitement reportées.                                                      |
+| M9                      | Non démarré, reporté                                                  | Android et qualification dédiée d'accessibilité.                                                                              |
 
 Les copies/restaurations locales et les conflits iPhone/simulateur ne valent pas
 validation d'une restauration cloud Atlas. Cette réserve reste visible.
@@ -80,7 +81,14 @@ périmètres officiels restent plus larges que le rayon frais. Le propriétaire
 confirme « Oui c'est fixé » après le correctif de restitution PR 534 : ce lot
 est clôturé. Voir [la fiche du lot](../qa/JOURNAL_PRODUCE_PRICES_2026_11_16.md).
 
-## Prochaine reprise
+## Lot suivant approuvé
+
+Le propriétaire valide la maquette des graphiques et ses ajustements de catégories,
+répartition circulaire et navigation. Voir [le lot Analyses](../qa/ANALYTICS_POLISH_2026_11_18.md).
+Il demande ensuite l’upload quotidien des prix d’achat ; le cadrage de cet import
+succédera au lot graphiques, sans lever le report des simulations chiffrées.
+
+## Derniers lots acceptés
 
 Le propriétaire a approuvé le premier périmètre des actualités nationales le
 17 novembre : mouvements sociaux et restrictions utiles aux déplacements ou à
@@ -88,8 +96,12 @@ l’approvisionnement. Le premier incrément est implémenté et vérifié local
 avec collecte/archives existantes, compatibilité build 75 et affichage natif.
 PR 536 fusionnée avec CI push/PR/master vertes ; API publiée et saine. Le build
 76 est compilé localement, vérifié, envoyé à Apple et accepté par le propriétaire.
-La prochaine évolution approuvée regroupe les rubriques sur une page
+La réorganisation approuvée regroupe les rubriques sur une page
 « Repères du jour » ; météo compacte et analyse restent dans le Journal.
+PR 537 fusionnée, CI push/PR/master vertes. Build local 77 vérifié et envoyé
+à Apple, confirmé `VALID` / `IN_BETA_TESTING` dans TestFlight. Le propriétaire
+confirme « Super ça fonctionne parfaitement » : lot UX clôturé, sans nouvelle
+recette à demander hors régression.
 Voir [le lot UX](../qa/JOURNAL_CONTEXT_PAGE_2026_11_18.md). Voir la
 [fiche du lot](../qa/JOURNAL_NATIONAL_NEWS_2026_11_17.md) pour les preuves et limites
 (dates incertaines, couverture partielle, déduplication par URL).

@@ -102,6 +102,7 @@ export function ExplorerContent({
   onRefresh,
   onWeek,
   onChartScroll,
+  onChartSelect,
 }: {
   view: ExplorerView;
   data?: Data;
@@ -118,6 +119,7 @@ export function ExplorerContent({
   onRefresh: () => void;
   onWeek: (period: ExplorerPeriod) => void;
   onChartScroll: (offset: number) => void;
+  onChartSelect?: (date: string) => void;
 }) {
   const period = view.frame.period,
     range = explorerRange(period),
@@ -298,7 +300,6 @@ export function ExplorerContent({
           { value: "sales" as const, label: "CA" },
           { value: "margin" as const, label: "Marge €" },
           { value: "waste" as const, label: "Casse PV" },
-          { value: "wasteCost" as const, label: "Casse PA" },
         ]}
         onChange={onMetric}
       />
@@ -385,10 +386,6 @@ export function ExplorerContent({
                     ? "de la période citée"
                     : "clos renseignés équivalents · N−1"}
                 </Text>
-                <Text style={{ color: colors.heroMuted, fontSize: 12 }}>
-                  {formatCurrency(c.currentValue)} contre{" "}
-                  {formatCurrency(c.referenceValue)} en référence
-                </Text>
               </View>
             ) : (
               <Text style={{ color: colors.heroWarning, fontSize: 12 }}>
@@ -399,6 +396,25 @@ export function ExplorerContent({
             )}
           </>
         )}
+        {data ? (
+          <Text
+            style={{
+              color:
+                data.coverage.partial || data.coverage.missing
+                  ? colors.heroWarning
+                  : colors.heroMuted,
+              fontSize: 12,
+            }}
+          >
+            {data.coverage.complete}/{data.coverage.expected} journées complètes
+            {data.coverage.partial
+              ? ` · ${data.coverage.partial} partielles`
+              : ""}
+            {data.coverage.missing
+              ? ` · ${data.coverage.missing} sans donnée`
+              : ""}
+          </Text>
+        ) : null}
         {data &&
         period.kind !== "day" &&
         data.points.some((point) => point.value !== null) ? (
@@ -413,13 +429,15 @@ export function ExplorerContent({
                 : "Détail par jour"}
             </Text>
             <Text style={{ color: colors.heroMuted, fontSize: 12 }}>
-              Touchez une colonne pour explorer · €
+              Sélectionne une valeur, puis ouvre son détail
             </Text>
             <ExplorerTrendChart
               inverse
               period={period}
               points={data.points}
               scrollOffset={view.frame.chartScroll}
+              selectedDate={view.frame.chartDate}
+              onSelect={onChartSelect}
               onChartScroll={onChartScroll}
               onDrill={onDrill}
             />

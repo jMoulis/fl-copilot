@@ -1,3 +1,4 @@
+vi.mock("react-native-svg", () => ({ default: "Svg", Circle: "Circle" }));
 import { createElement, useState } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -168,7 +169,7 @@ it("clears every filter without changing the source period/basis or metric, and 
   expect(latest).toEqual(source);
 });
 
-it("exposes all four monetary choices above the result, including the selected purchase-cost waste measure", async () => {
+it("removes the purchase-cost tab without relabelling an explicit legacy purchase-cost citation", async () => {
   const callbacks = handlers();
   await act(() => {
     rendered = create(
@@ -180,14 +181,16 @@ it("exposes all four monetary choices above the result, including the selected p
       }),
     );
   });
-  const selected = button("Indicateur : Casse PA");
-  expect(selected.props.accessibilityState.checked).toBe(true);
+  expect(
+    rendered!.root.findAllByProps({
+      accessibilityLabel: "Indicateur : Casse PA",
+    }),
+  ).toHaveLength(0);
   await act(() => button("Indicateur : Casse PV").props.onPress());
   expect(callbacks.onMetric).toHaveBeenCalledWith("waste");
   const texts = labels();
-  expect(texts.indexOf("Casse PA")).toBeLessThan(
-    texts.indexOf("Casse au prix d’achat"),
-  );
+  expect(texts).toContain("Casse au prix d’achat");
+  expect(texts).not.toContain("Casse PA");
 });
 
 it.each([null, "0"])(

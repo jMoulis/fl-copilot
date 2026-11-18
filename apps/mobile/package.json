@@ -67,6 +67,7 @@
     "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.2",
+    "react-native-svg": "15.15.4",
     "react-native-web": "^0.21.0",
     "react-native-worklets": "0.10.1",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
