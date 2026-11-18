@@ -698,6 +698,13 @@ it("keeps retained-file review dismissible during matching and aborts on unmount
   expect(text(renderer!.root)).toContain("Identification des produits");
   const signal = p.validate.mock.calls.at(-1)?.[3] as AbortSignal;
   expect(signal.aborted).toBe(false);
+  expect(text(renderer!.root)).toContain("Chargement du catalogue produits…");
+  const progress = p.validate.mock.calls.at(-1)?.[4] as (value: {
+    completed: number;
+    total: number;
+  }) => void;
+  await act(async () => progress({ completed: 20, total: 1226 }));
+  expect(text(renderer!.root)).toContain("20 / 1226 lignes examinées");
   await press("Fermer le fichier");
   expect(p.close).toHaveBeenCalledTimes(1);
   await act(async () => {

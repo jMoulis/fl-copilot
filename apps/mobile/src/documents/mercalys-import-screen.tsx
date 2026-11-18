@@ -192,6 +192,10 @@ export function MercalysImportScreen({
       ),
     [sqlite],
   );
+  const [matchingProgress, setMatchingProgress] = useState<{
+    completed: number;
+    total: number;
+  }>();
   const [stage, setStage] = useState<ImportStage>("IDLE");
   const [filename, setFilename] = useState<string>();
   const [summary, setSummary] = useState<MercalysImportValidationSummary>();
@@ -246,6 +250,7 @@ export function MercalysImportScreen({
       const assertReading = () => {
         if (controller.signal.aborted) throw Error("MERCALYS_BATCH_CANCELLED");
       };
+      setMatchingProgress(undefined);
       setFilename(undefined);
       setSummary(undefined);
       setProductCatalog(undefined);
@@ -287,6 +292,9 @@ export function MercalysImportScreen({
           storeId,
           catalog,
           controller.signal,
+          (progress) => {
+            if (!controller.signal.aborted) setMatchingProgress(progress);
+          },
         );
         assertReading();
         setProductCatalog(catalog);
@@ -936,6 +944,13 @@ export function MercalysImportScreen({
               label="Identification des produits"
               state={progressState(stage, "MATCHING")}
             />
+            {stage === "MATCHING" ? (
+              <Text className="text-ink-muted" accessibilityLiveRegion="polite">
+                {matchingProgress
+                  ? `${matchingProgress.completed} / ${matchingProgress.total} lignes examinées`
+                  : "Chargement du catalogue produits…"}
+              </Text>
+            ) : null}
             <ProgressLine
               label="Vérification des données"
               state={progressState(stage, "VALIDATING")}

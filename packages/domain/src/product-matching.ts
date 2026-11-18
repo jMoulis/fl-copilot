@@ -96,6 +96,9 @@ type ActiveCatalog = {
   products: Map<string, Product>;
   identifiers: ProductIdentifier[];
   aliases: ProductAlias[];
+  identifiersByValue: Map<string, string[]>;
+  aliasesByProduct: Map<string, ProductAlias[]>;
+  canonicalLabels: Map<string, string>;
 };
 
 export function matchProduct(
@@ -107,6 +110,30 @@ export function matchProduct(
   const config = productMatcherConfigSchema.parse(configInput);
   const activeCatalog = getActiveCatalog(request.storeId, catalog);
 
+  return matchActiveProduct(request, activeCatalog, config);
+}
+
+/** Snapshot for one validation run; create again after catalogue mutations. */
+export function prepareProductMatcher(
+  storeId: string,
+  catalog: ProductMatchCatalog,
+  configInput: ProductMatcherConfig = defaultProductMatcherConfig,
+) {
+  const config = productMatcherConfigSchema.parse(configInput);
+  const activeCatalog = getActiveCatalog(storeId, catalog);
+  return (requestInput: ProductMatchRequest): ProductMatchResult => {
+    const request = productMatchRequestSchema.parse(requestInput);
+    if (request.storeId !== storeId)
+      throw Error("PRODUCT_MATCH_STORE_MISMATCH");
+    return matchActiveProduct(request, activeCatalog, config);
+  };
+}
+
+function matchActiveProduct(
+  request: z.output<typeof productMatchRequestSchema>,
+  activeCatalog: ActiveCatalog,
+  config: ProductMatcherConfig,
+): ProductMatchResult {
   const identifierResult = matchIdentifiers(
     request.identifiers,
     activeCatalog,
@@ -158,21 +185,41 @@ function getActiveCatalog(
       .map((product) => [product.id, product]),
   );
 
+  const identifiers = catalog.identifiers.filter(
+    (identifier) =>
+      identifier.storeId === storeId &&
+      identifier.status === "VALIDATED" &&
+      !identifier.deletedAt &&
+      products.has(identifier.productId),
+  );
+  const aliases = catalog.aliases.filter(
+    (alias) =>
+      alias.storeId === storeId &&
+      alias.status === "VALIDATED" &&
+      !alias.deletedAt &&
+      products.has(alias.productId),
+  );
+  const identifiersByValue = new Map<string, string[]>();
+  for (const identifier of identifiers) {
+    const key = JSON.stringify([identifier.type, identifier.value]);
+    const entries = identifiersByValue.get(key) ?? [];
+    entries.push(identifier.productId);
+    identifiersByValue.set(key, entries);
+  }
+  const aliasesByProduct = new Map<string, ProductAlias[]>();
+  for (const alias of aliases) {
+    const entries = aliasesByProduct.get(alias.productId) ?? [];
+    entries.push(alias);
+    aliasesByProduct.set(alias.productId, entries);
+  }
   return {
     products,
-    identifiers: catalog.identifiers.filter(
-      (identifier) =>
-        identifier.storeId === storeId &&
-        identifier.status === "VALIDATED" &&
-        !identifier.deletedAt &&
-        products.has(identifier.productId),
-    ),
-    aliases: catalog.aliases.filter(
-      (alias) =>
-        alias.storeId === storeId &&
-        alias.status === "VALIDATED" &&
-        !alias.deletedAt &&
-        products.has(alias.productId),
+    identifiers,
+    aliases,
+    identifiersByValue,
+    aliasesByProduct,
+    canonicalLabels: new Map(
+      [...products.values()].map((p) => [p.id, normalizeProductLabel(p.label)]),
     ),
   };
 }
@@ -191,13 +238,10 @@ function matchIdentifiers(
   >();
 
   for (const requested of requestedIdentifiers) {
-    const productIds = catalog.identifiers
-      .filter(
-        (identifier) =>
-          identifier.type === requested.type &&
-          identifier.value === requested.value,
-      )
-      .map((identifier) => identifier.productId);
+    const productIds =
+      catalog.identifiersByValue.get(
+        JSON.stringify([requested.type, requested.value]),
+      ) ?? [];
 
     if (productIds.length === 0) {
       continue;
@@ -268,7 +312,7 @@ function exactCanonicalCandidates(
 ) {
   return [...catalog.products.values()]
     .filter(
-      (product) => normalizeProductLabel(product.label) === normalizedLabel,
+      (product) => catalog.canonicalLabels.get(product.id) === normalizedLabel,
     )
     .map((product) => product.id)
     .sort();
@@ -307,18 +351,18 @@ function fuzzyResult(
     .map((product): ProductMatchCandidate => {
       const canonicalScore = labelSimilarity(
         normalizedLabel,
-        normalizeProductLabel(product.label),
+        catalog.canonicalLabels.get(product.id)!,
       );
-      const aliasScore = catalog.aliases
-        .filter((alias) => alias.productId === product.id)
-        .reduce(
-          (best, alias) =>
-            Math.max(
-              best,
-              labelSimilarity(normalizedLabel, alias.normalizedAlias),
-            ),
-          0,
-        );
+      const aliasScore = (
+        catalog.aliasesByProduct.get(product.id) ?? []
+      ).reduce(
+        (best, alias) =>
+          Math.max(
+            best,
+            labelSimilarity(normalizedLabel, alias.normalizedAlias),
+          ),
+        0,
+      );
       const score = roundScore(Math.max(canonicalScore, aliasScore));
 
       return {
@@ -397,18 +441,20 @@ function labelSimilarity(left: string, right: string) {
 
 function levenshteinDistance(left: string, right: string) {
   let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
-
+  let current = new Array<number>(right.length + 1);
   for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
-    const current = [leftIndex];
+    current[0] = leftIndex;
     for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
       current[rightIndex] = Math.min(
-        (current[rightIndex - 1] ?? 0) + 1,
-        (previous[rightIndex] ?? 0) + 1,
-        (previous[rightIndex - 1] ?? 0) +
+        current[rightIndex - 1]! + 1,
+        previous[rightIndex]! + 1,
+        previous[rightIndex - 1]! +
           (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1),
       );
     }
+    const swap = previous;
     previous = current;
+    current = swap;
   }
 
   return previous[right.length] ?? right.length;

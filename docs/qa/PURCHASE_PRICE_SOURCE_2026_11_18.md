@@ -236,3 +236,44 @@ Green focused coverage also retries a failed admitted PA, publishes it once and
 retains idempotency on a second retry; changed bytes and foreign folder remain
 rejected. Existing failed jobs require the ordinary “Reprendre ce fichier” action
 after delivery; no automatic rearming of unclassified integrity failures.
+
+### Build 82 delivery
+
+PR 542 merged as `0c0c1fba6a697f6b1c1208ce581390ee48e73824`.
+Exact-head push 44331409329, PR 44331422107 and master 44333841122 passed.
+CI: 641 suites and 6,371 tests passed; one suite/six tests skipped.
+Local focused verification: 123 tests passed, including admitted PA retry,
+duplicate retry, concurrent cache repair, changed bytes and scoped file access.
+The first full local run exposed a test fixture lacking the production serialized
+writer and an unrelated observability timeout; fixture corrected, both targeted
+suites passed and complete CI passed. Local typecheck passed.
+
+Build 0.1.0 (82) compiled locally, STORE archive verified, SHA-256
+`cac112830fd2307ae7956e8c97fcb18d008cc5ca94fabb297243a07b5894e42d`.
+Apple accepted upload. Build 82 is VALID / IN_BETA_TESTING, not expired,
+and present in the existing owner-only private internal group (one tester).
+API unchanged from PR 539. Evidence retained privately in
+`maintenance/email-original-relocation-2026-11-18/release/`, outside Git.
+
+Device follow-up: update without uninstalling/resetting, then Imports → documents
+received by email → “Reprendre ce fichier” for each failed item. Open the retained
+file, confirm PA review/publication and check synchronization after completion.
+Owner reports freezes seem gone on build 81; PA recovery acceptance remains open.
+
+## Build 82 follow-up: extended matching wait
+
+Owner confirms the original now reads but reports four minutes at identification.
+The email overview displays generic preparation while manual review runs its own
+matching. No device trace yet proves whether catalogue loading, matching or other
+concurrent work owns the delay. Do not claim a confirmed infinite loop.
+
+Synthetic Mac probe: 172 unmatched rows, 1,226 active products, four validated
+aliases per product. Original matcher 10,482 ms; prepared matcher with reused edit
+distance rows 4,231 ms, full results identical to the retained previous implementation.
+This is a synthetic throughput measurement, not the owner's catalogue or iPhone.
+Prepare filtered catalogue/identifier/alias/normalized-label lookups once per
+validation run; retain exact rules, scores, conflicts, ownership, cancellation and
+yields. New validation after mutation gets a fresh snapshot. Review also displays
+catalogue loading separately and examined-line progress. No matching thresholds or
+publication permissions change. Private probe outside Git:
+`maintenance/import-matching-2026-11-18/`. Device acceptance remains pending.

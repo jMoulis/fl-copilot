@@ -1,3 +1,13 @@
+## Import matching throughput — 18 November 2026
+
+Owner reports four minutes at product identification after build 82 restores file
+access. Measure repeated catalogue/alias traversal; preserve exact deterministic
+matching decisions while preparing lookup data once per local validation run.
+Keep cancellation/yielding and refresh the snapshot on every new validation;
+never persist a stale matcher across product mutations. Verify parity for conflicts,
+filtered products/aliases and fuzzy ranking. Device delay cause remains unconfirmed
+until the owner retries; synthetic Mac timings are not native acceptance.
+
 ## Email original relocation regression — 18 November 2026
 
 Owner reports freezes apparently resolved on build 81; two EMAIL_INTAKE_ORIGINAL_CHANGED
