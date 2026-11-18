@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Linking, Pressable, Text, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import {
@@ -29,12 +29,19 @@ export function JournalExternalContext({
   busy,
   configured,
   onRefresh,
+  kinds = ["WORKS", "AGENDA", "CONSUMPTION"],
+  renderTrigger,
 }: {
   date: string;
   context?: JournalContext;
   busy: boolean;
   configured: boolean;
   onRefresh(): void;
+  kinds?: ("WORKS" | "AGENDA" | "CONSUMPTION")[];
+  renderTrigger?: (
+    kind: "WORKS" | "AGENDA" | "CONSUMPTION",
+    open: () => void,
+  ) => ReactNode;
 }) {
   const [selected, setSelected] = useState<JournalSource["kind"]>(),
     [revision, setRevision] = useState<string>(),
@@ -59,79 +66,93 @@ export function JournalExternalContext({
   }
   return (
     <>
-      <View style={{ gap: 10, marginVertical: 16 }}>
-        <Text style={{ color: c.ink, fontSize: 18, fontWeight: "600" }}>
-          Les repères du jour
-        </Text>
-        <Text style={{ color: c.muted, fontSize: 12 }}>
-          Annonces locales et tendances nationales, à croiser avec tes
-          observations.
-        </Text>
-        {(["WORKS", "AGENDA", "CONSUMPTION"] as const).map((kind) => {
-          const item = sources?.find((s) => s.kind === kind);
-          const count = item ? journalItemsForDate(item, date).length : 0;
-          const available = !!item?.payload;
-          return (
-            <Pressable
-              key={kind}
-              accessibilityRole="button"
-              onPress={() => {
-                setSelected(kind);
-                setRevision(undefined);
-                setLinkError(false);
-              }}
-              style={{
-                backgroundColor: c.surface,
-                borderRadius: 16,
-                borderWidth: 1,
-                borderColor: c.line,
-                padding: 16,
-                flexDirection: "row",
-                gap: 12,
-                alignItems: "center",
-                minHeight: 72,
-              }}
-            >
-              <Ionicons
-                name={
-                  kind === "WORKS"
-                    ? "trail-sign-outline"
-                    : kind === "AGENDA"
-                      ? "calendar-outline"
-                      : "basket-outline"
-                }
-                size={23}
-                color={c.mint}
-              />
-              <View style={{ flex: 1, gap: 4 }}>
-                <Text style={{ color: c.ink, fontWeight: "600", fontSize: 14 }}>
-                  {labels[kind]}
-                </Text>
-                <Text style={{ color: c.muted, fontSize: 12 }}>
-                  {available
-                    ? kind === "CONSUMPTION"
-                      ? `Consommation · ${item.payload!.consumption?.period ?? "période à vérifier"}`
-                      : `${count} annonce${count > 1 ? "s" : ""} à consulter · couverture partielle`
-                    : item?.status === "NOT_CONFIGURED"
-                      ? "Source locale à configurer"
-                      : item?.issue === "HISTORY_UNAVAILABLE"
-                        ? "Pas d’archive collectée pour cette semaine"
-                        : "Aucune source enregistrée"}
-                </Text>
-                {available &&
-                (item.status === "STALE" ||
-                  !item.validUntil ||
-                  item.validUntil <= new Date().toISOString()) ? (
-                  <Text style={{ color: c.medium, fontSize: 11 }}>
-                    Version conservée · voir la date de collecte
+      {renderTrigger ? (
+        kinds.map((kind) => (
+          <View key={kind}>
+            {renderTrigger(kind, () => {
+              setSelected(kind);
+              setRevision(undefined);
+              setLinkError(false);
+            })}
+          </View>
+        ))
+      ) : (
+        <View style={{ gap: 10, marginVertical: 16 }}>
+          <Text style={{ color: c.ink, fontSize: 18, fontWeight: "600" }}>
+            Les repères du jour
+          </Text>
+          <Text style={{ color: c.muted, fontSize: 12 }}>
+            Annonces locales et tendances nationales, à croiser avec tes
+            observations.
+          </Text>
+          {kinds.map((kind) => {
+            const item = sources?.find((s) => s.kind === kind);
+            const count = item ? journalItemsForDate(item, date).length : 0;
+            const available = !!item?.payload;
+            return (
+              <Pressable
+                key={kind}
+                accessibilityRole="button"
+                onPress={() => {
+                  setSelected(kind);
+                  setRevision(undefined);
+                  setLinkError(false);
+                }}
+                style={{
+                  backgroundColor: c.surface,
+                  borderRadius: 16,
+                  borderWidth: 1,
+                  borderColor: c.line,
+                  padding: 16,
+                  flexDirection: "row",
+                  gap: 12,
+                  alignItems: "center",
+                  minHeight: 72,
+                }}
+              >
+                <Ionicons
+                  name={
+                    kind === "WORKS"
+                      ? "trail-sign-outline"
+                      : kind === "AGENDA"
+                        ? "calendar-outline"
+                        : "basket-outline"
+                  }
+                  size={23}
+                  color={c.mint}
+                />
+                <View style={{ flex: 1, gap: 4 }}>
+                  <Text
+                    style={{ color: c.ink, fontWeight: "600", fontSize: 14 }}
+                  >
+                    {labels[kind]}
                   </Text>
-                ) : null}
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={c.muted} />
-            </Pressable>
-          );
-        })}
-      </View>
+                  <Text style={{ color: c.muted, fontSize: 12 }}>
+                    {available
+                      ? kind === "CONSUMPTION"
+                        ? `Consommation · ${item.payload!.consumption?.period ?? "période à vérifier"}`
+                        : `${count} annonce${count > 1 ? "s" : ""} à consulter · couverture partielle`
+                      : item?.status === "NOT_CONFIGURED"
+                        ? "Source locale à configurer"
+                        : item?.issue === "HISTORY_UNAVAILABLE"
+                          ? "Pas d’archive collectée pour cette semaine"
+                          : "Aucune source enregistrée"}
+                  </Text>
+                  {available &&
+                  (item.status === "STALE" ||
+                    !item.validUntil ||
+                    item.validUntil <= new Date().toISOString()) ? (
+                    <Text style={{ color: c.medium, fontSize: 11 }}>
+                      Version conservée · voir la date de collecte
+                    </Text>
+                  ) : null}
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={c.muted} />
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
       <BottomSheet
         visible={!!selected}
         title={selected ? labels[selected] : "Contexte"}

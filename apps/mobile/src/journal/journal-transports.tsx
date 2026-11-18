@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Text, View, Pressable, Linking } from "react-native";
 import { router } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -59,6 +59,7 @@ export function JournalTransports({
   onRefresh,
   alertTypes,
   configuredLines,
+  renderTrigger,
 }: {
   context?: JournalContext;
   date: string;
@@ -66,6 +67,7 @@ export function JournalTransports({
   onRefresh(): void;
   alertTypes?: TransportAlertType[] | null;
   configuredLines?: StoreTransports["lines"];
+  renderTrigger?: (open: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false),
     [linkError, setLinkError] = useState(false);
@@ -89,37 +91,44 @@ export function JournalTransports({
   };
   return (
     <>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Consulter les transports à proximité"
-        onPress={() => setOpen(true)}
-        style={{
-          backgroundColor: c.surface,
-          borderColor: c.line,
-          borderWidth: 1,
-          borderRadius: 16,
-          padding: 16,
-          marginBottom: 16,
-          flexDirection: "row",
-          gap: 12,
-          alignItems: "center",
-        }}
-      >
-        <Ionicons name="bus-outline" size={23} color={c.mint} />
-        <View style={{ flex: 1, gap: 4 }}>
-          <Text style={{ color: c.ink, fontWeight: "600" }}>
-            Transports à proximité
-          </Text>
-          <Text style={{ color: c.muted, fontSize: 12 }}>
-            {known
-              ? `${count} message${count > 1 ? "s" : ""} publié${count > 1 ? "s" : ""} · ${lines.length} ligne${lines.length > 1 ? "s" : ""} suivie${lines.length > 1 ? "s" : ""}`
-              : traffic?.status === "NOT_CONFIGURED"
-                ? "Suivi à configurer"
-                : "Consulter le suivi du magasin"}
-          </Text>
-        </View>
-        <Ionicons name="chevron-forward" size={16} color={c.muted} />
-      </Pressable>
+      {renderTrigger ? (
+        renderTrigger(() => {
+          setLinkError(false);
+          setOpen(true);
+        })
+      ) : (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Consulter les transports à proximité"
+          onPress={() => setOpen(true)}
+          style={{
+            backgroundColor: c.surface,
+            borderColor: c.line,
+            borderWidth: 1,
+            borderRadius: 16,
+            padding: 16,
+            marginBottom: 16,
+            flexDirection: "row",
+            gap: 12,
+            alignItems: "center",
+          }}
+        >
+          <Ionicons name="bus-outline" size={23} color={c.mint} />
+          <View style={{ flex: 1, gap: 4 }}>
+            <Text style={{ color: c.ink, fontWeight: "600" }}>
+              Transports à proximité
+            </Text>
+            <Text style={{ color: c.muted, fontSize: 12 }}>
+              {known
+                ? `${count} message${count > 1 ? "s" : ""} publié${count > 1 ? "s" : ""} · ${lines.length} ligne${lines.length > 1 ? "s" : ""} suivie${lines.length > 1 ? "s" : ""}`
+                : traffic?.status === "NOT_CONFIGURED"
+                  ? "Suivi à configurer"
+                  : "Consulter le suivi du magasin"}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={c.muted} />
+        </Pressable>
+      )}
       <BottomSheet
         visible={open}
         title="Transports à proximité"

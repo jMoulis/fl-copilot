@@ -35,7 +35,7 @@ leurs cases non cochées ne sont plus des tâches actives.
       par le propriétaire sur build 75 le 17 novembre, après correctif serveur
       PR 534. [Sources, livraison et validation](../qa/JOURNAL_PRODUCE_PRICES_2026_11_16.md).
 
-## Lot approuvé — actualités nationales utiles au Journal
+## Livré et accepté — actualités nationales utiles au Journal
 
 Le propriétaire approuve le 17 novembre le premier périmètre : mouvements sociaux
 et restrictions nationales utiles aux déplacements ou à l’approvisionnement,
@@ -48,7 +48,17 @@ ce premier lot. Les lots précédemment acceptés restent clos.
 Premier incrément implémenté et vérifié localement : collecte bornée, archives,
 lecture Copilote et affichage natif. Dates incertaines explicitement conservées ;
 déduplication par URL canonique, pas de regroupement sémantique automatique.
-CI distante, fusion, publication et recette du nouveau binaire restent à réaliser.
+PR 536 fusionnée après CI push/PR vertes ; CI master verte. API publiée et saine.
+Build 76 compilé localement, vérifié et envoyé à Apple ; le propriétaire confirme
+« tout fonctionne ». Ce lot est clos.
+
+## Lot UX approuvé — Repères du jour
+
+Un seul accès dans le Journal ouvre une page regroupant les huit rubriques.
+Le contexte INSEE devient « Prix et conjoncture » sur cette page. La météo
+compacte et « Analyser cette journée » après les notes restent dans le Journal.
+Conserver la date, le retour, les sources et archives existantes.
+[Suivi et vérification](../qa/JOURNAL_CONTEXT_PAGE_2026_11_18.md).
 
 ## Réserves et sujets explicitement reportés
 

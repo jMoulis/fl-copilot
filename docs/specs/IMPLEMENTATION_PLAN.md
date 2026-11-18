@@ -1,13 +1,12 @@
-## Current execution checkpoint — 17 November 2026
+## Current execution checkpoint — 18 November 2026
 
-Read `../progress/HANDOFF_2026_11_17.md`, the consolidated pilot status and active
-backlog before the dated implementation history below. Private daily tasks and
-reminders, settings polish and INSEE produce context are owner-accepted. Build 75
-remains current; the last server-only fix PR 534 is live and owner-accepted.
-No implementation lot is open. National news for the Journal is a proposed
-scoping discussion, not an approved provider/model/collection change. Keep the
-explicit PA, detailed implantation, Atlas and M9 deferrals; do not repeat accepted
-M0–M8 recipes without a regression.
+Read the consolidated pilot status and active backlog before dated history.
+Build 76 national news is owner-accepted. The approved current increment moves
+Journal context entries to a dedicated “Repères du jour” page, retaining compact
+weather and the day analysis action in Journal. Reuse source sheets and local
+weekly cache; preserve selected date and back navigation. No provider, API,
+schema, synchronization or AI change. See
+`../qa/JOURNAL_CONTEXT_PAGE_2026_11_18.md`. Keep all explicit deferrals.
 
 ## Owner-approved Journal produce price context — 16 November 2026
 

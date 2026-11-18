@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Linking, Pressable, Text, View } from "react-native";
 import {
   addContextDays,
@@ -15,9 +15,11 @@ const stamp = (s: string | null | undefined) =>
 export function JournalNationalNews({
   context,
   date,
+  renderTrigger,
 }: {
   context?: JournalContext;
   date: string;
+  renderTrigger?: (open: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false),
     [linkError, setLinkError] = useState(false);
@@ -25,31 +27,38 @@ export function JournalNationalNews({
   const end = date < today ? date : addContextDays(date, 7);
   const rows = context ? nationalNewsForPeriod(context, date, end, today) : [];
   return (
-    <View style={{ marginVertical: 8 }}>
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => {
+    <View style={{ marginVertical: renderTrigger ? 0 : 8 }}>
+      {renderTrigger ? (
+        renderTrigger(() => {
           setLinkError(false);
           setOpen(true);
-        }}
-        style={{
-          padding: 16,
-          backgroundColor: c.surface,
-          borderRadius: 16,
-          borderWidth: 1,
-          borderColor: c.line,
-          minHeight: 72,
-        }}
-      >
-        <Text style={{ color: c.ink, fontWeight: "600" }}>
-          Actualités et déplacements
-        </Text>
-        <Text style={{ color: c.muted }}>
-          {rows.length
-            ? `${rows.length} annonce${rows.length > 1 ? "s" : ""} à consulter`
-            : "Aucune annonce retenue dans les sources disponibles"}
-        </Text>
-      </Pressable>
+        })
+      ) : (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => {
+            setLinkError(false);
+            setOpen(true);
+          }}
+          style={{
+            padding: 16,
+            backgroundColor: c.surface,
+            borderRadius: 16,
+            borderWidth: 1,
+            borderColor: c.line,
+            minHeight: 72,
+          }}
+        >
+          <Text style={{ color: c.ink, fontWeight: "600" }}>
+            Actualités et déplacements
+          </Text>
+          <Text style={{ color: c.muted }}>
+            {rows.length
+              ? `${rows.length} annonce${rows.length > 1 ? "s" : ""} à consulter`
+              : "Aucune annonce retenue dans les sources disponibles"}
+          </Text>
+        </Pressable>
+      )}
       <BottomSheet
         visible={open}
         title="Actualités et déplacements"

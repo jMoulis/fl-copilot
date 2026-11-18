@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Linking, Pressable, Text, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { economicPeriodSummary } from "@fl-copilot/analytics-core";
@@ -30,6 +30,7 @@ export function JournalEconomy({
   error,
   configured = false,
   onRefresh,
+  renderTrigger,
 }: {
   date: string;
   context?: EconomicContext;
@@ -37,6 +38,7 @@ export function JournalEconomy({
   error?: string;
   configured?: boolean;
   onRefresh(): void;
+  renderTrigger?: (open: () => void) => ReactNode;
 }) {
   const [visible, setVisible] = useState(false),
     [linkError, setLinkError] = useState(false);
@@ -67,42 +69,49 @@ export function JournalEconomy({
   }
   return (
     <>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Ouvrir le contexte économique national"
-        onPress={() => setVisible(true)}
-        className="active:opacity-70"
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 8,
-          minHeight: 44,
-          paddingVertical: 8,
-          borderTopWidth: 1,
-          borderColor: c.line,
-        }}
-      >
-        <Ionicons name="pulse-outline" size={18} color={c.muted} />
-        <View style={{ flex: 1, gap: 3 }}>
-          <Text style={{ color: c.muted, fontSize: 12, fontWeight: "600" }}>
-            Contexte national{stale ? " · à actualiser" : ""}
-          </Text>
-          {compactPrices.some((s) => s.period) || confidence?.period ? (
-            <Text style={{ color: c.muted, fontSize: 11, lineHeight: 16 }}>
-              {compactPrices
-                .map(
-                  (s) =>
-                    `${compactLabels[s.id]} · ${s.annualChangePercent !== null ? `${number(s.annualChangePercent)} % / an` : s.value !== null ? "indice à consulter" : "indisponible"} · ${monthLabel(s.period)}`,
-                )
-                .join("\n")}
-              {"\n"}Confiance · {number(confidence?.value ?? null)}
-              {confidence?.value != null ? " points" : ""} ·{" "}
-              {monthLabel(confidence?.period ?? null)}
+      {renderTrigger ? (
+        renderTrigger(() => {
+          setLinkError(false);
+          setVisible(true);
+        })
+      ) : (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Ouvrir le contexte économique national"
+          onPress={() => setVisible(true)}
+          className="active:opacity-70"
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 8,
+            minHeight: 44,
+            paddingVertical: 8,
+            borderTopWidth: 1,
+            borderColor: c.line,
+          }}
+        >
+          <Ionicons name="pulse-outline" size={18} color={c.muted} />
+          <View style={{ flex: 1, gap: 3 }}>
+            <Text style={{ color: c.muted, fontSize: 12, fontWeight: "600" }}>
+              Contexte national{stale ? " · à actualiser" : ""}
             </Text>
-          ) : null}
-        </View>
-        <Ionicons name="chevron-forward" size={16} color={c.muted} />
-      </Pressable>
+            {compactPrices.some((s) => s.period) || confidence?.period ? (
+              <Text style={{ color: c.muted, fontSize: 11, lineHeight: 16 }}>
+                {compactPrices
+                  .map(
+                    (s) =>
+                      `${compactLabels[s.id]} · ${s.annualChangePercent !== null ? `${number(s.annualChangePercent)} % / an` : s.value !== null ? "indice à consulter" : "indisponible"} · ${monthLabel(s.period)}`,
+                  )
+                  .join("\n")}
+                {"\n"}Confiance · {number(confidence?.value ?? null)}
+                {confidence?.value != null ? " points" : ""} ·{" "}
+                {monthLabel(confidence?.period ?? null)}
+              </Text>
+            ) : null}
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={c.muted} />
+        </Pressable>
+      )}
       <BottomSheet
         title="Contexte économique"
         visible={visible}
