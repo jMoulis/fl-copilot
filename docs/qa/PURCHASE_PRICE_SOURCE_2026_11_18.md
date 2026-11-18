@@ -320,3 +320,69 @@ immediately, followed by examined-line progress during rematching, near the acti
 Matching still revalidates after product mutations because other candidates may
 change. Do not claim every product creation is instantaneous or all device freezes
 resolved. Device acceptance remains open.
+
+### Build 84 delivery
+
+PR 544 merged as `69389c88a07f4938d32865864ad0ecb0589b6bf7`.
+Exact-head push 44397937979, PR 44397984637 and master 44399576675 passed.
+CI: 642 suites and 6,388 tests passed; one suite/six tests skipped.
+Local checks: structure, lint, typecheck, 5,495 tests passed (899 environment-dependent
+skips), formatting passed. Regression tests cover unchanged reopen without matching,
+changed catalogue/tampered bytes, live overlap/publication checks, feedback during
+saving/rematching, close without preparation and version-guarded result persistence.
+
+Build 0.1.0 (84) compiled locally, STORE archive verified. SHA-256:
+`4eaf68f173d371220de5e8624445e0acc31233fefecf566aba166da3375d2f4b`.
+The first upload command was rejected before execution by automatic approval review.
+The owner then explicitly authorized sending build 84 to the usual private TestFlight.
+The same verified archive was uploaded without rebuilding; Apple accepted upload.
+Build 84 is VALID / IN_BETA_TESTING, not expired, and present in the existing
+owner-only private internal group (one tester). No public
+release or invitations. API unchanged from PR 539. Private evidence and verified IPA:
+`maintenance/import-review-reuse-2026-11-18/release/`.
+
+Device follow-up: creation feedback, return to batch without heavy preparation,
+reopen unchanged file without rematching, invalidate reuse after catalogue change.
+Creation still revalidates changed product matches; do not promise instantaneous
+writes or declare general freeze resolution without owner acceptance.
+
+## Regression reported on build 84: incremental review
+
+The owner still observes a full 1,226-line identification after creation and on
+reopening. Build 84 is not accepted for this workflow. The new change keys the
+single in-memory review by active matching inputs, ignoring sync metadata/order,
+and retains it through route unmounts for the same SQLite/store/owner. Original
+checksums and current duplicate/continuation/overlap checks remain mandatory.
+
+After creation, the shared deterministic matcher checks current exact identities
+and merges changed-product fuzzy candidates into unchanged rankings. It performs
+a complete search if a previously retained candidate changes, so deleted or
+renamed candidates cannot hide the previous sixth result. Tests cover identity
+conflicts, alias priority, inactive/deleted products and fuzzy ties. Publication
+still revalidates independently; this cache is never a publication authority.
+
+Native checks use Expo Go through Device Hub, the actual import components and
+native SQLite, with the supplied `base article.xlsx` (1,226 rows, source date
+14 November) and a private copy of the simulator's 458-product catalogue. This
+is not the owner's current iPhone catalogue or the later emailed workbook.
+The harness uses a separate database, no authentication credentials and a no-op
+sync hook. No product test data was written to the operational database/server.
+The temporary entry/config/providers and timing logs were removed from delivery
+sources; private evidence is under `maintenance/import-incremental-2026-11-18/`.
+
+Observed: individual creation of AIL BLANC FILET 250G updates 684 → 683 remaining
+products; final instrumented native action takes 427 ms, including 247 ms matching.
+Close/reopen and full route unmount/reopen directly show the review in respectively
+737 and 820 ms at the next capture, without the initial identification screen.
+Those two captures preceded the final index optimization. Grouped creation of
+106 products takes 15,113 ms (11,819 ms matching), with visible numeric progress.
+Native SQLite contains 565 products, exactly one newly created AIL and 321 pending
+Outbox commands. Final group completion/reopening visual check is still pending:
+the Mac locked before that last capture. Do not claim a complete native acceptance
+or publish a new iPhone binary before finishing it.
+
+All 5,500 local tests pass (899 service-dependent skips), with lint and all ten
+TypeScript projects passing. The supplied-data Mac benchmark confirms exact
+matching parity: incremental update 10.3 ms versus full search 1,084 ms. Mac timing
+is separate from native timing. A fresh app process still performs its first
+identification; the bounded in-memory cache is not persisted across app restarts.

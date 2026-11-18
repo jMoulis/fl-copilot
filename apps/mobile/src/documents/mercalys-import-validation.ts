@@ -2,6 +2,7 @@ import { parseMercalysPurchasePrices } from "@fl-copilot/import-core";
 import {
   matchProduct,
   prepareProductMatcher,
+  prepareProductRematcher,
   type ProductMatchCatalog,
   type ProductMatchResult,
 } from "@fl-copilot/domain";
@@ -149,19 +150,39 @@ async function matchResponsive(
   catalog: ProductMatchCatalog,
   signal?: AbortSignal,
   onProgress?: (progress: MercalysMatchingProgress) => void,
+  previous?: {
+    catalog: ProductMatchCatalog;
+    lines: MercalysImportValidationLine[];
+  },
 ) {
+  const incremental =
+    previous && prepareProductRematcher(storeId, previous.catalog, catalog);
   const lines: MercalysImportValidationLine[] = [];
   const matcher = prepareProductMatcher(storeId, catalog);
   let sliceStarted = Date.now();
   for (let index = 0; index < records.length; index++) {
     if (signal?.aborted) throw Error("MERCALYS_BATCH_CANCELLED");
-    if (index === 0 || Date.now() - sliceStarted >= 8 || index % 20 === 0) {
+    if (
+      index === 0 ||
+      Date.now() - sliceStarted >= 8 ||
+      (!incremental && index % 20 === 0)
+    ) {
       onProgress?.({ completed: index, total: records.length });
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
       if (signal?.aborted) throw Error("MERCALYS_BATCH_CANCELLED");
       sliceStarted = Date.now();
     }
-    lines.push(matchRecord(records[index]!, storeId, catalog, matcher));
+    const previousLine = previous?.lines[index];
+    lines.push(
+      matchRecord(
+        records[index]!,
+        storeId,
+        catalog,
+        incremental && previousLine
+          ? (request) => incremental(request, previousLine.match)
+          : matcher,
+      ),
+    );
   }
   if (signal?.aborted) throw Error("MERCALYS_BATCH_CANCELLED");
   onProgress?.({ completed: records.length, total: records.length });
@@ -187,6 +208,7 @@ export async function rematchMercalysImportResponsive(
   catalog: ProductMatchCatalog,
   signal?: AbortSignal,
   onProgress?: (progress: MercalysMatchingProgress) => void,
+  previousCatalog?: ProductMatchCatalog,
 ) {
   return withMatches(
     summary,
@@ -196,6 +218,9 @@ export async function rematchMercalysImportResponsive(
       catalog,
       signal,
       onProgress,
+      previousCatalog
+        ? { catalog: previousCatalog, lines: summary.lines }
+        : undefined,
     ),
   );
 }

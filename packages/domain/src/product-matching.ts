@@ -99,6 +99,8 @@ type ActiveCatalog = {
   identifiersByValue: Map<string, string[]>;
   aliasesByProduct: Map<string, ProductAlias[]>;
   canonicalLabels: Map<string, string>;
+  idsByLabel: Map<string, string[]>;
+  idsByAlias: Map<string, string[]>;
 };
 
 export function matchProduct(
@@ -129,10 +131,96 @@ export function prepareProductMatcher(
   };
 }
 
+/** Only inputs consumed by the matcher; sync versions and row order are irrelevant. */
+export function productMatchingSignature(
+  storeId: string,
+  catalog: ProductMatchCatalog,
+) {
+  return JSON.stringify(
+    [...matchingProductSignatures(getActiveCatalog(storeId, catalog))].sort(),
+  );
+}
+
+function matchingProductSignatures(catalog: ActiveCatalog) {
+  const identifiers = new Map<string, string[]>();
+  for (const value of catalog.identifiers) {
+    const entries = identifiers.get(value.productId) ?? [];
+    entries.push(JSON.stringify([value.type, value.value]));
+    identifiers.set(value.productId, entries);
+  }
+  return new Map(
+    [...catalog.products.keys()].map((id) => [
+      id,
+      JSON.stringify([
+        catalog.canonicalLabels.get(id),
+        [...new Set(identifiers.get(id) ?? [])].sort(),
+        [
+          ...new Set(
+            (catalog.aliasesByProduct.get(id) ?? []).map(
+              (alias) => alias.normalizedAlias,
+            ),
+          ),
+        ].sort(),
+      ]),
+    ]),
+  );
+}
+
+/** Reuse a previous result only against the catalogue that produced it.
+ * A changed retained candidate requires a full search (a sixth candidate may
+ * enter). Otherwise unchanged discarded candidates cannot outrank the retained
+ * ones; evaluating those plus changed products preserves every matching tier.
+ */
+export function prepareProductRematcher(
+  storeId: string,
+  before: ProductMatchCatalog,
+  after: ProductMatchCatalog,
+) {
+  const prior = matchingProductSignatures(getActiveCatalog(storeId, before));
+  const active = getActiveCatalog(storeId, after);
+  const next = matchingProductSignatures(active);
+  const changed = new Set(
+    [...prior.keys(), ...next.keys()].filter(
+      (id) => prior.get(id) !== next.get(id),
+    ),
+  );
+  const changedCatalog: ActiveCatalog = {
+    ...active,
+    products: new Map([...active.products].filter(([id]) => changed.has(id))),
+  };
+  return (
+    requestInput: ProductMatchRequest,
+    previous: ProductMatchResult,
+  ): ProductMatchResult => {
+    const request = productMatchRequestSchema.parse(requestInput);
+    if (request.storeId !== storeId)
+      throw Error("PRODUCT_MATCH_STORE_MISMATCH");
+    const config = defaultProductMatcherConfig;
+    if (
+      previous.engineVersion !== config.version ||
+      previous.candidates.some((candidate) => changed.has(candidate.productId))
+    )
+      return matchActiveProduct(request, active, config);
+    if (!changed.size) return previous;
+    return matchActiveProduct(request, active, config, (normalizedLabel) => {
+      // An unchanged exact match would have returned above. Only fuzzy results
+      // (or no candidates) can reach this incremental ranking.
+      if (previous.method !== "FUZZY_LABEL" && previous.method !== null)
+        return fuzzyResult(normalizedLabel, active, config);
+      const additions = fuzzyResult(normalizedLabel, changedCatalog, config);
+      return rankedFuzzyResult(
+        [...previous.candidates, ...additions.candidates],
+        config,
+      );
+    });
+  };
+}
+
 function matchActiveProduct(
   request: z.output<typeof productMatchRequestSchema>,
   activeCatalog: ActiveCatalog,
   config: ProductMatcherConfig,
+  fuzzy?: (label: string) => ProductMatchResult,
 ): ProductMatchResult {
   const identifierResult = matchIdentifiers(
     request.identifiers,
@@ -167,7 +255,9 @@ function matchActiveProduct(
     );
   }
 
-  return fuzzyResult(normalizedLabel, activeCatalog, config);
+  return fuzzy
+    ? fuzzy(normalizedLabel)
+    : fuzzyResult(normalizedLabel, activeCatalog, config);
 }
 
 function getActiveCatalog(
@@ -212,15 +302,32 @@ function getActiveCatalog(
     entries.push(alias);
     aliasesByProduct.set(alias.productId, entries);
   }
+  const canonicalLabels = new Map(
+    [...products.values()].map((p) => [p.id, normalizeProductLabel(p.label)]),
+  );
+  const idsByLabel = new Map<string, string[]>();
+  const idsByAlias = new Map<string, string[]>();
+  for (const [id, label] of canonicalLabels)
+    idsByLabel.set(label, [...(idsByLabel.get(label) ?? []), id].sort());
+  for (const alias of aliases)
+    idsByAlias.set(
+      alias.normalizedAlias,
+      [
+        ...new Set([
+          ...(idsByAlias.get(alias.normalizedAlias) ?? []),
+          alias.productId,
+        ]),
+      ].sort(),
+    );
   return {
     products,
     identifiers,
     aliases,
     identifiersByValue,
     aliasesByProduct,
-    canonicalLabels: new Map(
-      [...products.values()].map((p) => [p.id, normalizeProductLabel(p.label)]),
-    ),
+    canonicalLabels,
+    idsByLabel,
+    idsByAlias,
   };
 }
 
@@ -297,25 +404,13 @@ function matchIdentifiers(
 }
 
 function exactAliasCandidates(normalizedLabel: string, catalog: ActiveCatalog) {
-  return [
-    ...new Set(
-      catalog.aliases
-        .filter((alias) => alias.normalizedAlias === normalizedLabel)
-        .map((alias) => alias.productId),
-    ),
-  ].sort();
+  return catalog.idsByAlias.get(normalizedLabel) ?? [];
 }
-
 function exactCanonicalCandidates(
   normalizedLabel: string,
   catalog: ActiveCatalog,
 ) {
-  return [...catalog.products.values()]
-    .filter(
-      (product) => catalog.canonicalLabels.get(product.id) === normalizedLabel,
-    )
-    .map((product) => product.id)
-    .sort();
+  return catalog.idsByLabel.get(normalizedLabel) ?? [];
 }
 
 function exactTextResult(
@@ -378,7 +473,14 @@ function fuzzyResult(
         labelSimilarity: score,
       };
     })
-    .filter((candidate) => candidate.score >= config.fuzzyCandidateThreshold)
+    .filter((candidate) => candidate.score >= config.fuzzyCandidateThreshold);
+  return rankedFuzzyResult(candidates, config);
+}
+function rankedFuzzyResult(
+  input: ProductMatchCandidate[],
+  config: ProductMatcherConfig,
+): ProductMatchResult {
+  const candidates = input
     .sort(
       (left, right) =>
         right.score - left.score ||
@@ -440,16 +542,20 @@ function labelSimilarity(left: string, right: string) {
 }
 
 function levenshteinDistance(left: string, right: string) {
-  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
-  let current = new Array<number>(right.length + 1);
+  let previous = Int32Array.from(
+    { length: right.length + 1 },
+    (_, index) => index,
+  );
+  let current = new Int32Array(right.length + 1);
   for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
     current[0] = leftIndex;
+    const leftCode = left.charCodeAt(leftIndex - 1);
     for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
       current[rightIndex] = Math.min(
         current[rightIndex - 1]! + 1,
         previous[rightIndex]! + 1,
         previous[rightIndex - 1]! +
-          (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1),
+          (leftCode === right.charCodeAt(rightIndex - 1) ? 0 : 1),
       );
     }
     const swap = previous;

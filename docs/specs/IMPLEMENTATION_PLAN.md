@@ -1,3 +1,16 @@
+## PA review regression after build 84 — 18 November 2026
+
+Owner rejects repeated full identification after a product creation and on every
+reopening. Keep one bounded source snapshot per live SQLite connection/store/owner
+through route unmounts. Key matching reuse by active identity inputs, independent
+of sync versions/order; still verify original bytes and live publication state.
+After local mutations, retain unchanged fuzzy rankings and evaluate changed
+products, falling back to the complete matcher when a retained candidate changes.
+Preserve exact identifier/alias/canonical priority, ambiguous matches and partial
+publication checks. Validate the real native file review with the supplied 1,226
+rows in an isolated database, including individual creation, grouped creation,
+closing and route unmount/reopen. No production test mutations or cloud build.
+
 ## Import review reuse and creation feedback — 18 November 2026
 
 Build 83 owner can load the PA workbook, but creating/confirming products remains
