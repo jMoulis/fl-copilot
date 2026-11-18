@@ -205,8 +205,14 @@ export default function SynchronizationScreen() {
   );
 }
 
-function sourceTypeLabel(sourceType: "MERCALYS_SALES" | "MERCALYS_WASTE") {
-  return sourceType === "MERCALYS_SALES" ? "Ventes Mercalys" : "Casse Mercalys";
+function sourceTypeLabel(
+  sourceType: "MERCALYS_SALES" | "MERCALYS_WASTE" | "MERCALYS_PURCHASE_PRICES",
+) {
+  return sourceType === "MERCALYS_PURCHASE_PRICES"
+    ? "Prix d’achat Mercalys"
+    : sourceType === "MERCALYS_SALES"
+      ? "Ventes Mercalys"
+      : "Casse Mercalys";
 }
 
 function SyncCount({

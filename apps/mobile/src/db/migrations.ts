@@ -954,6 +954,22 @@ CREATE INDEX copilot_layout_illustration_generation_scope ON copilot_layout_illu
     name: "private-personal-tasks",
     sql: `CREATE TABLE personal_tasks(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,planned_date TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 1); CREATE INDEX personal_tasks_scope ON personal_tasks(store_id,owner_id,planned_date); CREATE TABLE personal_task_history(action_id TEXT PRIMARY KEY NOT NULL,task_id TEXT NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,payload_json TEXT NOT NULL,created_at TEXT NOT NULL); CREATE TABLE personal_task_reminders(task_id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 0,notification_id TEXT,fingerprint TEXT,status TEXT NOT NULL DEFAULT 'OFF');`,
   },
+  {
+    version: 66,
+    name: "daily-purchase-price-observations",
+    sql: `
+    CREATE TABLE purchase_price_observations (
+      id TEXT PRIMARY KEY NOT NULL, store_id TEXT NOT NULL, product_id TEXT NOT NULL,
+      business_date TEXT NOT NULL, amount TEXT NOT NULL, unit TEXT NOT NULL,
+      tax_basis TEXT NOT NULL, currency TEXT NOT NULL, price_status TEXT NOT NULL,
+      confirmed_at TEXT, source_document_id TEXT NOT NULL, source_record_id TEXT NOT NULL,
+      validation_status TEXT NOT NULL, version INTEGER NOT NULL, created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL, deleted_at TEXT, sync_state TEXT NOT NULL,
+      remote_version INTEGER, dirty INTEGER NOT NULL);
+    CREATE INDEX purchase_price_product_date ON purchase_price_observations(store_id,product_id,business_date);
+    CREATE INDEX purchase_price_source ON purchase_price_observations(store_id,source_document_id);
+  `,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

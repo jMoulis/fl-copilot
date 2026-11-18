@@ -26,7 +26,7 @@ export async function readMercalysReviewOriginal(
     }>(
       `SELECT id,local_file_uri FROM source_documents
        WHERE store_id=? AND checksum=? AND deleted_at IS NULL
-       AND source_type IN ('MERCALYS_SALES','MERCALYS_WASTE')
+       AND source_type IN ('MERCALYS_SALES','MERCALYS_WASTE','MERCALYS_PURCHASE_PRICES')
        ORDER BY created_at DESC,id LIMIT 1`,
       storeId,
       checksum,

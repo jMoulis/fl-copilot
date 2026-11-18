@@ -1,5 +1,7 @@
 import { z } from "zod";
 import {
+  purchasePriceObservationSchema,
+  purchasePriceQuoteSchema,
   salesObservationSchema,
   wasteObservationSchema,
   sourceRecordSchema,
@@ -16,7 +18,8 @@ const normalizedRecordSchema = z.object({
   ean: z.string().nullable(),
   rawLabel: z.string(),
   businessDate: z.string().date(),
-  quantity: z.number().finite(),
+  quantity: z.number().finite().nullable(),
+  purchasePrice: purchasePriceQuoteSchema.optional(),
   purchaseValue: z.number().finite().nullable(),
   rceValue: z.number().finite().nullable(),
   salesValue: z.number().finite().nullable(),
@@ -29,7 +32,11 @@ export const mercalysPublicationSchema = z
     source: z.object({
       id: z.string().uuid(),
       storeId: z.string().uuid(),
-      sourceType: z.enum(["MERCALYS_SALES", "MERCALYS_WASTE"]),
+      sourceType: z.enum([
+        "MERCALYS_SALES",
+        "MERCALYS_WASTE",
+        "MERCALYS_PURCHASE_PRICES",
+      ]),
       checksum: z.string().regex(/^sha256:[a-f0-9]{64}$/),
       originalFilename: z.string().nullable(),
       businessPeriodStart: z.string().date(),
@@ -40,6 +47,10 @@ export const mercalysPublicationSchema = z
     records: z.array(sourceRecordSchema).min(1).max(5000),
     sales: z.array(mercalysSalesSchema).max(5000),
     waste: z.array(mercalysWasteSchema).max(5000),
+    prices: z
+      .array(purchasePriceObservationSchema.omit(transportFields))
+      .max(5000)
+      .default([]),
   })
   .superRefine((p, c) => {
     const fail = () =>
@@ -50,18 +61,24 @@ export const mercalysPublicationSchema = z
     if (
       p.source.businessPeriodStart > p.source.businessPeriodEnd ||
       (p.source.sourceType === "MERCALYS_SALES"
-        ? p.waste.length
-        : p.sales.length)
+        ? p.waste.length + p.prices.length
+        : p.source.sourceType === "MERCALYS_WASTE"
+          ? p.sales.length + p.prices.length
+          : p.sales.length + p.waste.length)
     )
       fail();
-    if (JSON.stringify(p).length > 1_000_000)
+    if (
+      p.source.sourceType === "MERCALYS_PURCHASE_PRICES"
+        ? utf8Length(JSON.stringify(p)) > 3_000_000
+        : JSON.stringify(p).length > 1_000_000
+    )
       c.addIssue({
         code: "custom",
         message:
           "Import trop volumineux pour une publication atomique. Le fichier original est conservé.",
       });
     const records = new Map(p.records.map((r) => [r.id, r]));
-    const observations = [...p.sales, ...p.waste];
+    const observations = [...p.sales, ...p.waste, ...p.prices];
     if (
       records.size !== p.records.length ||
       new Set(p.records.map((r) => r.sourceIndex)).size !== p.records.length ||
@@ -97,6 +114,28 @@ export const mercalysPublicationSchema = z
         !observations.some((o) => o.sourceRecordId === r.id)
       )
         fail();
+    if (
+      new Set(
+        p.prices
+          .filter((o) => !o.deletedAt)
+          .map((o) => `${o.productId}:${o.businessDate}`),
+      ).size !== p.prices.filter((o) => !o.deletedAt).length
+    )
+      fail();
+    for (const o of p.prices) {
+      const n = normalizedRecordSchema.safeParse(
+        records.get(o.sourceRecordId)?.normalizedPayload,
+      );
+      if (
+        !n.success ||
+        !n.data.purchasePrice ||
+        n.data.quantity !== null ||
+        n.data.purchaseValue !== null ||
+        n.data.salesValue !== null ||
+        o.amount !== n.data.purchasePrice.amount
+      )
+        fail();
+    }
     for (const o of p.waste)
       if (o.sourceType !== "MERCALYS" || o.purchaseValueEstimated !== null)
         fail();
@@ -111,3 +150,12 @@ export const synchronizedMercalysPublicationSchema = z.object({
 export type SynchronizedMercalysPublication = z.infer<
   typeof synchronizedMercalysPublicationSchema
 >;
+
+function utf8Length(text: string) {
+  let size = 0;
+  for (const c of text) {
+    const point = c.codePointAt(0)!;
+    size += point <= 0x7f ? 1 : point <= 0x7ff ? 2 : point <= 0xffff ? 3 : 4;
+  }
+  return size;
+}

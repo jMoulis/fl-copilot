@@ -207,7 +207,7 @@ it("rejects altered source values without changing the existing partial source",
   const s = await partialChatImportFixture();
   try {
     const summary = structuredClone(s.summary);
-    summary.lines[0]!.record.quantity += 1;
+    summary.lines[0]!.record.quantity = summary.lines[0]!.record.quantity! + 1;
     await expect(
       new MercalysImportPublicationRepository(s.a, randomUUID).resume({
         storeId: s.scope.storeId,

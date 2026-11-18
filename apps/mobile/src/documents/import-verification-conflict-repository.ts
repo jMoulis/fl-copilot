@@ -6,7 +6,7 @@ type VerificationConflictDatabase = AtomicMutationDatabase & OutboxDatabase;
 export interface ImportVerificationConflict {
   sourceDocumentId: string;
   storeId: string;
-  sourceType: "MERCALYS_SALES" | "MERCALYS_WASTE";
+  sourceType: "MERCALYS_SALES" | "MERCALYS_WASTE" | "MERCALYS_PURCHASE_PRICES";
   filename: string | null;
   businessPeriodStart: string | null;
   businessPeriodEnd: string | null;
@@ -26,7 +26,7 @@ export interface ImportVerificationConflict {
 interface ConflictRow {
   source_document_id: string;
   store_id: string;
-  source_type: "MERCALYS_SALES" | "MERCALYS_WASTE";
+  source_type: "MERCALYS_SALES" | "MERCALYS_WASTE" | "MERCALYS_PURCHASE_PRICES";
   original_filename: string | null;
   business_period_start: string | null;
   business_period_end: string | null;

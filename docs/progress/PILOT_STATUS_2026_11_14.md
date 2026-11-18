@@ -1,10 +1,25 @@
 # État courant — pilote iPhone, actualisé le 18 novembre 2026
 
+**18 novembre — PA quotidiens en réalisation, non livrés :** le propriétaire
+approuve les mêmes parcours que Mercalys (fichier local, ZIP et boîte mail magasin).
+Le format et les prix à vérifier sont arbitrés ; le report PA est levé pour cet
+import. Réutilisation des validations, historiques, sources et synchronisation.
+Les simulations chiffrées restent reportées. Voir
+[le lot PA](../qa/PURCHASE_PRICE_SOURCE_2026_11_18.md).
+
 Ce point consolide les arbitrages et validations du propriétaire. Il remplace les
 anciens statuts « en attente » des journaux datés, sans transformer une validation
 fonctionnelle en certification de tous les appareils ou scénarios.
 
+Build 78 confirmé disponible en test interne TestFlight (`VALID` /
+`IN_BETA_TESTING`, non expiré). La recette du propriétaire reste à recueillir.
+
 ## Version utilisée
+
+- Nouveau build **0.1.0 (78)** : PR 538 fusionnée, CI push/PR/master vertes,
+  archive compilée localement et vérifiée, envoi accepté par Apple. Source
+  `a6fc7c3aec3f626db4546ca8a74f795bd334f23e`. Lot Analyses/graphiques et navigation ;
+  recette propriétaire encore en attente. Build 77 reste la référence acceptée.
 
 - iOS **0.1.0 (77)**, compilé localement sur le Mac, distribué dans le groupe
   TestFlight privé habituel. Source native
@@ -81,7 +96,7 @@ périmètres officiels restent plus larges que le rayon frais. Le propriétaire
 confirme « Oui c'est fixé » après le correctif de restitution PR 534 : ce lot
 est clôturé. Voir [la fiche du lot](../qa/JOURNAL_PRODUCE_PRICES_2026_11_16.md).
 
-## Lot suivant approuvé
+## Lot Analyses livré — recette iPhone en attente
 
 Le propriétaire valide la maquette des graphiques et ses ajustements de catégories,
 répartition circulaire et navigation. Voir [le lot Analyses](../qa/ANALYTICS_POLISH_2026_11_18.md).

@@ -1,3 +1,4 @@
+import { purchasePriceNeedsReview } from "@fl-copilot/domain";
 import { createHash } from "node:crypto";
 import { Decimal128, type Document } from "mongodb";
 import {
@@ -8,6 +9,7 @@ import {
 } from "@fl-copilot/sync-contracts";
 import {
   canonicalMercalysRecords,
+  parseMercalysPurchasePrices,
   parseMercalysSales,
   parseMercalysWaste,
   SheetJsSpreadsheetParser,
@@ -115,9 +117,11 @@ export async function applyMercalysPublicationCommand(
     return rejected("MERCALYS_SOURCE_CHECKSUM_INVALID");
   const workbook = new SheetJsSpreadsheetParser().parse(bytes),
     original =
-      p.source.sourceType === "MERCALYS_SALES"
-        ? parseMercalysSales(workbook)
-        : parseMercalysWaste(workbook);
+      p.source.sourceType === "MERCALYS_PURCHASE_PRICES"
+        ? parseMercalysPurchasePrices(workbook)
+        : p.source.sourceType === "MERCALYS_SALES"
+          ? parseMercalysSales(workbook)
+          : parseMercalysWaste(workbook);
   const normalized = p.records.map(
     (r) => r.normalizedPayload as unknown as ParsedMercalysArticleRecord,
   );
@@ -157,7 +161,7 @@ export async function applyMercalysPublicationCommand(
         return rejected("MERCALYS_SOURCE_REVISION_INVALID");
     }
   }
-  const observations = [...p.sales, ...p.waste];
+  const observations = [...p.sales, ...p.waste, ...p.prices];
   const recordsById = new Map(p.records.map((r) => [r.id, r]));
   const products = await context.database
     .collection<Document & { _id: string }>("products")
@@ -168,14 +172,17 @@ export async function applyMercalysPublicationCommand(
       },
       options,
     )
-    .project({ _id: 1 })
+    .project({ _id: 1, salesUnit: 1 })
     .toArray();
   const productIds = new Set(products.map((v) => v._id));
+  const productUnits = new Map(products.map((v) => [v._id, v.salesUnit]));
   const oldObservations = new Map(
     existing
-      ? [...existing.publication.sales, ...existing.publication.waste].map(
-          (o) => [o.id, o],
-        )
+      ? [
+          ...existing.publication.sales,
+          ...existing.publication.waste,
+          ...(existing.publication.prices ?? []),
+        ].map((o) => [o.id, o])
       : [],
   );
   for (const o of observations) {
@@ -187,11 +194,24 @@ export async function applyMercalysPublicationCommand(
       match?.state !== "AUTO_MATCH" ||
       match.matchedProductId !== o.productId ||
       o.businessDate !== n.businessDate ||
-      !equalDecimal(o.quantity, n.quantity) ||
-      !equalDecimal(o.salesValue, n.salesValue)
+      (!("amount" in o) &&
+        (!equalDecimal(o.quantity, n.quantity) ||
+          !equalDecimal(o.salesValue, n.salesValue)))
     )
       return rejected("MERCALYS_OBSERVATION_INVALID");
-    if ("purchaseValue" in o) {
+    if ("amount" in o) {
+      if (
+        !n.purchasePrice ||
+        !equalDecimal(o.amount, Number(n.purchasePrice.amount)) ||
+        (!oldObservations.has(o.id) &&
+          productIds.has(o.productId) &&
+          o.unit !== productUnits.get(o.productId)) ||
+        (o.priceStatus === "KNOWN" &&
+          (o.unit === "UNKNOWN" ||
+            (purchasePriceNeedsReview(o.amount) && !o.confirmedAt)))
+      )
+        return rejected("MERCALYS_PURCHASE_PRICE_INVALID");
+    } else if ("purchaseValue" in o) {
       for (const key of [
         "purchaseValue",
         "rceValue",
@@ -213,6 +233,7 @@ export async function applyMercalysPublicationCommand(
       (old.sourceRecordId !== o.sourceRecordId ||
         old.productId !== o.productId ||
         old.businessDate !== o.businessDate ||
+        ("amount" in old && "amount" in o && old.unit !== o.unit) ||
         o.version < old.version ||
         (old.deletedAt && !o.deletedAt))
     )
@@ -221,9 +242,11 @@ export async function applyMercalysPublicationCommand(
   const active = observations.filter((o) => !o.deletedAt);
   if (active.length) {
     const table =
-      p.source.sourceType === "MERCALYS_SALES"
-        ? "salesObservations"
-        : "wasteObservations";
+      p.source.sourceType === "MERCALYS_PURCHASE_PRICES"
+        ? "purchasePriceObservations"
+        : p.source.sourceType === "MERCALYS_SALES"
+          ? "salesObservations"
+          : "wasteObservations";
     const overlap = await context.database
       .collection<Document & { _id: string }>(table)
       .findOne(
@@ -246,6 +269,7 @@ export async function applyMercalysPublicationCommand(
     for (const old of [
       ...existing.publication.sales,
       ...existing.publication.waste,
+      ...(existing.publication.prices ?? []),
     ])
       if (!next.has(old.id))
         return rejected("MERCALYS_OBSERVATION_REMOVAL_INVALID");
@@ -254,6 +278,7 @@ export async function applyMercalysPublicationCommand(
     ["sourceRecords", p.records],
     ["salesObservations", p.sales],
     ["wasteObservations", p.waste],
+    ["purchasePriceObservations", p.prices],
   ] as const) {
     if (!rows.length) continue;
     const current = await context.database
@@ -284,6 +309,7 @@ export async function applyMercalysPublicationCommand(
   for (const [table, rows] of [
     ["salesObservations", p.sales],
     ["wasteObservations", p.waste],
+    ["purchasePriceObservations", p.prices],
   ] as const) {
     if (rows.length)
       await context.database
@@ -357,6 +383,7 @@ function toRemoteObservation(o: Record<string, unknown>) {
     date: businessDate,
   };
   for (const key of [
+    "amount",
     "quantity",
     "purchaseValue",
     "rceValue",

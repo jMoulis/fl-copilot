@@ -225,6 +225,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
               true,
               true,
               true, // owner-private daily tasks
+              true, // daily purchase prices
             ),
           ),
         illustrationHistoryPage: (storeId, before) =>
@@ -302,6 +303,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
               true,
               true,
               true, // owner-private daily tasks
+              true, // daily purchase prices
             ),
           ),
       },
@@ -363,6 +365,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
         copilotHistory: true,
         mercalysPublications: true,
         mercalysRecordUpdates: true,
+        purchasePrices: true,
         copilotOwnerId: session?.user.id,
       },
     );

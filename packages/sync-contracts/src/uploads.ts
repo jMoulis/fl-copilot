@@ -10,6 +10,7 @@ import {
 export const uploadSourceTypeSchema = sourceTypeSchema.extract([
   "MERCALYS_SALES",
   "MERCALYS_WASTE",
+  "MERCALYS_PURCHASE_PRICES",
   "WASTE_RECEIPT",
   "STORE_PHOTO",
   "WEEKLY_COMMERCIAL_PDF",
@@ -115,6 +116,7 @@ export const verifyImportRequestSchema = z.object({
   sourceType: uploadSourceTypeSchema.extract([
     "MERCALYS_SALES",
     "MERCALYS_WASTE",
+    "MERCALYS_PURCHASE_PRICES",
   ]),
   checksum: sourceUploadChecksumSchema,
   businessPeriodStart: z.string().date(),

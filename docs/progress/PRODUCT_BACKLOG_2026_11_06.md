@@ -1,9 +1,19 @@
 # Backlog produit — point du 18 novembre 2026
 
+**18 novembre — PA quotidiens en réalisation, non livrés :** le propriétaire
+approuve les mêmes parcours que Mercalys (fichier local, ZIP et boîte mail magasin).
+Le format et les prix à vérifier sont arbitrés ; le report PA est levé pour cet
+import. Réutilisation des validations, historiques, sources et synchronisation.
+Les simulations chiffrées restent reportées. Voir
+[le lot PA](../qa/PURCHASE_PRICE_SOURCE_2026_11_18.md).
+
 Ce fichier conserve son chemin historique pour les liens existants. Le statut
 courant du pilote et les preuves sont dans [le point consolidé](PILOT_STATUS_2026_11_14.md).
 Les anciennes étapes de préparation sont [archivées ici](PRODUCT_BACKLOG_HISTORY_THROUGH_2026_11_14.md) ;
 leurs cases non cochées ne sont plus des tâches actives.
+
+Build 78 confirmé disponible en test interne TestFlight (`VALID` /
+`IN_BETA_TESTING`, non expiré). La recette du propriétaire reste à recueillir.
 
 ## Livré — pas de nouvelle recette sans régression
 
@@ -64,19 +74,29 @@ par Apple, confirmé disponible en test interne TestFlight (`VALID` /
 lot clôturé.
 [Suivi et vérification](../qa/JOURNAL_CONTEXT_PAGE_2026_11_18.md).
 
-## Lot approuvé en cours — Analyses et graphiques
+## Lot livré — Analyses et graphiques, recette iPhone en attente
 
 Maquette validée, avec ajout demandé : retrait du sélecteur Casse PA et de
 « Comprendre cette répartition », catégories compactes, anneau de répartition,
 barre de navigation comme sur la maquette. Les montants et comparaisons existants
-restent déterministes. [Suivi](../qa/ANALYTICS_POLISH_2026_11_18.md).
+restent déterministes. PR 538 fusionnée, CI push/PR/master vertes ; build 78
+compilé localement, vérifié et accepté à l’envoi par Apple. Recette propriétaire
+encore en attente. [Suivi](../qa/ANALYTICS_POLISH_2026_11_18.md).
 
 ## Prochain chantier demandé — upload quotidien des prix d’achat
 
 Le propriétaire demande de l’attaquer après le lot graphiques. Le report de cet
 upload est levé pour ce prochain cadrage : examiner un vrai fichier, ses dates,
 identifiants et unités, puis réutiliser Imports et ses validations. Aucun format
-source ou calcul supplémentaire n’est encore arbitré. L’approfondissement chiffré
+source ou calcul supplémentaire n’est encore arbitré. Le fichier réel
+`base article.xlsx` est reçu et examiné le 18 novembre : 1 226 articles, date
+d’application du 14 novembre. Le propriétaire confirme les PA HT par kg ou
+pièce/conditionnement vendu selon l’article. Les PA exactement à 0,01 € ou
+0,001 € sont conservés « Prix à vérifier », exclus des calculs jusqu’à
+confirmation, sans désactiver les produits (règle explicitement approuvée).
+Les questions d’interprétation du fichier sont résolues. Voir la
+[qualification du fichier](../qa/PURCHASE_PRICE_SOURCE_2026_11_18.md).
+L’approfondissement chiffré
 des contre-promotions reste distinct et reporté.
 
 ## Réserves et sujets explicitement reportés

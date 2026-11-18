@@ -1,3 +1,4 @@
+import { parseMercalysPurchasePrices } from "@fl-copilot/import-core";
 import {
   matchProduct,
   type ProductMatchCatalog,
@@ -38,6 +39,7 @@ export interface MercalysImportValidationSummary {
   errorCount: number;
   lines: MercalysImportValidationLine[];
   issueCodes: string[];
+  sourceStoreCode?: string | null;
 }
 
 export function validateMercalysImport(
@@ -56,9 +58,11 @@ export function validateMercalysImport(
   }
 
   const parsed =
-    detection.sourceType === "MERCALYS_SALES"
-      ? parseMercalysSales(workbook)
-      : parseMercalysWaste(workbook);
+    detection.sourceType === "MERCALYS_PURCHASE_PRICES"
+      ? parseMercalysPurchasePrices(workbook)
+      : detection.sourceType === "MERCALYS_SALES"
+        ? parseMercalysSales(workbook)
+        : parseMercalysWaste(workbook);
   const lines = parsed.records.map((record) => ({
     record,
     match: matchProduct(
@@ -81,6 +85,7 @@ export function validateMercalysImport(
 
   return {
     sourceType: detection.sourceType,
+    ...("storeCode" in parsed ? { sourceStoreCode: parsed.storeCode } : {}),
     parserVersion: parsed.parserVersion,
     businessPeriodStart: parsed.businessPeriodStart,
     businessPeriodEnd: parsed.businessPeriodEnd,

@@ -1,3 +1,8 @@
+import { PurchasePriceRepository } from "../products/purchase-price-repository";
+import {
+  readMercalysPublication,
+  applyMercalysPublication,
+} from "./mercalys-publication-sync";
 import { isLocalOriginalReferenced } from "./source-upload-recovery";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -582,7 +587,8 @@ describe("MercalysImportPublicationRepository", () => {
         productId: distinctId,
       });
       const changedSecond = structuredClone(rematched);
-      changedSecond.lines[1]!.record.quantity += 1;
+      changedSecond.lines[1]!.record.quantity =
+        changedSecond.lines[1]!.record.quantity! + 1;
       expect(
         (await repository.analyzeOverlap(storeId, changedSecond))!.fingerprint,
       ).not.toBe(overlap.fingerprint);
@@ -1297,6 +1303,141 @@ it("retains discoverable original ownership after a committed publication report
     expect(
       reopened.prepare("SELECT COUNT(*) n FROM sales_observations").get(),
     ).toEqual({ n: 1 });
+  } finally {
+    reopened.close();
+  }
+});
+
+it("publishes dated PA separately, preserves review values, confirms explicitly and reconciles corrections", async () => {
+  const { adapter, database, path } = await openDatabase();
+  insertProduct(database, "BULK");
+  const ids = idGenerator();
+  const repository = new MercalysImportPublicationRepository(
+    adapter,
+    ids,
+    () => timestamp,
+  );
+  const line: MercalysImportValidationSummary["lines"][number] = matchedLine(
+    10,
+    productId,
+    1,
+  );
+  line.record.quantity = null;
+  line.record.purchaseValue = null;
+  line.record.salesValue = null;
+  line.record.purchasePrice = {
+    amount: "0.001",
+    sourceActive: true,
+    nomenclature: "LEGUMES FRAIS",
+  };
+  const s: MercalysImportValidationSummary = {
+    ...reconciliationSummary([line]),
+    sourceType: "MERCALYS_PURCHASE_PRICES",
+    parserVersion: "mercalys-purchase-prices.v1",
+  };
+  const result = await repository.publish(input(s));
+  expect(
+    database
+      .prepare(
+        "SELECT amount,unit,price_status FROM purchase_price_observations",
+      )
+      .all(),
+  ).toEqual([{ amount: "0.001", unit: "KG", price_status: "TO_VERIFY" }]);
+  expect(
+    database.prepare("SELECT count(*) n FROM sales_observations").get(),
+  ).toMatchObject({ n: 0 });
+  expect(
+    database.prepare("SELECT count(*) n FROM waste_observations").get(),
+  ).toMatchObject({ n: 0 });
+  await expect(repository.publish(input(s))).rejects.toBeInstanceOf(
+    MercalysExactDuplicateError,
+  );
+  const prices = new PurchasePriceRepository(adapter);
+  expect(await prices.preview(storeId, s)).toMatchObject({
+    toVerify: 1,
+    unchanged: 0,
+  });
+  const history = await prices.history(storeId, productId, "2026-11-18");
+  await prices.confirm(storeId, productId, history[0]!.id, 1, {
+    now: timestamp,
+    generateId: ids,
+    assertCurrentScope: () => {},
+  });
+  expect(
+    (await prices.history(storeId, productId, "2026-11-18"))[0],
+  ).toMatchObject({ price_status: "KNOWN", version: 2 });
+  const publication = await readMercalysPublication(
+    adapter,
+    storeId,
+    result.sourceDocumentId,
+  );
+  expect(publication!.prices[0]).toMatchObject({
+    amount: "0.001",
+    priceStatus: "KNOWN",
+    confirmedAt: timestamp,
+  });
+  const second = await openDatabase();
+  insertProduct(second.database, "BULK");
+  await applyMercalysPublication(second.adapter, storeId, {
+    id: result.sourceDocumentId,
+    storeId,
+    remoteVersion: 2,
+    publication,
+  });
+  await applyMercalysPublication(second.adapter, storeId, {
+    id: result.sourceDocumentId,
+    storeId,
+    remoteVersion: 2,
+    publication,
+  });
+  expect(
+    second.database
+      .prepare("SELECT count(*) n FROM purchase_price_observations")
+      .get(),
+  ).toMatchObject({ n: 1 });
+  const corrected = structuredClone(s);
+  corrected.lines[0]!.record.purchasePrice!.amount = "1.35";
+  expect(await prices.preview(storeId, corrected)).toMatchObject({
+    increased: 1,
+    toVerify: 0,
+  });
+  const overlap = await repository.analyzeOverlap(storeId, corrected);
+  expect(overlap).toMatchObject({ safeToApply: true, counts: { MODIFIED: 1 } });
+  await expect(
+    repository.publish(input(corrected, "sha256:" + "a".repeat(64))),
+  ).rejects.toBeInstanceOf(MercalysOverlapReconciliationError);
+  await repository.publish({
+    ...input(corrected, "sha256:" + "a".repeat(64)),
+    reconciliationApproval: {
+      fingerprint: overlap!.fingerprint,
+      actorUserId: productId,
+    },
+  });
+  expect(
+    database
+      .prepare(
+        "SELECT amount FROM purchase_price_observations WHERE deleted_at IS NULL",
+      )
+      .all(),
+  ).toEqual([{ amount: "1.35" }]);
+  expect(
+    database
+      .prepare("SELECT count(*) n FROM purchase_price_observations")
+      .get(),
+  ).toMatchObject({ n: 2 });
+  database.close();
+  second.database.close();
+  const reopened = new DatabaseSync(path);
+  try {
+    const persisted = await new PurchasePriceRepository(
+      new NodeDatabase(reopened),
+    ).history(storeId, productId, "2026-11-18");
+    expect(persisted).toHaveLength(1);
+    expect(persisted[0]).toMatchObject({
+      amount: "1.35",
+      price_status: "KNOWN",
+      sync_state: "PENDING",
+    });
   } finally {
     reopened.close();
   }

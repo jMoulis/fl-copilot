@@ -518,6 +518,13 @@ export async function applyBootstrap(
         "1",
         bootstrap.serverTime,
       );
+    if (bootstrap.entities.purchasePrices)
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+        `purchase-prices:${storeId}`,
+        "1",
+        bootstrap.serverTime,
+      );
     if (bootstrap.entities.mercalysPublications)
       await transaction.runAsync(
         "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",

@@ -1268,6 +1268,21 @@ export const mongoMigrations: readonly MongoMigration[] = [
         );
     },
   },
+  {
+    version: 63,
+    name: "daily-purchase-price-observations",
+    async up(db) {
+      await db
+        .collection("purchasePriceObservations")
+        .createIndex({ storeId: 1, productId: 1, date: -1 });
+      await db
+        .collection("purchasePriceObservations")
+        .createIndex(
+          { storeId: 1, sourceRecordId: 1 },
+          { unique: true, name: "purchase_price_source_record_unique" },
+        );
+    },
+  },
 ];
 
 export async function runMongoMigrations(

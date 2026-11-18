@@ -1,3 +1,23 @@
+## Owner-approved extension — 18 November 2026: daily purchase-price imports
+
+Imports exposes Prix d’achat quotidiens through the canonical local XLSX/ZIP
+picker and store email inbox. Preserve batch history, originals, matching review,
+partial continuation, duplicates and explicit same-date reconciliation. Email
+intake remains in Imports, with the existing authorized sender policy.
+
+Preview the source store, application date, matched/unmatched articles, anomalies,
+exact tiny-price review count and comparable increases/decreases/unchanged prices.
+Compare only the most recent local price at or before the application date with
+the same validated unit and KNOWN status; keep missing/review data separate.
+Warn when the application date differs from today. The source date never becomes
+the upload date. ACTIF does not update product status.
+
+Product detail reads locally: latest dated PA HT, source link, sync state and up to
+20 historical observations (older imports remain retained). Never label an old
+price as verified today. Managers can explicitly confirm a tiny price with known
+unit; unknown-unit snapshots remain excluded. Imported prices do not recalculate
+Mercalys sales margins or enable deferred numerical counter-promotion features.
+
 ## Analytics charts and navigation — owner approved, 18 November 2026
 
 Show the whole selected period without horizontal chart scrolling. Selecting a

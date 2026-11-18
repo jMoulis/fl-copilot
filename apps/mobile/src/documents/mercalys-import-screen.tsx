@@ -1,3 +1,6 @@
+import { PurchasePriceRepository } from "../products/purchase-price-repository";
+import { tradingToday } from "../dates/calendar";
+import { purchasePriceNeedsReview } from "@fl-copilot/domain";
 import { isLocalOriginalReferenced } from "./source-upload-recovery";
 import { useIsFocused } from "expo-router";
 import { SourceOriginalButton } from "./source-original-button";
@@ -966,6 +969,7 @@ export function MercalysImportScreen({
         !reconciliation &&
         (section === "SUMMARY" || publication) ? (
           <ValidationSummary
+            storeId={storeId}
             summary={summary}
             previouslyPublishedCount={continuation?.publishedCount ?? 0}
             publication={publication}
@@ -1111,9 +1115,11 @@ function DuplicateSummary({
           <SummaryLine
             label="Source"
             value={
-              duplicate.sourceType === "MERCALYS_SALES"
-                ? "Ventes Mercalys"
-                : "Casse Mercalys"
+              duplicate.sourceType === "MERCALYS_PURCHASE_PRICES"
+                ? "Prix d’achat Mercalys"
+                : duplicate.sourceType === "MERCALYS_SALES"
+                  ? "Ventes Mercalys"
+                  : "Casse Mercalys"
             }
           />
           {duplicate.businessPeriodStart && duplicate.businessPeriodEnd ? (
@@ -1169,6 +1175,7 @@ async function loadProductCatalog(
 }
 
 function ValidationSummary({
+  storeId,
   summary,
   previouslyPublishedCount = 0,
   publication,
@@ -1176,6 +1183,7 @@ function ValidationSummary({
   onPublish,
   onCancel,
 }: {
+  storeId?: string;
   summary: MercalysImportValidationSummary;
   previouslyPublishedCount?: number;
   publication?: FilePublication;
@@ -1183,6 +1191,28 @@ function ValidationSummary({
   onPublish: () => void;
   onCancel: () => void;
 }) {
+  const { sqlite } = useLocalDatabase();
+  const [preview, setPreview] =
+    useState<Awaited<ReturnType<PurchasePriceRepository["preview"]>>>();
+  const [previewError, setPreviewError] = useState(false);
+  useEffect(() => {
+    let active = true;
+    setPreview(undefined);
+    setPreviewError(false);
+    if (storeId && summary.sourceType === "MERCALYS_PURCHASE_PRICES") {
+      new PurchasePriceRepository(sqlite)
+        .preview(storeId, summary)
+        .then((value) => {
+          if (active) setPreview(value);
+        })
+        .catch(() => {
+          if (active) setPreviewError(true);
+        });
+    }
+    return () => {
+      active = false;
+    };
+  }, [sqlite, storeId, summary]);
   return (
     <>
       <View className="gap-4 border-b border-line pb-5">
@@ -1195,13 +1225,25 @@ function ValidationSummary({
         <SummaryLine
           label="Source"
           value={
-            summary.sourceType === "MERCALYS_SALES"
-              ? "Ventes Mercalys"
-              : "Casse Mercalys"
+            summary.sourceType === "MERCALYS_PURCHASE_PRICES"
+              ? "Prix d’achat Mercalys"
+              : summary.sourceType === "MERCALYS_SALES"
+                ? "Ventes Mercalys"
+                : "Casse Mercalys"
           }
         />
+        {summary.sourceStoreCode ? (
+          <SummaryLine
+            label="Point de vente du fichier"
+            value={summary.sourceStoreCode}
+          />
+        ) : null}
         <SummaryLine
-          label="Période"
+          label={
+            summary.sourceType === "MERCALYS_PURCHASE_PRICES"
+              ? "Date d’application"
+              : "Période"
+          }
           value={formatPeriod(
             summary.businessPeriodStart,
             summary.businessPeriodEnd,
@@ -1234,6 +1276,54 @@ function ValidationSummary({
           tone="review"
         />
         <CountLine label="Anomalies" value={summary.errorCount} tone="error" />
+        {summary.sourceType === "MERCALYS_PURCHASE_PRICES" ? (
+          <>
+            {preview ? (
+              <View className="gap-2">
+                <Text className="text-sm text-muted">
+                  Par rapport au dernier PA disponible à cette date, à unité
+                  identique :
+                </Text>
+                <Text className="text-sm text-ink">
+                  {preview.increased} en hausse · {preview.decreased} en baisse
+                  · {preview.unchanged} inchangés
+                </Text>
+                <Text className="text-sm text-muted">
+                  {preview.withoutComparison} sans comparaison ·{" "}
+                  {preview.toVerify} à vérifier (prix ou unité)
+                </Text>
+              </View>
+            ) : (
+              <Text className="text-sm text-muted">
+                {previewError
+                  ? "Comparaison indisponible ; les prix du fichier restent consultables."
+                  : "Comparaison des prix…"}
+              </Text>
+            )}
+            <CountLine
+              label="Prix à vérifier (0,01 € ou 0,001 €)"
+              value={
+                summary.lines.filter(
+                  (l) =>
+                    l.record.purchasePrice &&
+                    purchasePriceNeedsReview(l.record.purchasePrice.amount),
+                ).length
+              }
+              tone="review"
+            />
+            <Text className="text-sm text-muted">
+              PA HT par kg, pièce ou conditionnement selon l’unité du produit.
+              Les prix à vérifier et les unités inconnues restent exclus des
+              calculs. Le statut ACTIF du fichier ne modifie pas le catalogue.
+            </Text>
+            {summary.businessPeriodStart !== tradingToday() ? (
+              <InlineAlert
+                title="Vérifie la date d’application"
+                message="Ce fichier ne porte pas la date du jour. Il sera conservé à sa date d’application, sans devenir un prix vérifié aujourd’hui."
+              />
+            ) : null}
+          </>
+        ) : null}
       </View>
 
       {summary.issueCodes.length > 0 ? (
@@ -1612,7 +1702,7 @@ function importErrorMessage(error: unknown) {
   if (error instanceof MercalysImportValidationError) {
     return error.code === "AGGREGATED_PERIOD_WITHOUT_DAILY_DATES"
       ? "Cet export regroupe plusieurs jours sans dates journalières. Dans Mercalys, choisissez un seul jour ou activez le détail « Par Jour » avec la colonne Date."
-      : "Format Mercalys non reconnu. Vérifiez qu’il s’agit d’un export Ventes nettes ou Casse par article.";
+      : "Format Mercalys non reconnu. Vérifiez qu’il s’agit d’un export Ventes nettes, Casse par article ou Base articles avec prix d’achat.";
   }
   const message = error instanceof Error ? error.message : "";
   if (message === "MERCALYS_CONTINUATION_SUPERSEDED")
@@ -1662,6 +1752,10 @@ function duplicateStatusLabel(duplicate: ExactDuplicateImport) {
 }
 
 function issueLabel(code: string) {
+  if (code === "INVALID_PURCHASE_PRICE_ROW")
+    return "Prix, identifiant ou statut ACTIF invalide";
+  if (code === "DUPLICATE_PURCHASE_PRICE_IDENTIFIER")
+    return "Identifiant article répété dans le fichier";
   if (code === "MISSING_LABEL") return "Libellé manquant";
   if (code === "INVALID_IDENTIFIER") return "Identifiant invalide";
   if (code === "INVALID_BUSINESS_DATE") return "Date invalide";

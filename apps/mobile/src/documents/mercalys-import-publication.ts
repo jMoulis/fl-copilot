@@ -8,6 +8,8 @@ import {
   type ParsedMercalysArticleRecord,
 } from "@fl-copilot/import-core";
 import {
+  purchasePriceObservationSchema,
+  purchasePriceNeedsReview,
   salesObservationSchema,
   productMatchResultSchema,
   sourceRecordSchema,
@@ -50,7 +52,7 @@ export interface PublishMercalysImportInput {
 export interface PublishedMercalysImport {
   sourceDocumentId: string;
   localFileId: string;
-  analyticsJobId: string;
+  analyticsJobId: string | null;
   publishedCount: number;
   remainingCount: number;
   replacedCount: number;
@@ -129,7 +131,11 @@ export class MercalysImportPublicationRepository {
       publication.records.length !== summary.lines.length
     )
       throw Error("MERCALYS_CONTINUATION_SOURCE_CHANGED");
-    if ([...publication.sales, ...publication.waste].some((o) => o.deletedAt))
+    if (
+      [...publication.sales, ...publication.waste, ...publication.prices].some(
+        (o) => o.deletedAt,
+      )
+    )
       throw Error("MERCALYS_CONTINUATION_SUPERSEDED");
     const state = await this.database.getFirstAsync<{ sync_state: string }>(
       "SELECT sync_state FROM source_documents WHERE id=? AND store_id=?",
@@ -172,9 +178,11 @@ export class MercalysImportPublicationRepository {
       (line) => line.match.state === "AUTO_MATCH",
     ).length;
     const table =
-      summary.sourceType === "MERCALYS_SALES"
-        ? "sales_observations"
-        : "waste_observations";
+      summary.sourceType === "MERCALYS_PURCHASE_PRICES"
+        ? "purchase_price_observations"
+        : summary.sourceType === "MERCALYS_SALES"
+          ? "sales_observations"
+          : "waste_observations";
     const others = await this.database.getAllAsync<{
       product_id: string;
       business_date: string;
@@ -293,16 +301,17 @@ export class MercalysImportPublicationRepository {
           throw Error("MERCALYS_CONTINUATION_SOURCE_CHANGED");
       }
       if (additions.length) {
-        await enqueueAnalyticsRecomputationJob(tx, {
-          jobId,
-          storeId: input.storeId,
-          sourceDocumentId: input.sourceDocumentId,
-          scopes: additions.map((l) => ({
-            productId: l.match.matchedProductId!,
-            businessDate: l.record.businessDate,
-          })),
-          createdAt: now,
-        });
+        if (current.summary.sourceType !== "MERCALYS_PURCHASE_PRICES")
+          await enqueueAnalyticsRecomputationJob(tx, {
+            jobId,
+            storeId: input.storeId,
+            sourceDocumentId: input.sourceDocumentId,
+            scopes: additions.map((l) => ({
+              productId: l.match.matchedProductId!,
+              businessDate: l.record.businessDate,
+            })),
+            createdAt: now,
+          });
         await enqueueMercalysContinuation(
           tx,
           input.storeId,
@@ -368,7 +377,10 @@ export class MercalysImportPublicationRepository {
     const sourceDocumentId = this.generateId();
     const localFileId = this.generateId();
     const jobId = this.generateId();
-    const analyticsJobId = this.generateId();
+    const analyticsJobId =
+      input.summary.sourceType === "MERCALYS_PURCHASE_PRICES"
+        ? null
+        : this.generateId();
     const reconciliationId = input.reconciliationApproval
       ? this.generateId()
       : null;
@@ -482,24 +494,25 @@ export class MercalysImportPublicationRepository {
         createdAt,
       );
 
-      await enqueueAnalyticsRecomputationJob(transaction, {
-        jobId: analyticsJobId,
-        storeId: input.storeId,
-        sourceDocumentId,
-        scopes: [
-          ...readyLines.map((line) => ({
-            productId: line.match.matchedProductId!,
-            businessDate: line.record.businessDate,
-          })),
-          ...(reconciliation?.rows.flatMap((row) =>
-            (row.existingProductIds ?? []).map((productId) => ({
-              productId,
-              businessDate: row.businessDate,
+      if (analyticsJobId)
+        await enqueueAnalyticsRecomputationJob(transaction, {
+          jobId: analyticsJobId,
+          storeId: input.storeId,
+          sourceDocumentId,
+          scopes: [
+            ...readyLines.map((line) => ({
+              productId: line.match.matchedProductId!,
+              businessDate: line.record.businessDate,
             })),
-          ) ?? []),
-        ],
-        createdAt,
-      });
+            ...(reconciliation?.rows.flatMap((row) =>
+              (row.existingProductIds ?? []).map((productId) => ({
+                productId,
+                businessDate: row.businessDate,
+              })),
+            ) ?? []),
+          ],
+          createdAt,
+        });
 
       if (reconciliation && reconciliationId && input.reconciliationApproval) {
         await insertReconciliationAudit(transaction, {
@@ -552,9 +565,11 @@ async function softDeleteObservations(
   updatedAt: string,
 ) {
   const table =
-    sourceType === "MERCALYS_SALES"
-      ? "sales_observations"
-      : "waste_observations";
+    sourceType === "MERCALYS_PURCHASE_PRICES"
+      ? "purchase_price_observations"
+      : sourceType === "MERCALYS_SALES"
+        ? "sales_observations"
+        : "waste_observations";
   let count = 0;
   for (const id of [...new Set(observationIds)]) {
     const result = await database.runAsync(
@@ -666,9 +681,13 @@ async function activeProduct(
   storeId: string,
   productId: string,
 ) {
-  return database.getFirstAsync<{ id: string; nature: ProductNature }>(
+  return database.getFirstAsync<{
+    id: string;
+    nature: ProductNature;
+    sales_unit: "KG" | "PIECE" | "PACK" | "UNKNOWN";
+  }>(
     `
-      SELECT id, nature FROM products
+      SELECT id, nature, sales_unit FROM products
       WHERE id = ? AND store_id = ? AND status = 'ACTIVE'
         AND deleted_at IS NULL
     `,
@@ -837,7 +856,8 @@ async function insertWasteObservation(
   );
 }
 
-function decimal(value: number) {
+function decimal(value: number | null) {
+  if (value === null) throw Error("MERCALYS_QUANTITY_REQUIRED");
   return String(value);
 }
 
@@ -865,7 +885,45 @@ async function insertObservationFromLine(
     throw new Error("Matched product is no longer active in this store.");
   }
 
-  if (sourceType === "MERCALYS_SALES") {
+  if (sourceType === "MERCALYS_PURCHASE_PRICES") {
+    const quote = line.record.purchasePrice;
+    if (!quote) throw Error("MERCALYS_PURCHASE_PRICE_REQUIRED");
+    const observation = purchasePriceObservationSchema.parse({
+      id: generateId(),
+      storeId,
+      productId: product.id,
+      businessDate: line.record.businessDate,
+      amount: quote.amount,
+      unit: product.sales_unit,
+      taxBasis: "HT",
+      currency: "EUR",
+      priceStatus:
+        purchasePriceNeedsReview(quote.amount) ||
+        product.sales_unit === "UNKNOWN"
+          ? "TO_VERIFY"
+          : "KNOWN",
+      confirmedAt: null,
+      sourceDocumentId,
+      sourceRecordId,
+      validationStatus: "VALIDATED",
+      version: 1,
+      createdAt,
+      updatedAt: createdAt,
+      deletedAt: null,
+      syncState: "PENDING",
+      remoteVersion: null,
+      dirty: true,
+    });
+    const keys = Object.keys(observation) as (keyof typeof observation)[];
+    await transaction.runAsync(
+      `INSERT INTO purchase_price_observations (${keys.map((k) => k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)).join(",")}) VALUES (${keys.map(() => "?").join(",")})`,
+      ...(keys.map((k) =>
+        typeof observation[k] === "boolean"
+          ? Number(observation[k])
+          : observation[k],
+      ) as (string | number | null)[]),
+    );
+  } else if (sourceType === "MERCALYS_SALES") {
     await insertSalesObservation(
       transaction,
       salesObservationSchema.parse({

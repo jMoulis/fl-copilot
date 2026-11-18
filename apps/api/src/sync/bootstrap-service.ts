@@ -619,6 +619,9 @@ export function createMongoSyncBootstrapService(
                         : {}),
                     }
                   : {}),
+                ...(query.purchasePrices === "true"
+                  ? { purchasePrices: true as const }
+                  : {}),
                 ...(query.mercalysPublications === "true"
                   ? { mercalysPublications: [] }
                   : {}),

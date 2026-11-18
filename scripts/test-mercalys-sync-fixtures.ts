@@ -3,6 +3,7 @@ import { randomUUID, createHash } from "node:crypto";
 import * as XLSX from "xlsx";
 import {
   SheetJsSpreadsheetParser,
+  parseMercalysPurchasePrices,
   parseMercalysSales,
   parseMercalysWaste,
 } from "../packages/import-core/src/index";
@@ -59,7 +60,10 @@ export async function mercalysLocalFixture(
 export function mercalysWorkbook(
   storeId: string,
   productId: string,
-  sourceType: "MERCALYS_SALES" | "MERCALYS_WASTE" = "MERCALYS_SALES",
+  sourceType:
+    | "MERCALYS_SALES"
+    | "MERCALYS_WASTE"
+    | "MERCALYS_PURCHASE_PRICES" = "MERCALYS_SALES",
   date = "2026-10-07",
   sales = 12.4,
   includeReview = true,
@@ -68,43 +72,78 @@ export function mercalysWorkbook(
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(
     book,
-    XLSX.utils.aoa_to_sheet([
-      [
-        `Statistique : Entrées / Sorties: Niveau de détail: Par Article, Détail Période: non détaillée, Flux: ${sourceType === "MERCALYS_SALES" ? "Vente Nette" : "Casse"}, Type valorisation: PA`,
-      ],
-      [`Sélection de données : Du ${fr} Au ${fr}`],
-      [
-        "ITM8 Prio",
-        "EAN Prio",
-        "Libellé",
-        "Date",
-        "Quantité",
-        "Valeur Prix Achat",
-        "Valeur RCE",
-        "Valeur Prix Vente",
-        "Valeur TVA",
-        "Val Marge",
-        "Marge",
-      ],
-      ["00000001", null, "TOMATE VRAC", fr, 2.5, 7.1, 0, sales, 0.6, 4.7, 37.9],
-      ...(includeReview
+    XLSX.utils.aoa_to_sheet(
+      sourceType === "MERCALYS_PURCHASE_PRICES"
         ? [
+            ["Numéro point de vente : 9083"],
+            [`Date d’application : ${fr}`],
             [
-              "00000002",
-              null,
-              "PRODUIT À CONFIRMER",
-              fr,
-              1,
-              null,
-              0,
-              5,
-              null,
-              null,
-              null,
+              "ITM",
+              "EAN",
+              "LIBELLE",
+              "NOMENCLATURE",
+              "PRIX ACHAT PAR UNITE",
+              "ACTIF",
+            ],
+            [
+              "00000001",
+              "0000000000012",
+              "TOMATE VRAC",
+              "LEGUMES FRAIS",
+              sales,
+              "Oui",
             ],
           ]
-        : []),
-    ]),
+        : [
+            [
+              `Statistique : Entrées / Sorties: Niveau de détail: Par Article, Détail Période: non détaillée, Flux: ${sourceType === "MERCALYS_SALES" ? "Vente Nette" : "Casse"}, Type valorisation: PA`,
+            ],
+            [`Sélection de données : Du ${fr} Au ${fr}`],
+            [
+              "ITM8 Prio",
+              "EAN Prio",
+              "Libellé",
+              "Date",
+              "Quantité",
+              "Valeur Prix Achat",
+              "Valeur RCE",
+              "Valeur Prix Vente",
+              "Valeur TVA",
+              "Val Marge",
+              "Marge",
+            ],
+            [
+              "00000001",
+              null,
+              "TOMATE VRAC",
+              fr,
+              2.5,
+              7.1,
+              0,
+              sales,
+              0.6,
+              4.7,
+              37.9,
+            ],
+            ...(includeReview
+              ? [
+                  [
+                    "00000002",
+                    null,
+                    "PRODUIT À CONFIRMER",
+                    fr,
+                    1,
+                    null,
+                    0,
+                    5,
+                    null,
+                    null,
+                    null,
+                  ],
+                ]
+              : []),
+          ],
+    ),
     "Rapport",
   );
   const bytes = new Uint8Array(
@@ -112,9 +151,11 @@ export function mercalysWorkbook(
   );
   const workbook = new SheetJsSpreadsheetParser().parse(bytes);
   const parsed =
-    sourceType === "MERCALYS_SALES"
-      ? parseMercalysSales(workbook)
-      : parseMercalysWaste(workbook);
+    sourceType === "MERCALYS_PURCHASE_PRICES"
+      ? parseMercalysPurchasePrices(workbook)
+      : sourceType === "MERCALYS_SALES"
+        ? parseMercalysSales(workbook)
+        : parseMercalysWaste(workbook);
   const summary: MercalysImportValidationSummary = {
     ...parsed,
     detectedLineCount: parsed.records.length,

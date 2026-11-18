@@ -788,6 +788,12 @@ export function createMongoSyncPullService(
                 .collection<MercalysPublicationDocument>("mercalysPublications")
                 .findOne({ _id: change.entityId, storeId });
               if (!entity) throw Error("MERCALYS_PUBLICATION_MISSING");
+              if (
+                entity.publication.source.sourceType ===
+                  "MERCALYS_PURCHASE_PRICES" &&
+                query.purchasePrices !== "true"
+              )
+                return null;
               // Legacy clients only insert source records and cannot safely consume row revisions.
               if (
                 query.mercalysRecordUpdates !== "true" &&

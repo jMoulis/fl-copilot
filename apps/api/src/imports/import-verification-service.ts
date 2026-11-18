@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { get } from "@vercel/blob";
 import {
   fingerprintMercalysRecords,
+  parseMercalysPurchasePrices,
   parseMercalysSales,
   parseMercalysWaste,
   SheetJsSpreadsheetParser,
@@ -170,8 +171,10 @@ export function createMongoImportVerificationService(
 const defaultRemoteMercalysParser: RemoteMercalysParser = {
   parse(bytes, sourceType) {
     const workbook = new SheetJsSpreadsheetParser().parse(bytes);
-    return sourceType === "MERCALYS_SALES"
-      ? parseMercalysSales(workbook)
-      : parseMercalysWaste(workbook);
+    return sourceType === "MERCALYS_PURCHASE_PRICES"
+      ? parseMercalysPurchasePrices(workbook)
+      : sourceType === "MERCALYS_SALES"
+        ? parseMercalysSales(workbook)
+        : parseMercalysWaste(workbook);
   },
 };

@@ -50,3 +50,31 @@ the safe-area insets used by the real bottom bar.
 Exact source and delivery identities to be recorded after completion.
 The release is mobile-only: no API deployment. Build locally on the Mac; no paid
 EAS cloud compilation. New iPhone acceptance remains pending.
+
+## Delivery receipt
+
+- PR 538: https://github.com/jMoulis/fl-copilot/pull/538 . Feature source
+  `0ca327d357dfc434e5aa4acb88fc887b9420c897`; exact-head push
+  `44269162427` and PR `44269206072` checks succeeded before merge.
+- Merged master `a6fc7c3aec3f626db4546ca8a74f795bd334f23e`; master check
+  `44270782441` succeeded before Apple upload. GitHub: 638 files / 6,338 tests
+  passed, one file / six tests skipped. Branch deleted after merge.
+- Local Mac production STORE archive **0.1.0 (78)**; source, signing identity
+  and production configuration verified. SHA-256
+  `178f2ec9a026d1aa43f3120b41988b1cb9ee28b4d2b8182e4fec8e7b6d293d5c`.
+  Existing credentials frozen, no system-toolchain change, no cloud build ID.
+  EAS cloud build IDs identical before/after.
+- Apple accepted the exact local IPA upload. Third status read confirms build 78
+  `VALID`, `IN_BETA_TESTING`, not expired in the existing internal TestFlight
+  distribution. Physical iPhone acceptance remains pending. API unchanged.
+- Evidence outside Git: `maintenance/analytics-polish-2026-11-18/`, including
+  check/export logs, CI logs, cloud inventories and release receipts.
+
+### Short iPhone acceptance
+
+1. Open Analyses on a month: all days fit; select values before opening detail;
+   Back retains the selected day and current scope.
+2. Check the three remaining selectors and the category donut; unavailable
+   categories remain explicit, filters and information sheets still open.
+3. Switch all four bottom tabs and return from a product detail. Check the
+   bottom safe area, labels and tap comfort on the actual device.

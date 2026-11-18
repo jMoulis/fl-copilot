@@ -713,7 +713,11 @@ const nativeBinaryUploader: SourceBinaryUploader = {
 function isMercalysImport(
   sourceType: InitSourceUploadRequest["sourceType"],
 ): sourceType is VerifyImportRequest["sourceType"] {
-  return sourceType === "MERCALYS_SALES" || sourceType === "MERCALYS_WASTE";
+  return (
+    sourceType === "MERCALYS_SALES" ||
+    sourceType === "MERCALYS_WASTE" ||
+    sourceType === "MERCALYS_PURCHASE_PRICES"
+  );
 }
 
 function parseJobPayload(

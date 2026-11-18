@@ -249,7 +249,7 @@ export class MercalysBatchRepository {
         (SELECT COUNT(*) FROM source_records r WHERE r.source_document_id=d.id AND r.store_id=d.store_id AND r.deleted_at IS NULL AND r.status!='PUBLISHED') AS remaining_count
        FROM source_documents d WHERE d.store_id=? AND d.deleted_at IS NULL
         AND d.local_processing_status='PUBLISHED'
-        AND d.source_type IN ('MERCALYS_SALES','MERCALYS_WASTE')
+        AND d.source_type IN ('MERCALYS_SALES','MERCALYS_WASTE','MERCALYS_PURCHASE_PRICES')
         AND d.checksum IN (${checksums.map(() => "?").join(",")})`,
       this.scope.storeId,
       ...checksums,
@@ -269,7 +269,7 @@ export class MercalysBatchRepository {
     }>(
       `SELECT source_type, business_period_start AS start, business_period_end AS end
        FROM source_documents WHERE store_id=? AND deleted_at IS NULL AND local_processing_status='PUBLISHED'
-       AND source_type IN ('MERCALYS_SALES','MERCALYS_WASTE')
+       AND source_type IN ('MERCALYS_SALES','MERCALYS_WASTE','MERCALYS_PURCHASE_PRICES')
        AND checksum IN (${checksums.map(() => "?").join(",")}) ORDER BY source_type,business_period_start,business_period_end`,
       this.scope.storeId,
       ...checksums,
@@ -283,13 +283,17 @@ export class MercalysBatchRepository {
       )
     )
       throw Error("MERCALYS_BATCH_NOT_PUBLISHED");
-    const labels = ["MERCALYS_SALES", "MERCALYS_WASTE"].flatMap((type) => {
+    const labels = [
+      "MERCALYS_SALES",
+      "MERCALYS_WASTE",
+      "MERCALYS_PURCHASE_PRICES",
+    ].flatMap((type) => {
       const ranges = mergeBusinessPeriods(
         periods.filter((p) => p.source_type === type),
       );
       return ranges.length
         ? [
-            `${type === "MERCALYS_SALES" ? "ventes" : "casse"} : ${ranges.map((p) => `du ${p.start.split("-").reverse().join("/")} au ${p.end.split("-").reverse().join("/")}`).join(", ")}`,
+            `${type === "MERCALYS_PURCHASE_PRICES" ? "prix d’achat" : type === "MERCALYS_SALES" ? "ventes" : "casse"} : ${ranges.map((p) => `du ${p.start.split("-").reverse().join("/")} au ${p.end.split("-").reverse().join("/")}`).join(", ")}`,
           ]
         : [];
     });
@@ -388,7 +392,7 @@ export class MercalysBatchRepository {
     const item = await this.readItem(this.db, batchId, itemId);
     const rows = await this.db.getAllAsync<{ local_uri: string }>(
       `SELECT DISTINCT f.local_uri FROM source_documents d JOIN local_files f ON f.source_document_id=d.id AND f.store_id=d.store_id
-       WHERE d.store_id=? AND d.checksum=? AND d.deleted_at IS NULL AND d.source_type IN ('MERCALYS_SALES','MERCALYS_WASTE')
+       WHERE d.store_id=? AND d.checksum=? AND d.deleted_at IS NULL AND d.source_type IN ('MERCALYS_SALES','MERCALYS_WASTE','MERCALYS_PURCHASE_PRICES')
        AND f.checksum=d.checksum AND f.size_bytes=? AND f.local_uri=d.local_file_uri AND f.retention_status='RETAINED'
        AND EXISTS (SELECT 1 FROM source_original_restorations h WHERE h.store_id=d.store_id AND h.source_document_id=d.id AND h.local_file_id=f.id AND h.restored_uri=f.local_uri) LIMIT 2`,
       this.scope.storeId,

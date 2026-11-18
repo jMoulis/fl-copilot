@@ -11,6 +11,7 @@ const nullableStringSchema = z.string().trim().min(1).nullable().optional();
 export const sourceTypeSchema = z.enum([
   "MERCALYS_SALES",
   "MERCALYS_WASTE",
+  "MERCALYS_PURCHASE_PRICES",
   "WASTE_RECEIPT",
   "STORE_PHOTO",
   "WEEKLY_COMMERCIAL_PDF",

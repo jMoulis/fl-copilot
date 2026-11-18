@@ -47,7 +47,8 @@ export const sourceOriginalMetadataSchema = z
       value.sourceType === "WEEKLY_COMMERCIAL_PDF"
         ? value.mimeType === "application/pdf"
         : value.sourceType === "MERCALYS_SALES" ||
-            value.sourceType === "MERCALYS_WASTE"
+            value.sourceType === "MERCALYS_WASTE" ||
+            value.sourceType === "MERCALYS_PURCHASE_PRICES"
           ? value.mimeType ===
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           : value.sourceType === "STORE_PHOTO"
