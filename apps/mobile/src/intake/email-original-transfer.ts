@@ -126,14 +126,49 @@ export class EmailOriginalTransfer {
     if (!emailIntakeOriginalManifestSchema.safeParse(raw).success) return null;
     const manifest = await this.binding(raw, scope, basis);
     const result = await this.files.existing(manifest, scope.ownerId);
+    const proof = result ? proofSchema.parse(result) : null;
     await this.unchanged(scope, ref, basis);
     const live = await this.record(scope, ref);
     if (
       live?.manifest_json !== row.manifest_json ||
-      live.local_uri !== row.local_uri
+      (live.local_uri !== row.local_uri && live.local_uri !== proof?.localUri)
     )
       throw Error("EMAIL_ORIGINAL_CHANGED");
-    return result ? proofSchema.parse(result) : null;
+    if (!proof) return null;
+    if (proof.localUri !== row.local_uri) {
+      // The native adapter has verified the same scoped manifest and bytes at
+      // today's app-container path. Repair only the local cache locator.
+      await this.cache.db.withExclusiveTransactionAsync(async (tx) => {
+        await this.cache.authorize(scope, tx);
+        await this.unchanged(scope, ref, basis, tx);
+        const current = await this.record(scope, ref, tx);
+        if (
+          current?.manifest_json === row.manifest_json &&
+          current.local_uri === proof.localUri
+        )
+          return;
+        if (
+          current?.manifest_json !== row.manifest_json ||
+          current.local_uri !== row.local_uri
+        )
+          throw Error("EMAIL_ORIGINAL_CHANGED");
+        await tx.runAsync(
+          "UPDATE email_original_manifests SET local_uri=?,verified_at=? WHERE store_id=? AND owner_id=? AND conversation_id=? AND receipt_id=? AND file_id=? AND manifest_json=? AND local_uri=?",
+          proof.localUri,
+          this.now().toISOString(),
+          scope.storeId,
+          scope.ownerId,
+          scope.conversationId,
+          ref.receiptId,
+          ref.fileId,
+          row.manifest_json,
+          row.local_uri,
+        );
+        await this.cache.authorize(scope, tx);
+        await this.unchanged(scope, ref, basis, tx);
+      });
+    }
+    return proof;
   }
   async requestRetry(
     raw: EmailIntakeOriginalRetry,

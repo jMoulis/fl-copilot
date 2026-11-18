@@ -4,6 +4,10 @@ export function sourceFileDirectory(
   ordinaryDirectory: string,
 ) {
   const uuid = "[a-f0-9-]{36}";
+  const email = new RegExp(
+    `/email-originals/(${uuid}/${uuid}/${uuid}/${uuid})/original-[a-f0-9]{64}\\.bin$`,
+  ).exec(localUri);
+  if (email) return `email-originals/${email[1]}`;
   const recovered = new RegExp(
     `/source-originals/(${uuid}/${uuid}/${uuid})/(?:original|view)-[a-f0-9]{64}\\.(?:pdf|xlsx|jpg|png|heic|heif|json)$`,
   ).exec(localUri);
