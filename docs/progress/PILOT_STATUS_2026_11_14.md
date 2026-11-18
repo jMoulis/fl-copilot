@@ -1,9 +1,10 @@
 # État courant — pilote iPhone, actualisé le 18 novembre 2026
 
-**Régression signalée sur build 79 :** synchronisation en erreur, PA reçu par
-email en attente et menus parfois inactifs. Omission de la capacité PA dans la
-validation du bootstrap reproduite et corrigée localement, test rouge puis vert.
-Correctif non encore livré ; cause du blocage tactile non confirmée.
+**Correctif build 80 — 18 novembre :** PR 540 fusionnée, CI push/PR/master
+vertes, archive compilée localement et vérifiée, envoi accepté par Apple.
+Corrige le refus de la capacité PA dans le bootstrap mobile. Disponible en
+TestFlight privé : `VALID` / `IN_BETA_TESTING`, non expiré, groupe propriétaire seul. Les blocages tactiles intermittents
+restent non expliqués et non déclarés corrigés ; capture propriétaire attendue.
 
 **18 novembre — PA quotidiens livrés, build 79 disponible :** PR 539
 fusionnée après CI push/PR/master vertes. Import local XLSX/ZIP et boîte mail

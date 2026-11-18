@@ -6,7 +6,7 @@ import type {
 import { MercalysBatchRepository } from "./mercalys-batch-repository";
 import { SheetJsSpreadsheetParser } from "./sheetjs-spreadsheet-parser";
 import {
-  validateMercalysImport,
+  validateMercalysImportResponsive,
   MercalysImportValidationError,
 } from "./mercalys-import-validation";
 import type { MercalysImportPublicationRepository } from "./mercalys-import-publication";
@@ -45,10 +45,11 @@ export class MercalysBatchPreparation {
       throw Error("MERCALYS_BATCH_FILE_CHANGED");
     cancel();
     const workbook = new SheetJsSpreadsheetParser().parse(bytes);
-    const summary = validateMercalysImport(
+    const summary = await validateMercalysImportResponsive(
       workbook,
       this.batches.storeId,
       await this.dependencies.catalog(),
+      signal,
     );
     cancel();
     return { item, summary, localUri: location };

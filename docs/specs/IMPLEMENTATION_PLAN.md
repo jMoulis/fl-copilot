@@ -1,3 +1,15 @@
+## Import responsiveness investigation — 18 November 2026
+
+Owner reports freezes persisting on build 80. No infinite email-processing loop
+confirmed. Synchronous product matching monopolizes JS: synthetic 172 unmatched
+rows against 1,226 products blocked event dispatch for 1,174 ms on the Mac.
+Keep deterministic rules and split mobile matching into yielding, abortable slices
+for batch preparation and review/rematching. Allow closing read-only file review;
+retain mutation guards during publication/product resolution. Originals and
+pending imports survive cancellation. Verify identical outputs, event dispatch
+throughout a large rematch, cancellation and existing import integrations. Do not
+claim all physical-device freezes resolved without reproduction/owner acceptance.
+
 ## Build 79 synchronization regression — 18 November 2026
 
 Owner reports failed synchronization, emailed PA awaiting reading and intermittent

@@ -146,3 +146,46 @@ Older simulator runtime closes weather and sequential import sheets with X; this
 does not qualify build 79 or explain the physical-device intermittent touch issue.
 Sentry build 79 reports sanitized LOCAL_OPERATION_FAILED in synchronization.
 No claim of a complete freeze fix; screenshot and device follow-up remain pending.
+
+### Corrective delivery
+
+PR 540 merged as `79167884345c9d90966a41f0abb712a62db010bf`. Exact-head
+push 44315409678, PR 44315447580 and master 44317613272 passed. CI reports
+641 passing suites, one skipped. Local full run had one observability test
+timeout; its isolated rerun passed all nine tests; CI passed the complete suite.
+
+Build 0.1.0 (80) compiled locally, archive verified, SHA-256
+`79a989e35c902dd4202782238035554dea4fd97886a49a62c2b9109044310505`. Apple
+accepted upload. Build 80 is VALID / IN_BETA_TESTING, not expired, and present
+in the existing owner-only internal group (one tester). Physical-device
+regression acceptance remains pending. Existing API PR 539
+remains compatible and unchanged. Private evidence:
+`maintenance/pa-bootstrap-recovery-2026-11-18/` outside Git.
+
+Owner check is limited to this regression: update without resetting local data,
+allow sync to finish, check the already emailed PA and menu/sheet interactions.
+Intermittent freezes are not declared fixed by the bootstrap allowlist change.
+
+## Persistent freeze report and responsiveness fix
+
+Owner reports build 80 freezes after email admission, at “Identification des
+produits”, plus synchronization error and unresponsive navigation after restart.
+The admitted email processor resumes pending work at startup and calls the same
+Mercalys preparation/matcher; its retries are bounded, not an identified infinite
+loop. A synthetic workload of 172 difficult rows against 1,226 products blocked
+the JS event loop for 1,174 ms on the Mac (zero timer callbacks). This is a
+measured starvation path, not proof of every device symptom.
+
+Mobile batch preparation, initial review and rematching now yield after short
+slices (8 ms target or 20 rows), retaining the same deterministic match rules.
+Read-only review can close while identifying products; unmount/store change aborts
+matching and ignores late results. Publication/product mutation dismissal guards
+remain intact. No original, pending command or price is deleted. Native parse
+itself and an individual match remain synchronous.
+
+Tests cover exact matching parity, UI heartbeat throughout a large rematch,
+cancellation and closing a reading sheet without late analysis/publication.
+Focused review/matcher/email/controller suites: 90 passed. Earlier review mocks
+were updated to the asynchronous entry point and to await scheduled UI yields.
+Build 81 not yet compiled/distributed; exact sync error and device acceptance
+remain outstanding. Private synthetic probe: maintenance/import-responsiveness-2026-11-18/.
