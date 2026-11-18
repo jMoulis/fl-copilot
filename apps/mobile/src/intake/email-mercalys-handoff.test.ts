@@ -986,7 +986,22 @@ it("coalesces equivalent relocated proofs without weakening original integrity",
     flow: "MERCALYS_PURCHASE_PRICES",
   });
   f.relocateOriginal();
-  const transfer = f.originals(f.cache);
+  const facade = {
+    execAsync: f.a.execAsync.bind(f.a),
+    runAsync: f.a.runAsync.bind(f.a),
+    getFirstAsync: f.a.getFirstAsync.bind(f.a),
+    getAllAsync: f.a.getAllAsync.bind(f.a),
+    withExclusiveTransactionAsync: f.a.withExclusiveTransactionAsync.bind(f.a),
+  };
+  const db = serializeLocalWrites(
+    facade as unknown as Parameters<typeof serializeLocalWrites>[0],
+  ) as unknown as typeof facade;
+  const cache = new EmailIntakeCache(db, () => ({
+    storeId: f.scope.storeId,
+    userId: f.scope.ownerId,
+    canWrite: true,
+  }));
+  const transfer = f.originals(cache);
   expect(
     await Promise.all([transfer.local(f.ref), transfer.local(f.ref)]),
   ).toEqual([{ localUri: f.uri }, { localUri: f.uri }]);
