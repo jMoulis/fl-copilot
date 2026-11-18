@@ -1,5 +1,15 @@
 # État courant — pilote iPhone, actualisé le 18 novembre 2026
 
+**Correctif des originaux email — build 82 :** PR 542 fusionnée, CI
+push/PR/master vertes. Archive compilée localement et vérifiée, envoi accepté
+par Apple. Disponible en TestFlight privé : `VALID` / `IN_BETA_TESTING`,
+non expiré, propriétaire seul. Corrige la récupération du chemin
+local après changement du dossier iOS, pour la consultation et la reprise des
+PA. Les deux traitements déjà en échec nécessitent « Reprendre ce fichier » dans
+les documents reçus par email. Originaux et publications conservés, contrôles
+d’intégrité maintenus. Le propriétaire ne constate plus les freezes sur le build
+81 ; confirmation de la reprise PA sur iPhone attendue.
+
 **Correctif de réactivité — build 81 :** PR 541 fusionnée, CI push/PR/master
 vertes. Archive compilée localement, vérifiée et acceptée par Apple. Disponible
 en TestFlight privé : `VALID` / `IN_BETA_TESTING`, non expiré, propriétaire seul. L’identification des produits rend la main

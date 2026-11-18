@@ -1,6 +1,7 @@
 import { parseMercalysPurchasePrices } from "@fl-copilot/import-core";
 import {
   matchProduct,
+  prepareProductMatcher,
   type ProductMatchCatalog,
   type ProductMatchResult,
 } from "@fl-copilot/domain";
@@ -77,22 +78,18 @@ function matchRecord(
   record: ParsedMercalysArticleRecord,
   storeId: string,
   catalog: ProductMatchCatalog,
+  matcher?: ReturnType<typeof prepareProductMatcher>,
 ): MercalysImportValidationLine {
   return {
     record,
-    match: matchProduct(
-      {
-        storeId,
-        identifiers: [
-          ...(record.itm8
-            ? [{ type: "ITM8" as const, value: record.itm8 }]
-            : []),
-          ...(record.ean ? [{ type: "EAN" as const, value: record.ean }] : []),
-        ],
-        label: record.rawLabel,
-      },
-      catalog,
-    ),
+    match: (matcher ?? ((request) => matchProduct(request, catalog)))({
+      storeId,
+      identifiers: [
+        ...(record.itm8 ? [{ type: "ITM8" as const, value: record.itm8 }] : []),
+        ...(record.ean ? [{ type: "EAN" as const, value: record.ean }] : []),
+      ],
+      label: record.rawLabel,
+    }),
   };
 }
 function withMatches(
@@ -144,23 +141,30 @@ export function rematchMercalysImport(
 }
 
 /** Preserve the deterministic matcher, but return control to native UI between slices. */
+export type MercalysMatchingProgress = { completed: number; total: number };
+
 async function matchResponsive(
   records: ParsedMercalysArticleRecord[],
   storeId: string,
   catalog: ProductMatchCatalog,
   signal?: AbortSignal,
+  onProgress?: (progress: MercalysMatchingProgress) => void,
 ) {
   const lines: MercalysImportValidationLine[] = [];
+  const matcher = prepareProductMatcher(storeId, catalog);
   let sliceStarted = Date.now();
   for (let index = 0; index < records.length; index++) {
     if (signal?.aborted) throw Error("MERCALYS_BATCH_CANCELLED");
     if (index === 0 || Date.now() - sliceStarted >= 8 || index % 20 === 0) {
+      onProgress?.({ completed: index, total: records.length });
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
       if (signal?.aborted) throw Error("MERCALYS_BATCH_CANCELLED");
       sliceStarted = Date.now();
     }
-    lines.push(matchRecord(records[index]!, storeId, catalog));
+    lines.push(matchRecord(records[index]!, storeId, catalog, matcher));
   }
+  if (signal?.aborted) throw Error("MERCALYS_BATCH_CANCELLED");
+  onProgress?.({ completed: records.length, total: records.length });
   return lines;
 }
 export async function validateMercalysImportResponsive(
@@ -168,12 +172,13 @@ export async function validateMercalysImportResponsive(
   storeId: string,
   catalog: ProductMatchCatalog,
   signal?: AbortSignal,
+  onProgress?: (progress: MercalysMatchingProgress) => void,
 ) {
   if (signal?.aborted) throw Error("MERCALYS_BATCH_CANCELLED");
   const { records, ...summary } = parseImport(workbook);
   return withMatches(
     summary,
-    await matchResponsive(records, storeId, catalog, signal),
+    await matchResponsive(records, storeId, catalog, signal, onProgress),
   );
 }
 export async function rematchMercalysImportResponsive(

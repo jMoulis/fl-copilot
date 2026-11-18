@@ -241,3 +241,38 @@ it("keeps dispatching UI work throughout a large rematch", async () => {
     clearInterval(heartbeat);
   }
 });
+
+it("reports monotonic line progress and stops reporting when cancelled", async () => {
+  const source = workbook("Vente Nette", "Du 26/09/2026 Au 26/09/2026");
+  const progress: Array<{ completed: number; total: number }> = [];
+  const summary = await validateMercalysImportResponsive(
+    source,
+    storeId,
+    catalog(),
+    undefined,
+    (value) => progress.push(value),
+  );
+  expect(progress[0]).toEqual({ completed: 0, total: summary.lines.length });
+  expect(progress.at(-1)).toEqual({
+    completed: summary.lines.length,
+    total: summary.lines.length,
+  });
+  expect(progress.map((p) => p.completed)).toEqual(
+    progress.map((p) => p.completed).sort((a, b) => a - b),
+  );
+  const controller = new AbortController();
+  const cancelled: number[] = [];
+  await expect(
+    validateMercalysImportResponsive(
+      source,
+      storeId,
+      catalog(),
+      controller.signal,
+      (value) => {
+        cancelled.push(value.completed);
+        controller.abort();
+      },
+    ),
+  ).rejects.toThrow("MERCALYS_BATCH_CANCELLED");
+  expect(cancelled).toEqual([0]);
+});

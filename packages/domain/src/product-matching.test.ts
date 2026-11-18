@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  matchProduct,
+  matchProduct as matchSingleProduct,
+  prepareProductMatcher,
   type ProductMatchCatalog,
   type ProductMatcherConfig,
 } from "./product-matching";
@@ -96,7 +97,11 @@ function catalog(
   };
 }
 
-describe("product matching", () => {
+describe.each(["single", "prepared"])("product matching (%s)", (mode) => {
+  const matchProduct: typeof matchSingleProduct = (request, input, config) =>
+    mode === "single"
+      ? matchSingleProduct(request, input, config)
+      : prepareProductMatcher(request.storeId, input, config)(request);
   it("gives an exact validated identifier precedence over a contradictory label", () => {
     const result = matchProduct(
       {
@@ -309,4 +314,30 @@ describe("product matching", () => {
 
     expect(result.state).toBe("NO_MATCH");
   });
+});
+
+it("reuses one catalogue for repeated requests and refreshes after catalogue changes", () => {
+  const input = catalog();
+  const match = prepareProductMatcher(storeId, input);
+  for (const label of [
+    "Poire conférence vrac",
+    "Pomme gala vrac",
+    "Poir conference",
+    "Inconnu",
+  ]) {
+    expect(match({ storeId, label })).toEqual(
+      matchSingleProduct({ storeId, label }, input),
+    );
+  }
+  expect(() =>
+    match({ storeId: otherStoreId, label: "Pomme gala vrac" }),
+  ).toThrow("PRODUCT_MATCH_STORE_MISMATCH");
+  const next = catalog({ products: [product(pearId, "Pomme gala vrac")] });
+  expect(
+    prepareProductMatcher(storeId, next)({ storeId, label: "Pomme gala vrac" })
+      .matchedProductId,
+  ).toBe(pearId);
+  expect(match({ storeId, label: "Pomme gala vrac" }).matchedProductId).toBe(
+    appleId,
+  );
 });
