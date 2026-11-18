@@ -1,3 +1,15 @@
+## Import review reuse and creation feedback — 18 November 2026
+
+Build 83 owner can load the PA workbook, but creating/confirming products remains
+slow and the batch locks while closing a changed review; each reopening rematches.
+Reuse a bounded in-memory validation snapshot only for identical source checksum,
+store and complete current catalogue contents. Always reverify original bytes and
+rerun publication/continuation checks. Report the completed review result to the
+batch without preparing it again on close, with version checks. Display immediate
+creation and subsequent rematching progress near the action. Preserve durable
+writes, atomic Outbox, cancellation/dismissal guards and actual matching rules.
+Prove invalidation, close/reopen reuse and progress/error recovery before delivery.
+
 ## Import matching throughput — 18 November 2026
 
 Owner reports four minutes at product identification after build 82 restores file

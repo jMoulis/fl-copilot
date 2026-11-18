@@ -330,14 +330,19 @@ export class MercalysBatchRepository {
       throw Error("MERCALYS_BATCH_SCOPE_INVALID");
     return { batches, hasMore: rows.length > 10 };
   }
-  async refresh(batchId: string, itemId: string, expectedVersion: number) {
+  async refresh(
+    batchId: string,
+    itemId: string,
+    expectedVersion: number,
+    result: MercalysBatchResult = { status: "QUEUED" },
+  ) {
     await this.db.withExclusiveTransactionAsync(async (tx) => {
       const current = await this.readItem(tx, batchId, itemId);
       if (current.version !== expectedVersion)
         throw Error("MERCALYS_BATCH_ITEM_CHANGED");
       const next = mercalysBatchItemSchema.parse({
         ...current,
-        result: { status: "QUEUED" },
+        result: mercalysBatchResultSchema.parse(result),
         version: current.version + 1,
         updatedAt: this.now(),
       });

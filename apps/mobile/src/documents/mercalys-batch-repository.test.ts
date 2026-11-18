@@ -1279,3 +1279,29 @@ it("does not accept a pending standalone file or a fabricated archive as a retai
     s.input.id,
   ]);
 });
+
+it("persists a completed review atomically without requeueing and rejects a stale result", async () => {
+  const s = await setup(1);
+  await s.repo.create(s.input);
+  const file = s.input.files[0]!;
+  const result = {
+    status: "REVIEW" as const,
+    sourceType: "MERCALYS_PURCHASE_PRICES" as const,
+    parserVersion: "test-v1",
+    businessPeriodStart: "2026-11-18",
+    businessPeriodEnd: "2026-11-18",
+    readyCount: 1200,
+    productReviewCount: 26,
+    errorCount: 0,
+    overlap: false,
+  };
+  await s.repo.refresh(s.input.id, file.id, 1, result);
+  expect((await s.repo.get(s.input.id, file.id)).result).toEqual(result);
+  await expect(
+    s.repo.refresh(s.input.id, file.id, 1, { status: "QUEUED" }),
+  ).rejects.toThrow("MERCALYS_BATCH_ITEM_CHANGED");
+  expect((await s.repo.get(s.input.id, file.id)).result).toEqual(result);
+  expect(await s.adapter.getAllAsync("SELECT * FROM sync_outbox")).toHaveLength(
+    0,
+  );
+});
