@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   matchProduct as matchSingleProduct,
   prepareProductMatcher,
+  prepareProductRematcher,
+  productMatchingSignature,
   type ProductMatchCatalog,
   type ProductMatcherConfig,
 } from "./product-matching";
@@ -340,4 +342,129 @@ it("reuses one catalogue for repeated requests and refreshes after catalogue cha
   expect(match({ storeId, label: "Pomme gala vrac" }).matchedProductId).toBe(
     appleId,
   );
+});
+
+it("incremental matching preserves complete search across additions, edits, removals and identity conflicts", () => {
+  const ids = Array.from(
+    { length: 12 },
+    (_, i) => `50000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
+  );
+  let before = catalog({
+    products: ids.slice(0, 10).map((id, i) => product(id, `Pomme gala ${i}`)),
+    identifiers: [identifier(pearId, ids[0]!, "ITM8", "0001")],
+    aliases: [alias(appleId, ids[1]!, "GALA")],
+  });
+  const requests = [
+    "POMME GALA",
+    "POMME GALA 1",
+    "GALA",
+    "POMME ROUGE",
+    "RADIS",
+    "",
+  ].flatMap((label) => [
+    { storeId, label: label || null },
+    {
+      storeId,
+      label: label || null,
+      identifiers: [{ type: "ITM8" as const, value: "0001" }],
+    },
+  ]);
+  const edits: ((c: ProductMatchCatalog) => ProductMatchCatalog)[] = [
+    (c) => ({
+      ...c,
+      products: [...c.products, product(ids[10]!, "Pomme gala")],
+    }),
+    (c) => ({
+      ...c,
+      identifiers: [
+        ...c.identifiers,
+        identifier(ids[11]!, ids[10]!, "ITM8", "0001"),
+      ],
+    }),
+    (c) => ({
+      ...c,
+      aliases: [...c.aliases, alias(ids[11]!, ids[10]!, "GALA")],
+    }),
+    (c) => ({
+      ...c,
+      products: c.products.map((p, i) =>
+        i === 0 ? { ...p, status: "INACTIVE" as const } : p,
+      ),
+    }),
+    (c) => ({
+      ...c,
+      products: c.products.map((p, i) =>
+        i === 1 ? { ...p, label: "Radis rose" } : p,
+      ),
+    }),
+    (c) => ({ ...c, products: c.products.filter((p) => p.id !== ids[10]) }),
+    (c) => ({ ...c, identifiers: [], aliases: [] }),
+    (c) => ({
+      ...c,
+      products: [...c.products]
+        .reverse()
+        .map((p) => ({ ...p, version: p.version + 1 })),
+    }),
+  ];
+  for (const edit of edits) {
+    const after = edit(before);
+    const rematch = prepareProductRematcher(storeId, before, after);
+    for (const request of requests)
+      expect(rematch(request, matchSingleProduct(request, before))).toEqual(
+        matchSingleProduct(request, after),
+      );
+    before = after;
+  }
+});
+it("matching signature ignores synchronization metadata and order but tracks identity changes", () => {
+  const before = catalog();
+  expect(productMatchingSignature(storeId, before)).toBe(
+    productMatchingSignature(storeId, {
+      ...before,
+      products: [...before.products]
+        .reverse()
+        .map((p) => ({ ...p, version: 99, updatedAt: "2026-11-18T12:00:00Z" })),
+    }),
+  );
+  expect(productMatchingSignature(storeId, before)).not.toBe(
+    productMatchingSignature(storeId, {
+      ...before,
+      products: before.products.map((p) => ({ ...p, status: "INACTIVE" })),
+    }),
+  );
+});
+
+it("keeps fuzzy ties and refills truncated rankings when a retained candidate changes", () => {
+  const products = Array.from({ length: 9 }, (_, i) =>
+    product(
+      `60000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
+      `TOMATE CERISE ${i} KG`,
+    ),
+  );
+  const before = catalog({ products });
+  const request = { storeId, label: "TOMATE CERISE KG" };
+  const previous = matchSingleProduct(request, before);
+  expect(previous.candidates).toHaveLength(5);
+  const retained = previous.candidates[0]!.productId;
+  for (const after of [
+    { ...before, products: products.filter((p) => p.id !== retained) },
+    {
+      ...before,
+      products: products.map((p) =>
+        p.id === retained ? { ...p, label: "CHOU ROUGE" } : p,
+      ),
+    },
+    {
+      ...before,
+      products: [...products, product(appleId, "TOMATE CERISE 10 KG")],
+    },
+    {
+      ...before,
+      aliases: [alias(pearId, products[8]!.id, "TOMATE CERISE KG")],
+    },
+  ]) {
+    expect(
+      prepareProductRematcher(storeId, before, after)(request, previous),
+    ).toEqual(matchSingleProduct(request, after));
+  }
 });

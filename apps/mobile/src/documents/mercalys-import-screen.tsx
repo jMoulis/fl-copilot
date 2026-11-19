@@ -1,4 +1,7 @@
-import { MercalysReviewCache } from "./mercalys-review-cache";
+import {
+  MercalysReviewCache,
+  getMercalysReviewCache,
+} from "./mercalys-review-cache";
 import type { MercalysBatchResult } from "@fl-copilot/domain";
 import { PurchasePriceRepository } from "../products/purchase-price-repository";
 import { tradingToday } from "../dates/calendar";
@@ -175,7 +178,9 @@ export function MercalysImportScreen({
   const actorUserId = session?.user.id;
   const ownedReviewCache = useMemo(
     () =>
-      sqlite && storeId && actorUserId ? new MercalysReviewCache() : undefined,
+      sqlite && storeId && actorUserId
+        ? getMercalysReviewCache(sqlite, storeId, actorUserId)
+        : undefined,
     [sqlite, storeId, actorUserId],
   );
   const validationCache = reviewCache ?? ownedReviewCache;
@@ -414,12 +419,19 @@ export function MercalysImportScreen({
     setMatchingProgress(undefined);
     await yieldToInterface();
     const catalog = await loadProductCatalog(repository, storeId);
+    const previous =
+      productCatalog && selectedChecksum
+        ? validationCache.get(
+            validationCache.key(storeId, selectedChecksum, productCatalog),
+          )
+        : undefined;
     const rematched = await rematchMercalysImportResponsive(
-      currentSummary,
+      previous ?? currentSummary,
       storeId,
       catalog,
       undefined,
       setMatchingProgress,
+      previous ? productCatalog : undefined,
     );
     if (selectedChecksum)
       validationCache.put(

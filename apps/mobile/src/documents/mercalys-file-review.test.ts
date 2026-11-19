@@ -291,6 +291,7 @@ beforeEach(() => {
     globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
   ).IS_REACT_ACT_ENVIRONMENT = true;
   vi.clearAllMocks();
+  p.sqlite = { getFirstAsync: vi.fn() };
   p.originalsEnabled = false;
   p.sqlite.getFirstAsync.mockReset().mockResolvedValue(null);
   p.recover.mockReset();
@@ -744,6 +745,13 @@ it("reopens a verified file without matching again, but rechecks bytes, publicat
     entity: { ...r.entity, version: 2 },
   }));
   await mount({ reviewCache });
+  expect(p.validate).toHaveBeenCalledTimes(1);
+  await act(async () => renderer!.unmount());
+  p.products = p.products.map((r) => ({
+    ...r,
+    entity: { ...r.entity, label: "Changed identity" },
+  }));
+  await mount({ reviewCache });
   expect(p.validate).toHaveBeenCalledTimes(2);
   await act(async () => renderer!.unmount());
   p.digest.mockResolvedValueOnce(new Uint8Array(32).fill(1).buffer);
@@ -794,4 +802,13 @@ it("shows immediate saving feedback for distinct creation, then progress while r
     finish();
   });
   expect(text(renderer!.root)).not.toContain("Enregistrement des produits…");
+});
+
+it("keeps the verified review through a complete route unmount without an injected cache", async () => {
+  await mount();
+  await act(async () => renderer!.unmount());
+  await mount();
+  expect(p.validate).toHaveBeenCalledTimes(1);
+  expect(p.read).toHaveBeenCalledTimes(2);
+  expect(p.duplicate).toHaveBeenCalledTimes(2);
 });
