@@ -269,3 +269,57 @@ it("retains national source provenance after SQLite restart and provider failure
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+it("retains an empty past day beside fresh forecasts with its own source times across repository instances", async () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    await runLocalMigrations(adapter(db));
+    const settings = storeContextFixture();
+    const old = weeklyContextFixture(settings);
+    old.weather.days[0]!.validDate = "2026-10-07";
+    const repo = new WeeklyContextRepository(adapter(db));
+    await repo.save(old, settings);
+    const next = structuredClone(old);
+    next.retrievedAt = "2026-10-10T08:00:00.000Z";
+    next.weather.retrievedAt = next.retrievedAt;
+    next.weather.validUntil = "2026-10-10T09:00:00.000Z";
+    next.weather.days = [
+      {
+        ...old.weather.days[0]!,
+        temperatureMinC: null,
+        temperatureMaxC: null,
+        temperatureSampleCount: 0,
+        precipitationMm: null,
+        precipitationHours: 0,
+      },
+      { ...old.weather.days[0]!, validDate: "2026-10-10", temperatureMaxC: 22 },
+    ];
+    await repo.save(next, settings);
+    const saved = (await new WeeklyContextRepository(adapter(db)).get(
+      settings,
+      next.weekStart,
+    ))!;
+    expect(saved.weather.status).toBe("AVAILABLE");
+    expect(saved.weather.validUntil).toBe(next.weather.validUntil);
+    expect(saved.weather.days[0]).toMatchObject({
+      validDate: "2026-10-07",
+      type: "FORECAST",
+      temperatureMaxC: 18,
+      sourceSnapshot: {
+        retrievedAt: old.weather.retrievedAt,
+        issuedAt: old.weather.issuedAt,
+        status: "STALE",
+      },
+    });
+    expect(saved.weather.days[1]).toMatchObject({
+      validDate: "2026-10-10",
+      temperatureMaxC: 22,
+    });
+    expect(saved.weather.days[1]).not.toHaveProperty("sourceSnapshot");
+    expect(db.prepare("SELECT COUNT(*) AS n FROM sync_outbox").get()).toEqual({
+      n: 0,
+    });
+  } finally {
+    db.close();
+  }
+});

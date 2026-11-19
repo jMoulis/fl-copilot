@@ -1,5 +1,17 @@
 # Backlog produit — point du 18 novembre 2026
 
+**19 novembre — corrections du Journal en préparation, non livrées.**
+Demande propriétaire : météo conservée pour les jours passés, skeleton des tâches
+et icône Aujourd’hui permanente avant Actualiser. Branche `fix/journal-weather-navigation` :
+conservation par journée dans les archives et SQLite existants, dates de source
+préservées, repli explicite vers une prévision archivée si aucune mesure observée
+n’est disponible. Les semaines passées se lisent en base ; pas d’appel fournisseur
+pour les combler. Voir [le lot Journal](../qa/JOURNAL_WEATHER_CONTINUITY_2026_11_19.md).
+La [PR 546](https://github.com/jMoulis/fl-copilot/pull/546) Mercalys reste séparée,
+en brouillon, CI push/PR vertes (6 403 tests), recette native reportée par le propriétaire.
+Le build 85 est le dernier livré ; sa rapidité et ses réouvertures sont acceptées.
+Aucun nouveau build ni déploiement, les autres lots clos et reports restent inchangés.
+
 **Retour propriétaire sur build 84 : non accepté pour les PA.** Une création
 relance encore la recherche complète, et la réouverture montre de nouveau
 l’identification. Correctif incrémental PR 545 vérifié dans le simulateur sur

@@ -126,6 +126,8 @@ export function DailyTaskList({
       active.current = false;
     };
   }, []);
+  const [listHeight, setListHeight] = useState(132);
+  const [failedDate, setFailedDate] = useState<string>();
   const [rowDate, setRowDate] = useState<string>();
   const [rows, setRows] = useState<DailyRow[]>([]),
     [loaded, setLoaded] = useState(false),
@@ -212,6 +214,7 @@ export function DailyTaskList({
         setRows(combined);
         setRowDate(date);
         setLoaded(true);
+        setFailedDate(undefined);
         setError(
           commercialFailed
             ? "Les tâches du plan ne peuvent pas être lues. Tes pense-bêtes restent disponibles."
@@ -219,10 +222,12 @@ export function DailyTaskList({
         );
       }
     } catch {
-      if (active.current && generation === readGeneration.current)
+      if (active.current && generation === readGeneration.current) {
+        setFailedDate(date);
         setError(
           "La liste ne peut pas être lue. Tes pense-bêtes restent conservés.",
         );
+      }
     }
   }, [date, today, repo, sqlite, scope.storeId]);
   useFocusEffect(
@@ -451,6 +456,7 @@ export function DailyTaskList({
     r.kind === "commercial"
       ? r.status === "TODO"
       : r.record.entity.status === "TODO";
+  const reading = (!loaded || rowDate !== date) && failedDate !== date;
   const visibleRows = rowDate === date ? rows : [];
   const pending = visibleRows.filter(unfinished),
     finished = visibleRows.filter((r) => !unfinished(r));
@@ -568,43 +574,84 @@ export function DailyTaskList({
           {notice}
         </Text>
       ) : null}
-      {!loaded || rowDate !== date ? (
-        <Text style={s.meta}>Lecture de la liste…</Text>
-      ) : pending.length ? (
-        (expanded ? pending : pending.slice(0, 3)).map(renderRow)
-      ) : (
-        <Text style={s.empty}>Aucune tâche enregistrée pour ce jour.</Text>
-      )}
-      {pending.length > 3 ? (
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => setExpanded(!expanded)}
-          style={s.link}
-        >
-          <Text style={s.linkText}>
-            {expanded ? "Réduire la liste" : `Tout voir (${pending.length})`}
+      <View
+        onLayout={(event) => {
+          if (
+            !reading &&
+            rowDate === date &&
+            event.nativeEvent.layout.height > 0
+          )
+            setListHeight(event.nativeEvent.layout.height);
+        }}
+      >
+        {reading ? (
+          <View
+            accessibilityRole="progressbar"
+            accessibilityLabel="Lecture de la liste du jour"
+            accessibilityState={{ busy: true }}
+            style={{ height: listHeight, gap: 10 }}
+          >
+            {Array.from(
+              {
+                length: Math.max(1, Math.min(3, Math.floor(listHeight / 44))),
+              },
+              (_, i) => (
+                <View
+                  key={i}
+                  accessible={false}
+                  style={{
+                    height: Math.min(34, listHeight),
+                    borderRadius: 12,
+                    backgroundColor: c.line,
+                    opacity: 0.55,
+                    width: i === 1 ? "75%" : "100%",
+                  }}
+                />
+              ),
+            )}
+          </View>
+        ) : pending.length ? (
+          (expanded ? pending : pending.slice(0, 3)).map(renderRow)
+        ) : (
+          <Text style={s.empty}>
+            {failedDate === date && rowDate !== date
+              ? "Liste indisponible pour ce jour."
+              : "Aucune tâche enregistrée pour ce jour."}
           </Text>
-          <Ionicons name="arrow-forward" size={16} color={c.mint} />
-        </Pressable>
-      ) : null}
-      {finished.length ? (
-        <>
+        )}
+        {pending.length > 3 ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityState={{ expanded: history }}
+            onPress={() => setExpanded(!expanded)}
             style={s.link}
-            onPress={() => setHistory(!history)}
           >
-            <Text style={s.meta}>Terminés et annulés ({finished.length})</Text>
-            <Ionicons
-              name={history ? "chevron-up" : "chevron-down"}
-              size={16}
-              color={c.muted}
-            />
+            <Text style={s.linkText}>
+              {expanded ? "Réduire la liste" : `Tout voir (${pending.length})`}
+            </Text>
+            <Ionicons name="arrow-forward" size={16} color={c.mint} />
           </Pressable>
-          {history ? finished.map(renderRow) : null}
-        </>
-      ) : null}
+        ) : null}
+        {finished.length ? (
+          <>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: history }}
+              style={s.link}
+              onPress={() => setHistory(!history)}
+            >
+              <Text style={s.meta}>
+                Terminés et annulés ({finished.length})
+              </Text>
+              <Ionicons
+                name={history ? "chevron-up" : "chevron-down"}
+                size={16}
+                color={c.muted}
+              />
+            </Pressable>
+            {history ? finished.map(renderRow) : null}
+          </>
+        ) : null}
+      </View>
       <BottomSheet
         visible={!!sheet}
         dismissible={!busy && !hasDraftChanges}

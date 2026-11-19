@@ -1,5 +1,6 @@
 import {
   weeklyContextSchema,
+  retainWeatherHistory,
   storeContextFingerprint,
   type WeeklyContext,
   type StoreContextSettings,
@@ -96,32 +97,9 @@ export class WeeklyContextRepository {
           : {}),
       };
     }
-    // A fresh horizon no longer contains past forecasts. Retain the explicitly
-    // archived local forecast, with its original timestamps, beside observations.
-    const hasForecast = (days: WeeklyContext["weather"]["days"]) =>
-      days.some(
-        (d) =>
-          d.temperatureSampleCount > 0 ||
-          !!d.symbol ||
-          d.precipitationHours > 0,
-      );
-    if (
-      previous &&
-      hasForecast(previous.weather.days) &&
-      !hasForecast(next.weather.days)
-    ) {
-      next.weather = {
-        ...previous.weather,
-        status: "STALE",
-        issue: next.weather.issue,
-      };
-    }
+    next.weather = retainWeatherHistory(previous?.weather, next.weather);
     // A failed provider retains its last local value and original freshness timestamps.
-    for (const key of [
-      "weather",
-      "publicHolidays",
-      "schoolHolidays",
-    ] as const) {
+    for (const key of ["publicHolidays", "schoolHolidays"] as const) {
       if (
         previous?.[key].retrievedAt &&
         (next[key].status === "UNAVAILABLE" ||
@@ -149,6 +127,7 @@ export class WeeklyContextRepository {
 }
 export function contextIsStale(
   provider:
+    | NonNullable<WeeklyContext["weather"]["days"][number]["sourceSnapshot"]>
     | WeeklyContext["weather"]
     | WeeklyContext["publicHolidays"]
     | WeeklyContext["schoolHolidays"]

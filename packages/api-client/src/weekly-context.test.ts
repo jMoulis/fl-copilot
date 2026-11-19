@@ -69,6 +69,7 @@ it.each([
     const headers = new Headers(init.headers);
     expect(init.method).toBe(collect ? "POST" : "GET");
     expect(headers.get("x-context-weather-symbols")).toBe(enabled ? "1" : null);
+    expect(headers.get("x-context-weather-history")).toBe(enabled ? "1" : null);
     expect(headers.get("x-context-economy")).toBe(enabled ? "1" : null);
     expect(headers.get("x-context-produce-prices")).toBe(enabled ? "1" : null);
     expect(headers.get("x-context-journal")).toBe(enabled ? "1" : null);

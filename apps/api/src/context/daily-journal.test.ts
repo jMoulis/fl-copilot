@@ -124,3 +124,31 @@ it("the Copilot reads the stored journal without triggering live refresh even on
   expect(readStored).toHaveBeenCalledTimes(2);
   expect(read).not.toHaveBeenCalled();
 });
+
+it("merges rolling daily archives without replacing past values with empty slots or aging fresh days", () => {
+  const old = weeklyContextFixture();
+  old.weather.days[0]!.validDate = "2026-10-07";
+  const next = structuredClone(old);
+  next.weather.retrievedAt = "2026-10-10T08:00:00.000Z";
+  next.weather.days = [
+    {
+      ...old.weather.days[0]!,
+      temperatureMinC: null,
+      temperatureMaxC: null,
+      temperatureSampleCount: 0,
+      precipitationMm: null,
+      precipitationHours: 0,
+    },
+    { ...old.weather.days[0]!, validDate: "2026-10-10", temperatureMaxC: 23 },
+  ];
+  const merged = mergeDailyWeek(old, next);
+  expect(merged.weather.days[0]).toMatchObject({
+    temperatureMaxC: 18,
+    sourceSnapshot: { retrievedAt: old.weather.retrievedAt, status: "STALE" },
+  });
+  expect(merged.weather.status).toBe("AVAILABLE");
+  expect(merged.weather.days[1]).toEqual(next.weather.days[1]);
+  const again = mergeDailyWeek(merged, next);
+  expect(again.weather.days[0]).toEqual(merged.weather.days[0]);
+  expect(old.weather.days[0]).not.toHaveProperty("sourceSnapshot");
+});

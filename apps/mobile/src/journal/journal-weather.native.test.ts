@@ -42,7 +42,7 @@ const text = () =>
     .findAll((n) => String(n.type) === "Text")
     .map((n) => n.children.filter((x) => typeof x === "string").join(""))
     .join(" ");
-async function mount(observed = true) {
+async function mount(observed: boolean | "missing" = true) {
   const context = weeklyContextFixture();
   context.weather.days[0] = {
     ...context.weather.days[0]!,
@@ -54,6 +54,7 @@ async function mount(observed = true) {
     },
   };
   if (observed) context.observedWeather = observedWeatherContextFixture();
+  if (observed === "missing") context.observedWeather!.days = [];
   const refresh = vi.fn();
   await act(() => {
     tree = create(
@@ -119,4 +120,16 @@ it("keeps old API responses readable and never relabels a forecast as an observa
   );
   expect(text()).toContain("Une prévision archivée reste une prévision");
   expect(refresh).not.toHaveBeenCalled();
+});
+
+it("shows a saved forecast when observed measurements are absent without calling a provider", async () => {
+  const { refresh } = await mount("missing");
+  expect(text()).toContain("Prévision archivée");
+  expect(text()).toContain("Ensoleillé");
+  expect(text()).not.toContain("Météo observée");
+  expect(refresh).not.toHaveBeenCalled();
+  await act(() =>
+    tree!.root.find((n) => String(n.type) === "Pressable").props.onPress(),
+  );
+  expect(text()).toContain("Une prévision archivée reste une prévision");
 });

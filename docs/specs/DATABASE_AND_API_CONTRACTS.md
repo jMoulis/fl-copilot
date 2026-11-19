@@ -1,3 +1,17 @@
+## Optional forecast history provenance — 19 November 2026
+
+`ForecastDay.sourceSnapshot` is optional and stores the retained day's actual
+retrievedAt, issuedAt, validUntil (nullable ISO instants) and provider status. It
+keeps an archived forecast distinct from a new rolling horizon; type remains
+FORECAST. Server daily archives and SQLite weekly_context_cache reuse the same
+shared retention function. No new collection, migration or business command.
+
+The context HTTP route exposes this field only with `x-context-weather-history: 1`;
+older strict clients receive the previous shape. New clients accept older caches
+and API responses without it. Geographic/store/week isolation and immutable
+source records remain unchanged. History is read from already collected data;
+absence does not trigger retrospective provider fetching from a historical screen.
+
 ## Owner-approved extension — 18 November 2026: dated purchase prices
 
 `MERCALYS_PURCHASE_PRICES` extends canonical Mercalys XLSX/ZIP/email intake.
