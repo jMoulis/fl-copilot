@@ -1,3 +1,15 @@
+## Owner arbitration — 19 November 2026
+
+Mercalys coded imports use ITM8/EAN rather than text resemblance as the identity
+gate for grouped creation. Uncoded rows and conflicting/archived code owners remain
+reviewed. Creation/association updates affected rows immediately; a visible
+“Terminer les confirmations” action refreshes the file once, including a partial
+session. Pending edits survive leaving/restarting and block publication until
+finalization. Existing retained imports adopt these rules without re-uploading or
+rewriting published observations. Catalogue cleanup shows observed sales and PA
+coverage; inactivity is never inferred automatically and archival is reversible.
+This supersedes older whole-file rematching-after-each-choice UX requirements.
+
 ## Owner-approved extension — 18 November 2026: daily purchase-price imports
 
 Imports exposes Prix d’achat quotidiens through the canonical local XLSX/ZIP

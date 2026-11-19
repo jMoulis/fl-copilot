@@ -213,6 +213,7 @@ export async function partialChatImportFixture(
     new SheetJsSpreadsheetParser().parse(file.f.bytes),
     s.scope.storeId,
     catalog,
+    "LEGACY",
   );
   const publication = await new MercalysImportPublicationRepository(
     s.a,

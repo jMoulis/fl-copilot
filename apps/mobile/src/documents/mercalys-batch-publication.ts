@@ -305,7 +305,9 @@ function safeCode(reason: unknown) {
     return "MERCALYS_EXACT_DUPLICATE";
   if (
     reason instanceof Error &&
-    reason.message === "MERCALYS_BATCH_FILE_CHANGED"
+    ["MERCALYS_BATCH_FILE_CHANGED", "MERCALYS_CONFIRMATIONS_PENDING"].includes(
+      reason.message,
+    )
   )
     return reason.message;
   return (

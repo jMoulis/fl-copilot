@@ -864,6 +864,28 @@ describe("MercalysImportPublicationRepository", () => {
       generateId,
       now,
     );
+    const known = new ProductMasterRepository(adapter);
+    for (let i = 0; i < 23; i++)
+      await known.upsertIdentifier(
+        {
+          id: generateId(),
+          storeId,
+          productId: ids[i]!,
+          type: "ITM8",
+          value: String(i + 1).padStart(8, "0"),
+          source: "MERCALYS",
+          status: "VALIDATED",
+          version: 1,
+          createdAt: now(),
+          updatedAt: now(),
+          deletedAt: null,
+        },
+        {
+          commandId: generateId(),
+          deviceId: "88888888-8888-4888-8888-888888888888",
+          expectedRemoteVersion: null,
+        },
+      );
     const original = reconciliationSummary(
       ids.map((id, i) => {
         const line: MercalysImportValidationSummary["lines"][number] =

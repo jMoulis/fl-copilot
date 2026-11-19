@@ -157,6 +157,7 @@ vi.mock("./mercalys-batch-repository", () => ({
     get = ports.get;
     refresh = ports.refresh;
     publications = ports.publications;
+    pendingConfirmations = async () => [];
     retainedLocation = async () => "file:///retained/21102026.xlsx";
   },
 }));

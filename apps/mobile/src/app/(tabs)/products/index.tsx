@@ -137,6 +137,7 @@ function StoreCatalogue({
         router.canGoBack() ? router.back() : router.replace("/(tabs)/copilot")
       }
       onAdd={() => router.push("/product/new" as Href)}
+      onCleanup={() => router.push("/(tabs)/products/cleanup" as Href)}
       loading={state.loading}
       error={state.error}
       notice={notice}

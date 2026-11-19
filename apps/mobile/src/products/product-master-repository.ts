@@ -246,6 +246,19 @@ export class ProductMasterRepository {
     return rows.map(mapIdentifier);
   }
 
+  async findIdentifiersByCodes(
+    storeId: string,
+    codes: readonly Pick<ProductIdentifier, "type" | "value">[],
+  ) {
+    if (!codes.length) return [];
+    const rows = await this.database.getAllAsync<IdentifierRow>(
+      `SELECT * FROM product_identifiers WHERE store_id=? AND deleted_at IS NULL AND (${codes.map(() => "(type=? AND value=?)").join(" OR ")}) ORDER BY type,value,id`,
+      storeId,
+      ...codes.flatMap((code) => [code.type, code.value]),
+    );
+    return rows.map(mapIdentifier);
+  }
+
   async listIdentifiersByStore(storeId: string) {
     const rows = await this.database.getAllAsync<IdentifierRow>(
       `
