@@ -1,3 +1,4 @@
+import { hasPurchasePriceCollision } from "./mercalys-purchase-price-review";
 import {
   normalizeProductLabel,
   type ProductIdentifier,
@@ -25,6 +26,7 @@ export interface MercalysProductResolution {
   canCreateAsDistinct: boolean;
   /** Explicit review of an existing automatic association, never a bulk action. */
   expectedProductIds?: string[];
+  priceConflict?: Array<{ label: string; amount: string; itm8: string | null }>;
 }
 
 interface ResolutionOptions {
@@ -79,7 +81,24 @@ export function buildMercalysProductResolutions(
       ];
       const hasStableIdentity =
         identifiers.length > 0 && normalizedLabels.size === 1;
+      const priceCollision = lines.some(hasPurchasePriceCollision);
+      const correcting = key === selectedKey || priceCollision;
       return {
+        ...(priceCollision
+          ? {
+              priceConflict: summary.lines
+                .filter(
+                  (l) =>
+                    l.match.matchedProductId === first.match.matchedProductId &&
+                    l.record.businessDate === first.record.businessDate,
+                )
+                .map((l) => ({
+                  label: l.record.rawLabel,
+                  amount: l.record.purchasePrice!.amount,
+                  itm8: l.record.itm8,
+                })),
+            }
+          : {}),
         key,
         label: first.record.rawLabel,
         identifiers,
@@ -88,7 +107,7 @@ export function buildMercalysProductResolutions(
         canCreate:
           hasStableIdentity &&
           lines.every(({ match }) => match.state === "NO_MATCH"),
-        ...(key === selectedKey
+        ...(correcting
           ? {
               expectedProductIds: [
                 ...new Set(
@@ -101,7 +120,7 @@ export function buildMercalysProductResolutions(
           : {}),
         canCreateAsDistinct:
           hasStableIdentity &&
-          (key === selectedKey ||
+          (correcting ||
             lines.every(
               ({ match }) =>
                 match.state !== "AUTO_MATCH" &&

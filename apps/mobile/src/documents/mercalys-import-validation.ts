@@ -1,3 +1,4 @@
+import { reviewPurchasePriceCollisions } from "./mercalys-purchase-price-review";
 import { parseMercalysPurchasePrices } from "@fl-copilot/import-core";
 import {
   prepareMercalysProductMatcher,
@@ -104,7 +105,7 @@ function withMatches(
   const readyCount = lines.filter(
     (line) => line.match.state === "AUTO_MATCH",
   ).length;
-  return {
+  return reviewPurchasePriceCollisions({
     sourceType: summary.sourceType,
     ...("sourceStoreCode" in summary
       ? { sourceStoreCode: summary.sourceStoreCode }
@@ -118,7 +119,7 @@ function withMatches(
     errorCount: summary.errorCount,
     lines,
     issueCodes: summary.issueCodes,
-  };
+  });
 }
 export function validateMercalysImport(
   workbook: SpreadsheetWorkbook,

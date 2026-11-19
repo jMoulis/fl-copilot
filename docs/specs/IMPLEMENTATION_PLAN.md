@@ -1,3 +1,16 @@
+## PA publication regression — 19 November 2026
+
+Before counting a PA row as ready, detect multiple source references mapped to
+one product on the same application date. Keep every conflicting reference for
+explicit association review, including equal prices; never choose an arbitrary
+price or split catalogue products automatically. Reuse the existing explicit
+mapping correction and partial-publication/continuation paths. Recheck the rule
+at publication and preserve already-published observations on continuation.
+Show the conflicting references and prices, one creation progress indicator,
+and publication failures next to the action with a publication-specific title.
+Test the complete real-file publication on an isolated catalogue copy as well
+as collision correction, continuation and rollback/synchronization contracts.
+
 ## Owner release arbitration — 19 November 2026
 
 The owner requests a local iPhone/TestFlight build to perform acceptance directly
