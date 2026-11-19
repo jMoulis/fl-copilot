@@ -18,6 +18,7 @@ type Outcome = {
   publishedCount: number;
   remainingCount: number;
   code?: string;
+  analyticsJobId?: string | null;
 };
 /** Explicit native plan confirmation; no model/source-controlled writer or silent overlap approval. */
 export class MercalysBatchPublication {
@@ -263,6 +264,7 @@ export class MercalysBatchPublication {
         results.push({
           ...base,
           status: "PUBLISHED",
+          analyticsJobId: result.analyticsJobId,
           publishedCount: result.publishedCount,
           remainingCount: result.remainingCount,
         });

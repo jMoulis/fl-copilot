@@ -100,7 +100,7 @@ export function MercalysBatchPanel({
   conversationId?: string;
   onDiscuss?(batchId: string): Promise<void>;
   onBusyChange?(busy: boolean): void;
-  onPublished?(): Promise<void>;
+  onPublished?(needsAnalytics: boolean): Promise<void>;
   pick(): Promise<MercalysSelectedFile[] | undefined>;
   pickZip?(): Promise<MercalysSelectedFile | undefined>;
   renderReview(
@@ -317,7 +317,12 @@ export function MercalysBatchPanel({
     const report = await publisher.publishUnambiguous(batchId, signal);
     await load(batchId);
     if (alive.current) setPublicationReport(report);
-    if (report.some((r) => r.status === "PUBLISHED")) await onPublished?.();
+    if (report.some((r) => r.status === "PUBLISHED"))
+      await onPublished?.(
+        report.some(
+          (r) => r.status === "PUBLISHED" && r.analyticsJobId !== null,
+        ),
+      );
   }
   async function processArchive(id: string, signal: AbortSignal) {
     if (alive.current) setProgress("Lecture de l’archive en cours…");
@@ -947,7 +952,13 @@ export function MercalysBatchPanel({
                       await load(plan.batchId);
                       if (alive.current) setPublicationReport(report);
                       if (report.some((item) => item.status === "PUBLISHED"))
-                        await onPublished?.();
+                        await onPublished?.(
+                          report.some(
+                            (r) =>
+                              r.status === "PUBLISHED" &&
+                              r.analyticsJobId !== null,
+                          ),
+                        );
                     })
                   }
                 />

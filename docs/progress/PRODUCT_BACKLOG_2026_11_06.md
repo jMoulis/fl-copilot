@@ -1,5 +1,16 @@
 # Backlog produit — point du 18 novembre 2026
 
+**20 novembre — simplification du parcours PA approuvée, en validation.**
+Le propriétaire prend le dernier build comme référence et demande de séparer
+l'ajout des prix de l'entretien du catalogue : résumé PA d'abord, ajout des
+références reconnues, traitement facultatif des autres et choix du prix distinct
+de la réassociation produit. Retrait de la finalisation manuelle globale pour
+les PA, revalidation avant ajout et accès direct à la suite d'un import partiel.
+[Comportement, contrôles et limites](../qa/PA_SIMPLE_IMPORT_FLOW_2026_11_20.md).
+Pas de remise à zéro, nouvelle API ou modification des données utilisateur.
+Code/préparation, disponibilité du prochain build et recette iPhone sont distincts.
+Les anciennes notes ci-dessous conservent leur date.
+
 **19 novembre — choix explicite du PA pour un même article : recette en cours.**
 Le propriétaire confirme que plusieurs références peuvent désigner une seule
 fiche et souhaite retenir un PA. Choix par prix/code/date, alternatives conservées,
