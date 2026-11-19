@@ -1,3 +1,10 @@
+## Owner release arbitration — 19 November 2026
+
+The owner requests a local iPhone/TestFlight build to perform acceptance directly
+before returning to the Mac. For PRs 546/547 this supersedes the pre-build simulator
+gate. Automated checks and archive verification remain required; do not claim
+native visual acceptance before the owner's feedback. No paid cloud compilation.
+
 ## Owner-approved Journal continuity — 19 November 2026
 
 Retain each previously collected forecast day in the existing server archive and
@@ -13,6 +20,28 @@ task content during same-day background reads; on date changes reserve the list
 height with a skeleton until local data arrives, without displaying another day's
 tasks or allowing stale responses to win. Native acceptance remains separate from
 unit/render tests and is required before a new iPhone build. No paid cloud build.
+
+## Owner-approved Mercalys sessions and catalogue cleanup — 19 November 2026
+
+Use ITM8/EAN identity for coded Mercalys rows: a known unambiguous active product
+is reused, conflicting/inactive owners require review, and wholly unknown codes
+allow explicit grouped creation regardless of label resemblance. No-code rows
+retain reviewed matching. Apply on reopening existing retained sources, preserving
+published history and previous code decisions. No automatic mass creation.
+
+Save each confirmation locally with canonical Outbox immediately; update affected
+rows only. Persist a private per-source pending-finalization marker before edits.
+“Terminer les confirmations” performs one complete refresh and current publication
+checks; publication is disabled until finalization. Exiting/restarting preserves
+saved decisions and pending status. Guard double taps and stale code ownership.
+
+Provide a local catalogue cleanup view with chosen no-sale period, last known sale,
+source coverage qualification and latest published PA-file presence. Archive only
+explicitly selected articles using existing INACTIVE product status and ordinary
+Outbox; restoration is available and historical observations remain untouched.
+Archived identifiers continue to block duplicate import creation. Verify isolated
+native rapid actions, interruption/reopen, retroactive source review and cleanup.
+No AI, new infrastructure, production test records or paid cloud compilation.
 
 ## PA review regression after build 84 — 18 November 2026
 

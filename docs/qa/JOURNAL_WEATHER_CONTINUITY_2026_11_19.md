@@ -1,5 +1,11 @@
 # Journal — conservation météo et navigation, 19 novembre 2026
 
+**Arbitrage de livraison du 19 novembre :** le propriétaire demande le build
+local/TestFlight pour tester lui-même sur iPhone avant son retour au Mac. Pour
+cette livraison, cette recette remplace le préalable simulateur décrit plus bas.
+Aucune validation visuelle n’est revendiquée. Contrôles automatisés et vérification
+de l’archive maintenus ; aucun build EAS cloud payant.
+
 Statut : implémentation en branche `fix/journal-weather-navigation`, non livrée.
 Le lot Mercalys PR 546 reste séparé et attend sa recette native. Pas de nouveau
 build ni déploiement API à ce stade ; ne pas rouvrir les autres lots acceptés.

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   matchProduct as matchSingleProduct,
   prepareProductMatcher,
+  prepareMercalysProductMatcher,
   prepareProductRematcher,
   productMatchingSignature,
   type ProductMatchCatalog,
@@ -467,4 +468,62 @@ it("keeps fuzzy ties and refills truncated rankings when a retained candidate ch
       prepareProductRematcher(storeId, before, after)(request, previous),
     ).toEqual(matchSingleProduct(request, after));
   }
+});
+
+describe("Mercalys code identity", () => {
+  it("allows a new code even for an identical label, while preserving the generic matcher", () => {
+    const c = catalog({ identifiers: [] });
+    const request = {
+      storeId,
+      identifiers: [{ type: "ITM8" as const, value: "000999" }],
+      label: c.products[0]!.label,
+    };
+    expect(prepareMercalysProductMatcher(storeId, c)(request).state).toBe(
+      "NO_MATCH",
+    );
+    expect(prepareProductMatcher(storeId, c)(request).state).toBe("AUTO_MATCH");
+    expect(
+      prepareMercalysProductMatcher(storeId, c)({ ...request, identifiers: [] })
+        .state,
+    ).toBe("REVIEW");
+  });
+  it("reuses either code but preserves conflicting and inactive ownership", () => {
+    const c = catalog({
+      identifiers: [
+        identifier("a", pearId, "ITM8", "0001"),
+        identifier("b", appleId, "EAN", "0002"),
+      ],
+    });
+    const req = {
+      storeId,
+      identifiers: [
+        { type: "ITM8" as const, value: "0001" },
+        { type: "EAN" as const, value: "new" },
+      ],
+      label: "Autre nom",
+    };
+    expect(
+      prepareMercalysProductMatcher(storeId, c)(req).matchedProductId,
+    ).toBe(pearId);
+    expect(
+      prepareMercalysProductMatcher(
+        storeId,
+        c,
+      )({
+        ...req,
+        identifiers: [req.identifiers[0]!, { type: "EAN", value: "0002" }],
+      }).conflict?.kind,
+    ).toBe("IDENTIFIER_CONFLICT");
+    const retired = {
+      ...c,
+      products: c.products.map((p) =>
+        p.id === pearId ? { ...p, status: "INACTIVE" as const } : p,
+      ),
+    };
+    expect(prepareMercalysProductMatcher(storeId, retired)(req)).toMatchObject({
+      state: "AMBIGUOUS",
+      method: "EXACT_IDENTIFIER",
+      matchedProductId: null,
+    });
+  });
 });

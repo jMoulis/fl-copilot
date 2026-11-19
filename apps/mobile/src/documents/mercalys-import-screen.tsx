@@ -1,4 +1,8 @@
 import {
+  MercalysConfirmationSession,
+  commitMercalysResolution,
+} from "./mercalys-confirmation-session";
+import {
   MercalysReviewCache,
   getMercalysReviewCache,
 } from "./mercalys-review-cache";
@@ -53,6 +57,7 @@ import {
 import {
   MercalysImportValidationError,
   rematchMercalysImportResponsive,
+  updateMercalysResolvedLines,
   validateMercalysImportResponsive,
   type MercalysImportValidationSummary,
 } from "./mercalys-import-validation";
@@ -66,9 +71,6 @@ import {
 import type { MercalysReconciliation } from "./mercalys-import-reconciliation";
 import {
   buildMercalysProductResolutions,
-  confirmMercalysProductMapping,
-  correctMercalysProductMapping,
-  createMercalysProducts,
   type MercalysProductResolution,
 } from "./mercalys-product-resolution";
 import { SheetJsSpreadsheetParser } from "./sheetjs-spreadsheet-parser";
@@ -233,6 +235,20 @@ export function MercalysImportScreen({
   const [publication, setPublication] = useState<FilePublication>();
   const [publishing, setPublishing] = useState(false);
   const [resolvingProducts, setResolvingProducts] = useState(false);
+  const actionLock = useRef(false);
+  const [pendingConfirmations, setPendingConfirmations] = useState(false);
+  const confirmationSession = useMemo(
+    () =>
+      storeId && actorUserId && selectedChecksum
+        ? new MercalysConfirmationSession(
+            sqlite,
+            storeId,
+            actorUserId,
+            selectedChecksum,
+          )
+        : undefined,
+    [sqlite, storeId, actorUserId, selectedChecksum],
+  );
   const [resolutionProgress, setResolutionProgress] = useState<{
     completed: number;
     total: number;
@@ -330,6 +346,16 @@ export function MercalysImportScreen({
         );
         assertReading();
         setSelectedChecksum(checksum);
+        setPendingConfirmations(
+          actorUserId
+            ? await new MercalysConfirmationSession(
+                sqlite,
+                storeId,
+                actorUserId,
+                checksum,
+              ).pending()
+            : false,
+        );
         if (priorImport) {
           const pending = await publicationRepository.continuation(
             storeId,
@@ -372,6 +398,7 @@ export function MercalysImportScreen({
     },
     [
       storeId,
+      actorUserId,
       repository,
       publicationRepository,
       sqlite,
@@ -408,6 +435,7 @@ export function MercalysImportScreen({
     setKeptExisting(false);
     setPublication(undefined);
     setResolutionProgress(undefined);
+    setPendingConfirmations(false);
     setError(undefined);
   }
 
@@ -426,7 +454,7 @@ export function MercalysImportScreen({
           )
         : undefined;
     const rematched = await rematchMercalysImportResponsive(
-      previous ?? currentSummary,
+      continuation ? (previous ?? currentSummary) : currentSummary,
       storeId,
       catalog,
       undefined,
@@ -466,135 +494,133 @@ export function MercalysImportScreen({
     }
   }
 
-  async function createMissingProducts(
-    selectedResolutions: readonly MercalysProductResolution[] = productResolutions,
-    allowExplicitDistinct = false,
+  async function saveResolutions(
+    resolutions: readonly MercalysProductResolution[],
+    targetProductId: string | null,
   ) {
-    if (!storeId || !summary) {
-      setError(
-        "Sélectionnez de nouveau le fichier avant de créer les produits.",
-      );
+    if (
+      actionLock.current ||
+      !resolutions.length ||
+      !storeId ||
+      !summary ||
+      !productCatalog ||
+      !confirmationSession
+    )
       return;
-    }
+    actionLock.current = true;
     setResolvingProducts(true);
     setResolutionPhase("SAVING");
-    setResolutionProgress({
-      completed: 0,
-      total: selectedResolutions.filter(
-        (r) => r.canCreate || (allowExplicitDistinct && r.canCreateAsDistinct),
-      ).length,
-    });
     setError(undefined);
+    setResolutionProgress({ completed: 0, total: resolutions.length });
+    const completed: number[] = [];
     try {
-      await yieldToInterface();
-      await createMercalysProducts(
-        repository,
-        selectedResolutions,
-        {
-          storeId,
-          deviceId,
-          now: () => new Date().toISOString(),
-          generateId: randomUUID,
-        },
-        (completed, total) => {
-          setResolutionProgress({ completed, total });
-          if (completed > 0) onChanged?.();
-        },
-        allowExplicitDistinct,
-      );
-      await refreshProductMatches(summary);
-    } catch {
-      try {
-        await refreshProductMatches(summary);
-      } catch {
-        // Keep the original resolution error visible if refreshing also fails.
+      // Durable before the first mutation: interruption cannot expose an unfinalized publication.
+      await confirmationSession.begin();
+      setPendingConfirmations(true);
+      for (const resolution of resolutions) {
+        await yieldToInterface();
+        await commitMercalysResolution(
+          sqlite,
+          resolution,
+          targetProductId,
+          productCatalog,
+          {
+            storeId,
+            deviceId,
+            now: () => new Date().toISOString(),
+            generateId: randomUUID,
+            assertCurrent: () => {
+              const current = archiveAuthority.current;
+              if (
+                !current.archiveFocused ||
+                current.sqlite !== sqlite ||
+                current.session?.user.id !== actorUserId ||
+                current.session?.stores[0]?.storeId !== storeId ||
+                current.session?.stores[0]?.role !== "MANAGER"
+              )
+                throw Error("MERCALYS_REVIEW_SCOPE_CHANGED");
+            },
+          },
+        );
+        completed.push(...resolution.sourceIndexes);
+        setResolutionProgress((old) => ({
+          completed: (old?.completed ?? 0) + 1,
+          total: resolutions.length,
+        }));
       }
-      setError(
-        "La création des produits s’est interrompue. Les produits déjà créés sont conservés; relancez l’action pour terminer.",
-      );
-    } finally {
-      setResolvingProducts(false);
-    }
-  }
-
-  async function createDistinctProduct(resolution: MercalysProductResolution) {
-    if (!resolution.expectedProductIds) {
-      await createMissingProducts([resolution], true);
-      return;
-    }
-    if (!storeId || !summary) return;
-    setResolvingProducts(true);
-    setResolutionPhase("SAVING");
-    setResolutionProgress({ completed: 0, total: 1 });
-    setError(undefined);
-    let saved = false;
-    try {
-      await yieldToInterface();
-      await correctMercalysProductMapping(sqlite, resolution, null, {
-        storeId,
-        deviceId,
-        now: () => new Date().toISOString(),
-        generateId: randomUUID,
-      });
-      saved = true;
-      onChanged?.();
-      await refreshProductMatches(summary);
     } catch {
       setError(
-        saved
-          ? "Le produit est créé, mais la comparaison n’a pas pu être actualisée. Rouvrez le fichier avant d’appliquer sa nouvelle version."
-          : "Le produit distinct n’a pas pu être créé. Aucune correction partielle n’a été enregistrée. Rouvrez le fichier pour vérifier les associations.",
+        "L’action s’est interrompue ou les codes ont changé. Les décisions enregistrées sont conservées. Termine les confirmations pour actualiser la liste.",
       );
     } finally {
+      try {
+        if (completed.length) {
+          onChanged?.();
+          const catalog = await loadProductCatalog(repository, storeId);
+          setProductCatalog(catalog);
+          const next = updateMercalysResolvedLines(
+            summary,
+            storeId,
+            catalog,
+            completed,
+          );
+          setSummary(next);
+          if (!continuation && validationCache && selectedChecksum)
+            validationCache.put(
+              validationCache.key(storeId, selectedChecksum, catalog),
+              next,
+            );
+          setResolutionKey(undefined);
+          setReviewSourceIndex(undefined);
+        }
+      } catch {
+        setError(
+          "Les décisions sont enregistrées. Termine les confirmations pour actualiser la liste.",
+        );
+      }
+      actionLock.current = false;
       setResolvingProducts(false);
     }
   }
-
+  async function createMissingProducts(
+    resolutions: readonly MercalysProductResolution[] = productResolutions,
+  ) {
+    await saveResolutions(
+      resolutions.filter((r) => r.canCreate),
+      null,
+    );
+  }
+  async function createDistinctProduct(resolution: MercalysProductResolution) {
+    await saveResolutions([resolution], null);
+  }
   async function confirmProductMapping(
     resolution: MercalysProductResolution,
     productId: string,
   ) {
-    if (!storeId || !summary) return;
+    await saveResolutions([resolution], productId);
+  }
+  async function finishConfirmations() {
+    if (actionLock.current || !summary || !confirmationSession) return;
+    actionLock.current = true;
     setResolvingProducts(true);
-    setResolutionPhase("SAVING");
-    setResolutionProgress({ completed: 0, total: 1 });
     setError(undefined);
     try {
-      await yieldToInterface();
-      const options = {
-        storeId,
-        deviceId,
-        now: () => new Date().toISOString(),
-        generateId: randomUUID,
-      };
-      if (resolution.expectedProductIds) {
-        await correctMercalysProductMapping(
-          sqlite,
-          resolution,
-          productId,
-          options,
-        );
-      } else {
-        await confirmMercalysProductMapping(
-          repository,
-          resolution,
-          productId,
-          options,
-        );
-      }
-      onChanged?.();
       await refreshProductMatches(summary);
+      await confirmationSession.finish();
+      setPendingConfirmations(false);
     } catch {
       setError(
-        "La correspondance n’a pas pu être enregistrée. Vérifiez les conflits de synchronisation puis rouvrez le fichier.",
+        "L’actualisation n’a pas abouti. Tes décisions sont conservées ; tu peux réessayer.",
       );
     } finally {
+      actionLock.current = false;
       setResolvingProducts(false);
     }
   }
 
   const publishValidLines = useCallback(async () => {
     if (
+      pendingConfirmations ||
       !storeId ||
       !filename ||
       !summary ||
@@ -714,6 +740,7 @@ export function MercalysImportScreen({
     summary,
     selectedBytes,
     selectedChecksum,
+    pendingConfirmations,
     reconciliation,
     continuation,
     actorUserId,
@@ -728,7 +755,13 @@ export function MercalysImportScreen({
   useEffect(() => {
     const report = reviewResultCallback.current;
     if (!report) return;
-    if (stage !== "COMPLETE" || resolvingProducts || publishing || error)
+    if (
+      stage !== "COMPLETE" ||
+      resolvingProducts ||
+      publishing ||
+      error ||
+      pendingConfirmations
+    )
       return report(undefined);
     if (duplicate)
       return report({
@@ -750,6 +783,7 @@ export function MercalysImportScreen({
       });
   }, [
     stage,
+    pendingConfirmations,
     resolvingProducts,
     publishing,
     error,
@@ -760,6 +794,7 @@ export function MercalysImportScreen({
   const autoAttempts = useRef(new Set<string>());
   useEffect(() => {
     if (
+      pendingConfirmations ||
       retainedAsset ||
       stage !== "COMPLETE" ||
       loading ||
@@ -790,6 +825,7 @@ export function MercalysImportScreen({
     void publishValidLines();
   }, [
     retainedAsset,
+    pendingConfirmations,
     stage,
     loading,
     publishing,
@@ -1057,9 +1093,11 @@ export function MercalysImportScreen({
           <View className="gap-2">
             <InlineAlert
               title={
-                retainedAsset
-                  ? "Consultation du fichier impossible"
-                  : "Import impossible"
+                pendingConfirmations
+                  ? "Confirmation à reprendre"
+                  : retainedAsset
+                    ? "Consultation du fichier impossible"
+                    : "Import impossible"
               }
               message={error}
             />
@@ -1073,6 +1111,26 @@ export function MercalysImportScreen({
           </View>
         ) : null}
 
+        {pendingConfirmations && summary ? (
+          <SectionCard title="Confirmations enregistrées">
+            <Text className="text-base text-muted">
+              Tu peux continuer la liste ou terminer cette session. Une
+              actualisation reste nécessaire avant publication, même si tu
+              quittes cet écran.
+            </Text>
+            <PrimaryButton
+              label="Terminer les confirmations"
+              disabled={resolvingProducts || publishing}
+              onPress={() => void finishConfirmations()}
+            />
+            {resolvingProducts && resolutionPhase === "MATCHING" ? (
+              <Text accessibilityLiveRegion="polite">
+                Actualisation… {matchingProgress?.completed ?? 0}/
+                {summary.lines.length}
+              </Text>
+            ) : null}
+          </SectionCard>
+        ) : null}
         {summary && section === "PRODUCTS" && productCatalog && storeId ? (
           <ProductResolutionSummary
             key={resolutionKey ?? "all"}
@@ -1118,6 +1176,7 @@ export function MercalysImportScreen({
             previouslyPublishedCount={continuation?.publishedCount ?? 0}
             publication={publication}
             publishing={publishing}
+            pendingConfirmations={pendingConfirmations}
             onPublish={() => {
               void publishValidLines();
             }}
@@ -1125,7 +1184,10 @@ export function MercalysImportScreen({
           />
         ) : null}
 
-        {summary && reconciliation && section === "SUMMARY" ? (
+        {summary &&
+        reconciliation &&
+        !pendingConfirmations &&
+        section === "SUMMARY" ? (
           <SectionCard title="Nouvelle version à examiner">
             <Text className="text-base text-ink">
               {summary.detectedLineCount} lignes ·{" "}
@@ -1144,7 +1206,10 @@ export function MercalysImportScreen({
             ) : null}
           </SectionCard>
         ) : null}
-        {summary && reconciliation && section === "DIFFERENCES" ? (
+        {summary &&
+        reconciliation &&
+        !pendingConfirmations &&
+        section === "DIFFERENCES" ? (
           <MercalysReconciliationReview
             key={selectedChecksum}
             reconciliation={reconciliation}
@@ -1324,6 +1389,7 @@ function ValidationSummary({
   previouslyPublishedCount = 0,
   publication,
   publishing,
+  pendingConfirmations,
   onPublish,
   onCancel,
 }: {
@@ -1332,6 +1398,7 @@ function ValidationSummary({
   previouslyPublishedCount?: number;
   publication?: FilePublication;
   publishing: boolean;
+  pendingConfirmations: boolean;
   onPublish: () => void;
   onCancel: () => void;
 }) {
@@ -1343,7 +1410,11 @@ function ValidationSummary({
     let active = true;
     setPreview(undefined);
     setPreviewError(false);
-    if (storeId && summary.sourceType === "MERCALYS_PURCHASE_PRICES") {
+    if (
+      !pendingConfirmations &&
+      storeId &&
+      summary.sourceType === "MERCALYS_PURCHASE_PRICES"
+    ) {
       new PurchasePriceRepository(sqlite)
         .preview(storeId, summary)
         .then((value) => {
@@ -1356,7 +1427,7 @@ function ValidationSummary({
     return () => {
       active = false;
     };
-  }, [sqlite, storeId, summary]);
+  }, [sqlite, storeId, summary, pendingConfirmations]);
   return (
     <>
       <View className="gap-4 border-b border-line pb-5">
@@ -1439,9 +1510,11 @@ function ValidationSummary({
               </View>
             ) : (
               <Text className="text-sm text-muted">
-                {previewError
-                  ? "Comparaison indisponible ; les prix du fichier restent consultables."
-                  : "Comparaison des prix…"}
+                {pendingConfirmations
+                  ? "La comparaison sera actualisée en terminant les confirmations."
+                  : previewError
+                    ? "Comparaison indisponible ; les prix du fichier restent consultables."
+                    : "Comparaison des prix…"}
               </Text>
             )}
             <CountLine
@@ -1524,6 +1597,7 @@ function ValidationSummary({
                 : "Publier les lignes valides"
           }
           disabled={
+            pendingConfirmations ||
             summary.readyCount <= previouslyPublishedCount ||
             publication !== undefined
           }
@@ -1701,11 +1775,17 @@ function ProductResolutionSummary({
                     .map(({ type, value }) => `${type} ${value}`)
                     .join(" · ") || "Aucun identifiant exploitable"}
                 </Text>
+                {candidates.some((p) => p.status !== "ACTIVE") ? (
+                  <InlineAlert
+                    title="Code déjà connu"
+                    message="Ce code appartient à un article archivé. Réactive-le depuis Produits → Nettoyer le catalogue avant de poursuivre."
+                  />
+                ) : null}
                 {candidates.slice(0, 3).map((product) => (
                   <SecondaryButton
                     key={product.id}
                     label={`Associer à ${product.label}`}
-                    disabled={loading}
+                    disabled={loading || product.status !== "ACTIVE"}
                     onPress={() => onConfirm(resolution, product.id)}
                   />
                 ))}

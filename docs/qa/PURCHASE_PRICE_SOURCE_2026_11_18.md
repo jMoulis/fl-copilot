@@ -1,5 +1,10 @@
 # Daily purchase prices — source qualification, 18 November 2026
 
+**19 novembre — suite approuvée, non livrée :** le build 85 est jugé plus rapide
+et sa réouverture sans relecture fonctionne. Le propriétaire demande maintenant
+les confirmations différées, le rapprochement par codes et le nettoyage manuel.
+Voir [le nouveau lot et sa recette native reportée](MERCALYS_CONFIRMATION_SESSION_2026_11_19.md).
+
 Owner supplies `base article.xlsx` after requesting daily purchase-price uploads.
 This record scopes that next increment; no prices have been published and no
 numerical counter-promotion scope is reopened.
@@ -391,3 +396,30 @@ TypeScript projects passing. The supplied-data Mac benchmark confirms exact
 matching parity: incremental update 10.3 ms versus full search 1,084 ms. Mac timing
 is separate from native timing. A fresh app process still performs its first
 identification; the bounded in-memory cache is not persisted across app restarts.
+
+### Build 85 delivery — 19 November
+
+PR 545 merged as `e44be8519770acf149919bf7de47a43b61acb8b4` after explicit
+owner approval; merged branch deleted. Exact-head push 44412421288 and PR
+44412428080 passed for `143538a1ba7f12a03dd5a28823229bc8b487baef`; master
+44460889690 passed (642 suites, 6,393 tests passed, one suite/six tests skipped).
+The merged source tree equals the tested PR tree.
+
+Build 0.1.0 (85) compiled locally on the Mac with the production profile and
+existing frozen signing credentials. STORE archive verified, SHA-256:
+`270566090b833de071ea110551aeca9f921b7680acb054983d58d8d66f5c71f0`.
+The first upload invocation stopped before authentication/transfer because the
+run-record relative path was resolved from the helper directory. With the absolute
+path and a distinct receipt, the same verified archive uploaded successfully.
+Apple build `8172edc0-36d8-439f-ba29-c5540210f478` is VALID / IN_BETA_TESTING,
+not expired, and present in the existing owner-only internal group (one tester).
+No cloud build, public release, invitations or API deployment. Private evidence:
+`maintenance/import-incremental-2026-11-18/release/`.
+
+Owner acceptance remains pending: update without uninstalling or resending the
+workbook; create one unresolved product, close/reopen the file, then leave/revisit
+the lot. Expect immediate saving feedback and no full-catalogue re-identification
+after a single creation or unchanged reopen during the same app process. A first
+identification after process restart still runs. Group creation remains measurable
+(106 products: 15.1 s in the isolated simulator fixture); no claim of instantaneous
+bulk processing or complete synchronization acceptance on the physical iPhone.

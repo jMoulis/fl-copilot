@@ -1,5 +1,14 @@
 # État courant — pilote iPhone, actualisé le 18 novembre 2026
 
+**19 novembre — recette iPhone choisie par le propriétaire.** Le propriétaire
+demande un build local avec les lots PR 546 (Mercalys) et PR 547 (Journal), afin de
+faire lui-même la recette sans attendre son retour au Mac. Ce choix remplace le
+préalable de recette simulateur pour cette livraison, sans déclarer la validation
+visuelle acquise. Les contrôles automatisés restent obligatoires. La livraison est
+en préparation ; aucune disponibilité TestFlight nouvelle n’est encore annoncée.
+La revue automatique a demandé une autorisation explicite pour fusionner dans
+master et publier ; confirmation demandée dans la conversation avant cette étape.
+
 **19 novembre — corrections du Journal en préparation, non livrées.**
 Demande propriétaire : météo conservée pour les jours passés, skeleton des tâches
 et icône Aujourd’hui permanente avant Actualiser. Branche `fix/journal-weather-navigation` :
@@ -11,6 +20,27 @@ La [PR 546](https://github.com/jMoulis/fl-copilot/pull/546) Mercalys reste sépa
 en brouillon, CI push/PR vertes (6 403 tests), recette native reportée par le propriétaire.
 Le build 85 est le dernier livré ; sa rapidité et ses réouvertures sont acceptées.
 Aucun nouveau build ni déploiement, les autres lots clos et reports restent inchangés.
+
+**19 novembre — nouvelle session de confirmations en préparation, non livrée.**
+Le propriétaire confirme que le build 85 est plus rapide et que les réouvertures
+ne relisent plus le fichier. Il approuve maintenant le rapprochement ITM8/EAN,
+la création groupée des codes inconnus, l’actualisation unique à « Terminer les
+confirmations » et le nettoyage manuel réversible du catalogue. Application aux
+imports conservés sans réimport ni modification des publications passées.
+Implémentation sur `feat/mercalys-confirmation-session` ; recette native reportée
+par le propriétaire (« Je le ferai plus tard », Mac verrouillé). Aucun nouveau
+build ni déploiement. Voir [le lot et la recette restante](../qa/MERCALYS_CONFIRMATION_SESSION_2026_11_19.md).
+Les autres lots validés et reports explicites restent inchangés.
+
+**19 novembre — correctif incrémental livré, build 85 disponible.** PR 545
+fusionnée (`e44be8519770acf149919bf7de47a43b61acb8b4`), CI push/PR/master
+vertes. Build compilé localement sur le Mac, archive vérifiée, envoi accepté par
+Apple et TestFlight privé confirmé `VALID` / `IN_BETA_TESTING`, non expiré,
+propriétaire seul. Recette simulateur sur 1 226 lignes : création individuelle
+427 ms, lot de 106 produits terminé en 15,1 s avec progression, réouvertures
+directes après fermeture et sortie complète de l’écran. Validation iPhone encore
+attendue ; première identification après redémarrage complet toujours nécessaire.
+API inchangée. Le retour négatif sur build 84 ci-dessous reste son historique.
 
 **Retour propriétaire sur build 84 : non accepté pour les PA.** Une création
 relance encore la recherche complète, et la réouverture montre de nouveau

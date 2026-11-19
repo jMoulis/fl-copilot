@@ -205,7 +205,25 @@ export async function confirmMercalysProductMapping(
         },
       );
     }
-    if (retained) continue;
+    if (retained) {
+      if (retained.entity.status !== "VALIDATED") {
+        await repository.upsertIdentifier(
+          {
+            ...retained.entity,
+            status: "VALIDATED",
+            version: retained.entity.version + 1,
+            updatedAt: timestamp,
+          },
+          {
+            commandId: options.generateId(),
+            deviceId: options.deviceId,
+            expectedRemoteVersion:
+              productMutationExpectedRemoteVersion(retained),
+          },
+        );
+      }
+      continue;
+    }
     await repository.upsertIdentifier(
       {
         id: options.generateId(),

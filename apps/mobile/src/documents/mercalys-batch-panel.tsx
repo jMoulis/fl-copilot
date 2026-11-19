@@ -117,6 +117,9 @@ export function MercalysBatchPanel({
     () => new MercalysBatchRepository(db, { storeId, ownerId, conversationId }),
     [db, storeId, ownerId, conversationId],
   );
+  const [pendingConfirmations, setPendingConfirmations] = useState<string[]>(
+    [],
+  );
   const currentRepo = useRef(repo);
   currentRepo.current = repo;
   const archiveRepo = useMemo(
@@ -350,6 +353,7 @@ export function MercalysBatchPanel({
         archiveEnabled ? visibilityMode : undefined,
       );
       const committed = await repo.publications(batchId);
+      const pending = await repo.pendingConfirmations();
       if (alive.current && currentRepo.current === repo && !signal?.aborted) {
         if (activeRef.current !== batchId) {
           setQuery("");
@@ -358,6 +362,7 @@ export function MercalysBatchPanel({
           setItemsArchived(false);
           setToolsOpen(false);
         }
+        setPendingConfirmations(pending);
         setPublications(committed);
         setPublicationPlan(undefined);
         setPublicationReport(undefined);
@@ -1054,7 +1059,11 @@ export function MercalysBatchPanel({
                 key={item.id}
                 title={item.filename}
                 accessibilityLabel={`Ouvrir le fichier ${item.filename}`}
-                detail={publicationStatus(item, publications) ?? status(item)}
+                detail={
+                  pendingConfirmations.includes(item.checksum)
+                    ? "Confirmations enregistrées · actualisation à terminer"
+                    : (publicationStatus(item, publications) ?? status(item))
+                }
                 disabled={busy || disabled}
                 archiveAction={control(item.id, "MERCALYS_ITEM", item.filename)}
                 onPress={() =>
@@ -1102,12 +1111,14 @@ export function MercalysBatchPanel({
                       refreshed = await repo.get(item.batchId, item.id);
                     }
                     const committed = await repo.publications(item.batchId);
+                    const pending = await repo.pendingConfirmations();
                     if (!alive.current || signal.aborted) return;
                     setItems((old) =>
                       old.map((row) =>
                         row.id === refreshed.id ? refreshed : row,
                       ),
                     );
+                    setPendingConfirmations(pending);
                     setPublications(committed);
                     setPublicationPlan(undefined);
                     setPublicationReport((old) =>
@@ -1203,6 +1214,8 @@ function archiveError(code: string) {
 }
 
 function publicationIssue(code?: string) {
+  if (code === "MERCALYS_CONFIRMATIONS_PENDING")
+    return "Ouvre le fichier puis termine les confirmations avant de publier.";
   const localIssue = localOperationFailureMessage(code);
   if (localIssue) return localIssue;
   if (code === "MERCALYS_PRODUCT_REVIEW_REQUIRED")

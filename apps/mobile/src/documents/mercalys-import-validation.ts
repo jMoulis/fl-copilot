@@ -1,8 +1,7 @@
 import { parseMercalysPurchasePrices } from "@fl-copilot/import-core";
 import {
-  matchProduct,
+  prepareMercalysProductMatcher,
   prepareProductMatcher,
-  prepareProductRematcher,
   type ProductMatchCatalog,
   type ProductMatchResult,
 } from "@fl-copilot/domain";
@@ -14,6 +13,8 @@ import {
 } from "./mercalys-source-detector";
 import { parseMercalysWaste } from "./mercalys-waste-parser";
 import type { SpreadsheetWorkbook } from "./spreadsheet-parser";
+
+export type MercalysMatchingPolicy = "CODES" | "LEGACY";
 
 export type MercalysImportValidationErrorCode =
   "FORMAT_UNRECOGNIZED" | "AGGREGATED_PERIOD_WITHOUT_DAILY_DATES";
@@ -83,7 +84,7 @@ function matchRecord(
 ): MercalysImportValidationLine {
   return {
     record,
-    match: (matcher ?? ((request) => matchProduct(request, catalog)))({
+    match: (matcher ?? prepareMercalysProductMatcher(storeId, catalog))({
       storeId,
       identifiers: [
         ...(record.itm8 ? [{ type: "ITM8" as const, value: record.itm8 }] : []),
@@ -123,11 +124,16 @@ export function validateMercalysImport(
   workbook: SpreadsheetWorkbook,
   storeId: string,
   catalog: ProductMatchCatalog,
+  policy: MercalysMatchingPolicy = "CODES",
 ): MercalysImportValidationSummary {
   const { records, ...summary } = parseImport(workbook);
+  const matcher =
+    policy === "LEGACY"
+      ? prepareProductMatcher(storeId, catalog)
+      : prepareMercalysProductMatcher(storeId, catalog);
   return withMatches(
     summary,
-    records.map((record) => matchRecord(record, storeId, catalog)),
+    records.map((record) => matchRecord(record, storeId, catalog, matcher)),
   );
 }
 export function rematchMercalysImport(
@@ -135,9 +141,12 @@ export function rematchMercalysImport(
   storeId: string,
   catalog: ProductMatchCatalog,
 ): MercalysImportValidationSummary {
+  const matcher = prepareMercalysProductMatcher(storeId, catalog);
   return withMatches(
     summary,
-    summary.lines.map(({ record }) => matchRecord(record, storeId, catalog)),
+    summary.lines.map(({ record }) =>
+      matchRecord(record, storeId, catalog, matcher),
+    ),
   );
 }
 
@@ -154,11 +163,14 @@ async function matchResponsive(
     catalog: ProductMatchCatalog;
     lines: MercalysImportValidationLine[];
   },
+  policy: MercalysMatchingPolicy = "CODES",
 ) {
-  const incremental =
-    previous && prepareProductRematcher(storeId, previous.catalog, catalog);
+  const incremental = previous;
   const lines: MercalysImportValidationLine[] = [];
-  const matcher = prepareProductMatcher(storeId, catalog);
+  const matcher =
+    policy === "LEGACY"
+      ? prepareProductMatcher(storeId, catalog)
+      : prepareMercalysProductMatcher(storeId, catalog);
   let sliceStarted = Date.now();
   for (let index = 0; index < records.length; index++) {
     if (signal?.aborted) throw Error("MERCALYS_BATCH_CANCELLED");
@@ -172,17 +184,7 @@ async function matchResponsive(
       if (signal?.aborted) throw Error("MERCALYS_BATCH_CANCELLED");
       sliceStarted = Date.now();
     }
-    const previousLine = previous?.lines[index];
-    lines.push(
-      matchRecord(
-        records[index]!,
-        storeId,
-        catalog,
-        incremental && previousLine
-          ? (request) => incremental(request, previousLine.match)
-          : matcher,
-      ),
-    );
+    lines.push(matchRecord(records[index]!, storeId, catalog, matcher));
   }
   if (signal?.aborted) throw Error("MERCALYS_BATCH_CANCELLED");
   onProgress?.({ completed: records.length, total: records.length });
@@ -194,12 +196,21 @@ export async function validateMercalysImportResponsive(
   catalog: ProductMatchCatalog,
   signal?: AbortSignal,
   onProgress?: (progress: MercalysMatchingProgress) => void,
+  policy: MercalysMatchingPolicy = "CODES",
 ) {
   if (signal?.aborted) throw Error("MERCALYS_BATCH_CANCELLED");
   const { records, ...summary } = parseImport(workbook);
   return withMatches(
     summary,
-    await matchResponsive(records, storeId, catalog, signal, onProgress),
+    await matchResponsive(
+      records,
+      storeId,
+      catalog,
+      signal,
+      onProgress,
+      undefined,
+      policy,
+    ),
   );
 }
 export async function rematchMercalysImportResponsive(
@@ -221,6 +232,24 @@ export async function rematchMercalysImportResponsive(
       previousCatalog
         ? { catalog: previousCatalog, lines: summary.lines }
         : undefined,
+    ),
+  );
+}
+
+export function updateMercalysResolvedLines(
+  summary: MercalysImportValidationSummary,
+  storeId: string,
+  catalog: ProductMatchCatalog,
+  sourceIndexes: readonly number[],
+) {
+  const selected = new Set(sourceIndexes);
+  const matcher = prepareMercalysProductMatcher(storeId, catalog);
+  return withMatches(
+    summary,
+    summary.lines.map((line) =>
+      selected.has(line.record.sourceIndex)
+        ? matchRecord(line.record, storeId, catalog, matcher)
+        : line,
     ),
   );
 }

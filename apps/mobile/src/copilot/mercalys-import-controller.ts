@@ -174,6 +174,9 @@ export class CopilotMercalysImportController {
       this.deps.id,
     );
     const preparation = new MercalysBatchPreparation(batches, {
+      // Older chat references authorized their original automatic creation rules.
+      // Do not widen that authorization when the Imports screen changes policy.
+      matchingPolicy: "LEGACY",
       read: this.deps.read,
       checksum: this.deps.checksum,
       catalog: async () => (await this.catalog(db)).catalog,

@@ -1,3 +1,10 @@
+## Owner release arbitration — 19 November 2026
+
+The owner requests a local iPhone/TestFlight build to perform acceptance directly
+before returning to the Mac. For PRs 546/547 this supersedes the pre-build simulator
+gate. Automated checks and archive verification remain required; do not claim
+native visual acceptance before the owner's feedback. No paid cloud compilation.
+
 ## Owner-approved Journal continuity — 19 November 2026
 
 Retain each previously collected forecast day in the existing server archive and
@@ -13,6 +20,18 @@ task content during same-day background reads; on date changes reserve the list
 height with a skeleton until local data arrives, without displaying another day's
 tasks or allowing stale responses to win. Native acceptance remains separate from
 unit/render tests and is required before a new iPhone build. No paid cloud build.
+
+## Owner arbitration — 19 November 2026
+
+Mercalys coded imports use ITM8/EAN rather than text resemblance as the identity
+gate for grouped creation. Uncoded rows and conflicting/archived code owners remain
+reviewed. Creation/association updates affected rows immediately; a visible
+“Terminer les confirmations” action refreshes the file once, including a partial
+session. Pending edits survive leaving/restarting and block publication until
+finalization. Existing retained imports adopt these rules without re-uploading or
+rewriting published observations. Catalogue cleanup shows observed sales and PA
+coverage; inactivity is never inferred automatically and archival is reversible.
+This supersedes older whole-file rematching-after-each-choice UX requirements.
 
 ## Owner-approved extension — 18 November 2026: daily purchase-price imports
 

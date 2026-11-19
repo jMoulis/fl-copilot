@@ -13,6 +13,7 @@ import type { OutboxDatabase } from "../sync/outbox-repository";
 import { runLocalMigrations } from "../db/migrations";
 import { MercalysBatchRepository } from "./mercalys-batch-repository";
 import { MercalysBatchPreparation } from "./mercalys-batch-preparation";
+import { MercalysConfirmationSession } from "./mercalys-confirmation-session";
 class Adapter implements OutboxDatabase {
   fail = false;
   constructor(readonly db: DatabaseSync) {}
@@ -147,6 +148,36 @@ it("rolls back whole manifests and prevents identity reuse, changed-item results
   await expect(
     s.repo.finish(s.input.id, id, 1, { status: "QUEUED" }),
   ).rejects.toThrow("MERCALYS_BATCH_ITEM_CHANGED");
+});
+it("leaves an unfinished confirmation session pending without reporting a preparation failure", async () => {
+  const s = await setup(1);
+  await s.repo.create(s.input);
+  const file = s.input.files[0]!;
+  await new MercalysConfirmationSession(
+    s.adapter,
+    s.scope.storeId,
+    s.scope.ownerId,
+    file.checksum,
+  ).begin();
+  const read = vi.fn(async () => new Uint8Array([1]).slice());
+  const reportFailure = vi.fn();
+  const service = new MercalysBatchPreparation(s.repo, {
+    read,
+    reportFailure,
+    checksum: async () => file.checksum,
+    catalog: async () => ({ products: [], identifiers: [], aliases: [] }),
+    publication: {
+      findExactDuplicate: async () => null,
+      analyzeOverlap: async () => null,
+    },
+  });
+  const result = await service.prepare(s.input.id, file.id);
+  expect(result.result.status).toBe("QUEUED");
+  expect(read).not.toHaveBeenCalled();
+  expect(reportFailure).not.toHaveBeenCalled();
+  await expect(service.readValidated(s.input.id, file.id)).rejects.toThrow(
+    "MERCALYS_CONFIRMATIONS_PENDING",
+  );
 });
 it("isolates malformed files, verifies immutable bytes, prepares both channels, retries failures and preserves cancelled work", async () => {
   const s = await setup(4);

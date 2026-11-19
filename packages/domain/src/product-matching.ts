@@ -131,6 +131,92 @@ export function prepareProductMatcher(
   };
 }
 
+/** Mercalys identity is defined by supplied codes, never label resemblance.
+ * Retired products still own their codes and must not be recreated silently.
+ */
+export function prepareMercalysProductMatcher(
+  storeId: string,
+  catalog: ProductMatchCatalog,
+) {
+  const products = new Map(
+    catalog.products
+      .filter((p) => p.storeId === storeId && !p.deletedAt)
+      .map((p) => [p.id, p]),
+  );
+  const owners = new Map<string, Set<string>>();
+  const unvalidated = new Set<string>();
+  for (const code of catalog.identifiers) {
+    if (
+      code.storeId !== storeId ||
+      code.deletedAt ||
+      !products.has(code.productId)
+    )
+      continue;
+    const key = JSON.stringify([code.type, code.value]);
+    if (code.status !== "VALIDATED") unvalidated.add(key);
+    const ids = owners.get(key) ?? new Set<string>();
+    ids.add(code.productId);
+    owners.set(key, ids);
+  }
+  const fallback = prepareProductMatcher(storeId, catalog);
+  return (input: ProductMatchRequest): ProductMatchResult => {
+    const request = productMatchRequestSchema.parse(input);
+    if (request.storeId !== storeId)
+      throw Error("PRODUCT_MATCH_STORE_MISMATCH");
+    if (!request.identifiers.length) {
+      const result = fallback(request);
+      return result.state === "AUTO_MATCH" &&
+        result.method !== "VALIDATED_ALIAS"
+        ? { ...result, state: "REVIEW", matchedProductId: null }
+        : result;
+    }
+    const ids = [
+      ...new Set(
+        request.identifiers.flatMap((code) => [
+          ...(owners.get(JSON.stringify([code.type, code.value])) ?? []),
+        ]),
+      ),
+    ].sort();
+    if (!ids.length) return noMatch("mercalys-codes-v1");
+    const candidates = ids.map((productId) => ({
+      productId,
+      score: 1,
+      method: "EXACT_IDENTIFIER" as const,
+      reasons: [
+        products.get(productId)?.status === "ACTIVE"
+          ? "EXACT_CODE"
+          : "INACTIVE_CODE_OWNER",
+      ],
+      identifierMatch: true,
+      labelSimilarity: null,
+    }));
+    const validated = request.identifiers.every(
+      (code) => !unvalidated.has(JSON.stringify([code.type, code.value])),
+    );
+    const automatic =
+      ids.length === 1 &&
+      products.get(ids[0]!)?.status === "ACTIVE" &&
+      validated;
+    return {
+      engineVersion: "mercalys-codes-v1",
+      state: automatic ? "AUTO_MATCH" : "AMBIGUOUS",
+      matchedProductId: automatic ? ids[0]! : null,
+      method: "EXACT_IDENTIFIER",
+      candidates,
+      conflict:
+        ids.length > 1
+          ? {
+              kind: "IDENTIFIER_CONFLICT",
+              productIds: ids,
+              identifierTypes: [
+                ...new Set(request.identifiers.map((i) => i.type)),
+              ].sort(),
+            }
+          : null,
+    };
+  };
+}
+
 /** Only inputs consumed by the matcher; sync versions and row order are irrelevant. */
 export function productMatchingSignature(
   storeId: string,
