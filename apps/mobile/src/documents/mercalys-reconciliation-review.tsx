@@ -51,6 +51,7 @@ export function MercalysReconciliationReview({
   onNavigate,
   keptExisting,
   loading,
+  publicationError,
   onApply,
   onKeep,
   onCancel,
@@ -63,6 +64,7 @@ export function MercalysReconciliationReview({
   onNavigate?(): void;
   keptExisting: boolean;
   loading: boolean;
+  publicationError?: string;
   onApply(): void;
   onKeep(): void;
   onCancel(): void;
@@ -238,6 +240,12 @@ export function MercalysReconciliationReview({
               }}
             />
           </>
+        ) : null}
+        {publicationError ? (
+          <InlineAlert
+            title="Publication impossible"
+            message={publicationError}
+          />
         ) : null}
         <PrimaryButton
           label={

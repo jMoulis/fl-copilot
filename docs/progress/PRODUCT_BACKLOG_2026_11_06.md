@@ -1,5 +1,14 @@
 # Backlog produit — point du 18 novembre 2026
 
+**19 novembre — retour PA sur build 86 : publication à corriger.**
+Progression répétée et refus malgré « 1 226 prêtes ». Reproduction isolée :
+plusieurs références affectées au même produit/date passent le rapprochement,
+mais violent le contrôle de publication. Correctif : revue explicite de ces
+associations, publication des autres lignes, reprise sans doublon, progression
+unique et erreur auprès du bouton. Tests et limites de recette dans
+[la fiche PA](../qa/PA_PUBLICATION_COLLISIONS_2026_11_19.md).
+Le lot PA n’est pas accepté sur iPhone ; les lots clos et reports restent inchangés.
+
 **19 novembre — lots PA et Journal livrés pour recette iPhone, build 86.**
 PR [546](https://github.com/jMoulis/fl-copilot/pull/546) et
 [547](https://github.com/jMoulis/fl-copilot/pull/547) fusionnées ; source livrée

@@ -1,3 +1,4 @@
+import { reviewPurchasePriceCollisions } from "./mercalys-purchase-price-review";
 import { PurchasePriceRepository } from "../products/purchase-price-repository";
 import {
   readMercalysPublication,
@@ -1464,3 +1465,109 @@ it("publishes dated PA separately, preserves review values, confirms explicitly 
     reopened.close();
   }
 });
+
+it.each(["2.20", "4.45"])(
+  "withholds duplicate product/day PA (%s), then resumes without changing published prices",
+  async (secondAmount) => {
+    const { adapter, database } = await openDatabase();
+    for (const id of productIds) insertProductRecord(database, id, id);
+    const repository = new MercalysImportPublicationRepository(
+      adapter,
+      idGenerator(),
+      () => timestamp,
+    );
+    const lines = [productId, productId, productIds[2]].map((id, index) => {
+      const line = matchedLine(index + 10, id, 1);
+      Object.assign(line.record, {
+        itm8: `0000000${index}`,
+        ean: `000000000000${index}`,
+        quantity: null,
+        purchaseValue: null,
+        salesValue: null,
+        purchasePrice: {
+          amount: index === 1 ? secondAmount : "4.45",
+          sourceActive: true,
+          nomenclature: "LEGUMES",
+        },
+      });
+      return line;
+    });
+    const s = {
+      ...reconciliationSummary(lines),
+      sourceType: "MERCALYS_PURCHASE_PRICES" as const,
+      parserVersion: "mercalys-purchase-prices.v1",
+    };
+    const checked = reviewPurchasePriceCollisions(s);
+    expect(checked).toMatchObject({ readyCount: 1, productReviewCount: 2 });
+    expect(reviewPurchasePriceCollisions(checked)).toEqual(checked);
+    expect(s.readyCount).toBe(3);
+    expect(checked.lines.map((l) => l.record)).toEqual(
+      s.lines.map((l) => l.record),
+    );
+    const decisions = buildMercalysProductResolutions(checked);
+    expect(decisions).toHaveLength(2);
+    expect(
+      decisions.every(
+        (r) =>
+          !r.canCreate &&
+          r.canCreateAsDistinct &&
+          r.expectedProductIds?.includes(productId),
+      ),
+    ).toBe(true);
+    expect(decisions[0]!.priceConflict).toHaveLength(2);
+    const moved = structuredClone(checked);
+    moved.lines[1]!.match.matchedProductId = productIds[1];
+    expect(reviewPurchasePriceCollisions(moved)).toMatchObject({
+      readyCount: 3,
+      productReviewCount: 0,
+    });
+    const sales = { ...s, sourceType: "MERCALYS_SALES" as const };
+    expect(reviewPurchasePriceCollisions(sales)).toBe(sales);
+    // Old cached callers may still claim that all three rows are ready.
+    const first = await repository.publish(input(s));
+    expect(first).toMatchObject({ publishedCount: 1, remainingCount: 2 });
+    const published = (await readMercalysPublication(
+      adapter,
+      storeId,
+      first.sourceDocumentId,
+    ))!;
+    expect(published.prices).toHaveLength(1);
+    expect(
+      published.records.filter((r) => r.status === "WARNING"),
+    ).toHaveLength(2);
+
+    // An association to an already-published product remains reviewed; its price is frozen.
+    lines[0]!.match.matchedProductId = productIds[2];
+    const blocked = await repository.continuation(
+      storeId,
+      input(s).checksum,
+      s,
+    );
+    expect(blocked!.summary.lines[0]!.match.state).toBe("REVIEW");
+    expect(blocked!.summary.lines[2]!.match.state).toBe("AUTO_MATCH");
+
+    lines[0]!.match.matchedProductId = productId;
+    lines[1]!.match.matchedProductId = productIds[1];
+    const resumed = await repository.resume({
+      ...input(s),
+      sourceDocumentId: first.sourceDocumentId,
+    });
+    expect(resumed).toMatchObject({ publishedCount: 2, remainingCount: 0 });
+    const final = (await readMercalysPublication(
+      adapter,
+      storeId,
+      first.sourceDocumentId,
+    ))!;
+    expect(final.prices).toHaveLength(3);
+    expect(final.prices.find((p) => p.id === published.prices[0]!.id)).toEqual(
+      published.prices[0],
+    );
+    expect(
+      await repository.resume({
+        ...input(s),
+        sourceDocumentId: first.sourceDocumentId,
+      }),
+    ).toMatchObject({ publishedCount: 0 });
+    database.close();
+  },
+);

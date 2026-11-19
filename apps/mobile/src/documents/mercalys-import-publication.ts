@@ -1,3 +1,4 @@
+import { reviewPurchasePriceCollisions } from "./mercalys-purchase-price-review";
 import {
   enqueueMercalysPublications,
   enqueueMercalysContinuation,
@@ -216,12 +217,21 @@ export class MercalysImportPublicationRepository {
       remainingCount:
         publication.records.filter((r) => r.status !== "PUBLISHED").length +
         summary.errorCount,
-      summary: {
-        ...summary,
-        lines,
-        readyCount,
-        productReviewCount: lines.length - readyCount,
-      },
+      summary: reviewPurchasePriceCollisions(
+        {
+          ...summary,
+          lines,
+          readyCount,
+          productReviewCount: lines.length - readyCount,
+        },
+        new Set(
+          publication.records
+            .filter((r) => r.status === "PUBLISHED")
+            .flatMap((r) =>
+              typeof r.sourceIndex === "number" ? [r.sourceIndex] : [],
+            ),
+        ),
+      ),
     };
   }
 
@@ -365,6 +375,7 @@ export class MercalysImportPublicationRepository {
   async publish(
     input: PublishMercalysImportInput,
   ): Promise<PublishedMercalysImport> {
+    input = { ...input, summary: reviewPurchasePriceCollisions(input.summary) };
     const readyLines = input.summary.lines.filter(
       ({ match }) =>
         match.state === "AUTO_MATCH" && match.matchedProductId !== null,

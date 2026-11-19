@@ -1,3 +1,4 @@
+import { hasPurchasePriceCollision } from "./mercalys-purchase-price-review";
 import {
   MercalysConfirmationSession,
   commitMercalysResolution,
@@ -254,6 +255,7 @@ export function MercalysImportScreen({
     total: number;
   }>();
   const [error, setError] = useState<string>();
+  const [publicationError, setPublicationError] = useState<string>();
   const productResolutions = useMemo(
     () =>
       summary
@@ -299,6 +301,7 @@ export function MercalysImportScreen({
       setPublication(undefined);
       setResolutionProgress(undefined);
       setError(undefined);
+      setPublicationError(undefined);
 
       try {
         setFilename(asset.name);
@@ -437,6 +440,7 @@ export function MercalysImportScreen({
     setResolutionProgress(undefined);
     setPendingConfirmations(false);
     setError(undefined);
+    setPublicationError(undefined);
   }
 
   async function refreshProductMatches(
@@ -511,6 +515,7 @@ export function MercalysImportScreen({
     setResolvingProducts(true);
     setResolutionPhase("SAVING");
     setError(undefined);
+    setPublicationError(undefined);
     setResolutionProgress({ completed: 0, total: resolutions.length });
     const completed: number[] = [];
     try {
@@ -604,6 +609,7 @@ export function MercalysImportScreen({
     actionLock.current = true;
     setResolvingProducts(true);
     setError(undefined);
+    setPublicationError(undefined);
     try {
       await refreshProductMatches(summary);
       await confirmationSession.finish();
@@ -627,7 +633,7 @@ export function MercalysImportScreen({
       !selectedBytes ||
       !selectedChecksum
     ) {
-      setError(
+      setPublicationError(
         "Les informations de l’import sont incomplètes. Sélectionnez de nouveau le fichier avant de publier.",
       );
       return;
@@ -641,13 +647,14 @@ export function MercalysImportScreen({
         : null
       : undefined;
     if (reconciliationApproval === null) {
-      setError(
+      setPublicationError(
         "Votre session utilisateur ne permet pas d’enregistrer cette décision. Reconnectez-vous puis réessayez.",
       );
       return;
     }
     setPublishing(true);
     setError(undefined);
+    setPublicationError(undefined);
     let durableFile: ExpoFile | undefined;
     try {
       if (continuation) {
@@ -664,7 +671,7 @@ export function MercalysImportScreen({
         });
         const analyticsRun = await analyticsScheduler.process(storeId);
         if (analyticsRun.failedJobs > 0)
-          setError(
+          setPublicationError(
             "Les lignes sont publiées ; certains indicateurs restent à recalculer.",
           );
         void syncNow(storeId);
@@ -694,7 +701,7 @@ export function MercalysImportScreen({
       setReconciliation(undefined);
       const analyticsRun = await analyticsScheduler.process(storeId);
       if (analyticsRun.failedJobs > 0) {
-        setError(
+        setPublicationError(
           "Les données sont publiées, mais certains indicateurs restent à recalculer.",
         );
       }
@@ -723,13 +730,13 @@ export function MercalysImportScreen({
       if (caught instanceof MercalysOverlapReconciliationError) {
         setReconciliation(caught.reconciliation);
         setSection("DIFFERENCES");
-        setError(
+        setPublicationError(
           "La comparaison a changé. Examinez les points à résoudre ci-dessous avant d’appliquer la nouvelle version.",
         );
         scrollToStart();
         return;
       }
-      setError(importErrorMessage(caught));
+      setPublicationError(importErrorMessage(caught));
     } finally {
       setPublishing(false);
     }
@@ -760,6 +767,7 @@ export function MercalysImportScreen({
       resolvingProducts ||
       publishing ||
       error ||
+      publicationError ||
       pendingConfirmations
     )
       return report(undefined);
@@ -787,6 +795,7 @@ export function MercalysImportScreen({
     resolvingProducts,
     publishing,
     error,
+    publicationError,
     duplicate,
     summary,
     reconciliation,
@@ -862,6 +871,7 @@ export function MercalysImportScreen({
     }
     setPublishing(true);
     setError(undefined);
+    setPublicationError(undefined);
     try {
       await publicationRepository.keepExisting({
         storeId,
@@ -1147,13 +1157,10 @@ export function MercalysImportScreen({
             }}
             onNavigate={scrollToStart}
             loading={resolvingProducts}
-            progress={resolutionProgress}
             activity={
               resolutionPhase === "SAVING"
                 ? `Enregistrement des produits… ${resolutionProgress?.completed ?? 0}/${resolutionProgress?.total ?? 1}`
-                : matchingProgress
-                  ? `Actualisation du fichier… ${matchingProgress.completed}/${matchingProgress.total} lignes examinées`
-                  : "Actualisation du catalogue…"
+                : ""
             }
             onCreate={(resolutions) => {
               void createMissingProducts(resolutions);
@@ -1176,6 +1183,7 @@ export function MercalysImportScreen({
             previouslyPublishedCount={continuation?.publishedCount ?? 0}
             publication={publication}
             publishing={publishing}
+            publicationError={publicationError}
             pendingConfirmations={pendingConfirmations}
             onPublish={() => {
               void publishValidLines();
@@ -1233,6 +1241,7 @@ export function MercalysImportScreen({
             }}
             keptExisting={keptExisting}
             loading={publishing}
+            publicationError={publicationError}
             onApply={() => {
               void publishValidLines();
             }}
@@ -1389,6 +1398,7 @@ function ValidationSummary({
   previouslyPublishedCount = 0,
   publication,
   publishing,
+  publicationError,
   pendingConfirmations,
   onPublish,
   onCancel,
@@ -1398,6 +1408,7 @@ function ValidationSummary({
   previouslyPublishedCount?: number;
   publication?: FilePublication;
   publishing: boolean;
+  publicationError?: string;
   pendingConfirmations: boolean;
   onPublish: () => void;
   onCancel: () => void;
@@ -1493,6 +1504,12 @@ function ValidationSummary({
         <CountLine label="Anomalies" value={summary.errorCount} tone="error" />
         {summary.sourceType === "MERCALYS_PURCHASE_PRICES" ? (
           <>
+            {summary.lines.some(hasPurchasePriceCollision) ? (
+              <InlineAlert
+                title="Associations à vérifier"
+                message="Plusieurs références sont associées au même produit à la même date. Leurs prix restent à confirmer dans l’onglet Produits ; les autres lignes peuvent être publiées."
+              />
+            ) : null}
             {preview ? (
               <View className="gap-2">
                 <Text className="text-sm text-muted">
@@ -1588,6 +1605,16 @@ function ValidationSummary({
             }
           />
         ) : null}
+        {publicationError ? (
+          <InlineAlert
+            title={
+              publication
+                ? "Publication enregistrée — suivi à reprendre"
+                : "Publication impossible"
+            }
+            message={publicationError}
+          />
+        ) : null}
         <PrimaryButton
           label={
             publication
@@ -1641,7 +1668,6 @@ function ProductResolutionSummary({
   onShowAll,
   onNavigate,
   loading,
-  progress,
   activity,
   onCreate,
   onCreateDistinct,
@@ -1653,7 +1679,6 @@ function ProductResolutionSummary({
   onShowAll(): void;
   onNavigate(): void;
   loading: boolean;
-  progress?: { completed: number; total: number };
   activity: string;
   onCreate(resolutions: readonly MercalysProductResolution[]): void;
   onCreateDistinct(resolution: MercalysProductResolution): void;
@@ -1714,7 +1739,7 @@ function ProductResolutionSummary({
         une catégorie, une nature et une unité inconnues jusqu’à leur
         enrichissement.
       </Text>
-      {loading ? (
+      {loading && activity ? (
         <Text
           accessibilityLiveRegion="polite"
           className="text-base font-semibold text-ink"
@@ -1725,8 +1750,8 @@ function ProductResolutionSummary({
       {creatable.length > 0 ? (
         <PrimaryButton
           label={
-            loading && progress
-              ? `Création ${progress.completed}/${progress.total}`
+            loading
+              ? "Création en cours…"
               : `Créer ${creatable.length} produit${creatable.length > 1 ? "s" : ""} depuis Mercalys`
           }
           loading={loading}
@@ -1762,13 +1787,11 @@ function ProductResolutionSummary({
             </Pressable>
             {isExpanded ? (
               <View className="gap-3 border-l-2 border-warning-soft pl-3">
-                {loading ? (
-                  <Text
-                    accessibilityLiveRegion="polite"
-                    className="text-base font-semibold text-ink"
-                  >
-                    {activity}
-                  </Text>
+                {resolution.priceConflict ? (
+                  <InlineAlert
+                    title="Plusieurs références pour le même produit"
+                    message={`Ces références ont un PA à la même date : ${resolution.priceConflict.map((p) => `${p.label} (ITM8 ${p.itm8 ?? "inconnu"}) : ${p.amount} €`).join(" ; ")}. Vérifie l’association. S’il s’agit d’articles différents, crée un produit distinct ou associe la référence au bon produit. Si les associations sont correctes, corrige l’export pour ne garder qu’un prix par produit et par date.`}
+                  />
                 ) : null}
                 <Text className="text-sm text-muted">
                   {resolution.identifiers

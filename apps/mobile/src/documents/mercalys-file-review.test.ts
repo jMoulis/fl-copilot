@@ -807,7 +807,9 @@ it("saves without whole-file refresh, then explicitly finalizes the session", as
     await new Promise((resolve) => setTimeout(resolve, 20));
   });
   expect(commit).toHaveBeenCalledTimes(1);
-  expect(text(renderer!.root)).toContain("Enregistrement des produits… 0/1");
+  expect(
+    text(renderer!.root).match(/Enregistrement des produits… 0\/1/g),
+  ).toHaveLength(1);
   await act(async () => {
     complete();
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -827,4 +829,30 @@ it("keeps the verified review through a complete route unmount without an inject
   expect(p.validate).toHaveBeenCalledTimes(1);
   expect(p.read).toHaveBeenCalledTimes(2);
   expect(p.duplicate).toHaveBeenCalledTimes(2);
+});
+
+it("shows publication failures beside the action, without claiming the original cannot be read", async () => {
+  p.analyze.mockResolvedValue(null);
+  p.publish.mockRejectedValueOnce(
+    Object.assign(new Error("Invalid lineage"), { name: "ZodError" }),
+  );
+  const initial = await p.validate();
+  initial.readyCount = 1;
+  initial.productReviewCount = 0;
+  initial.lines[0].match = {
+    ...initial.lines[0].match,
+    state: "AUTO_MATCH",
+    matchedProductId: p.products[0]!.entity.id,
+  };
+  p.validate.mockResolvedValue(initial);
+  await mount();
+  await press("Publier les lignes valides");
+  const content = text(renderer!.root);
+  expect(content).toContain("Publication impossible");
+  expect(content).not.toContain("Consultation du fichier impossible");
+  expect(content).not.toContain("Réessayer la lecture");
+  const action = button("Publier les lignes valides");
+  // The action and message share the same publication section.
+  expect(text(action.parent!)).toContain("Publication impossible");
+  expect(p.remove).toHaveBeenCalled();
 });
