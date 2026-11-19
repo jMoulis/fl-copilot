@@ -191,6 +191,17 @@ export class MercalysImportPublicationRepository {
             s.productId === saved.data.productId &&
             s.businessDate === saved.data.businessDate,
         );
+        // A later decision may extend the same retained PA to newly resolved
+        // alternatives. Keep the superset; source-record order must not undo it.
+        const current = selections[index];
+        if (
+          current &&
+          current.selectedSourceIndex === saved.data.selectedSourceIndex &&
+          saved.data.sourceIndexes.every((i) =>
+            current.sourceIndexes.includes(i),
+          )
+        )
+          continue;
         if (index >= 0) selections.splice(index, 1);
         selections.push(saved.data);
       } else if (record.status === "IGNORED")

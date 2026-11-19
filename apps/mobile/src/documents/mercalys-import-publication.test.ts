@@ -1727,7 +1727,7 @@ it("can retain the already-published PA and exclude a newly resolved alternative
     idGenerator(),
     () => timestamp,
   );
-  const lines: MercalysImportValidationSummary["lines"] = [10, 11].map(
+  const lines: MercalysImportValidationSummary["lines"] = [10, 11, 12].map(
     (index) => {
       const l = matchedLine(index, productId, 1);
       Object.assign(l.record, {
@@ -1746,6 +1746,11 @@ it("can retain the already-published PA and exclude a newly resolved alternative
   );
   lines[1]!.match = {
     ...lines[1]!.match,
+    state: "NO_MATCH",
+    matchedProductId: null,
+  };
+  lines[2]!.match = {
+    ...lines[2]!.match,
     state: "NO_MATCH",
     matchedProductId: null,
   };
@@ -1773,6 +1778,21 @@ it("can retain the already-published PA and exclude a newly resolved alternative
   expect(
     await repo.resume({
       ...input(chosen),
+      sourceDocumentId: result.sourceDocumentId,
+    }),
+  ).toMatchObject({ publishedCount: 0, remainingCount: 1 });
+  // A third source reference is identified later; extending the same choice
+  // must not be overwritten by the older decision carried by the ignored row.
+  lines[2]!.match = structuredClone(lines[0]!.match);
+  const later = (await repo.continuation(
+    storeId,
+    input(initial).checksum,
+    initial,
+  ))!;
+  const extended = selectPurchasePrice(later.summary, 10, productId, timestamp);
+  expect(
+    await repo.resume({
+      ...input(extended),
       sourceDocumentId: result.sourceDocumentId,
     }),
   ).toMatchObject({ publishedCount: 0, remainingCount: 0 });
