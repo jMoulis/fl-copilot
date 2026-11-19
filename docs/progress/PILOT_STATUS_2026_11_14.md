@@ -1,5 +1,22 @@
 # État courant — pilote iPhone, actualisé le 18 novembre 2026
 
+**19 novembre — correctif publication PA livré, build 87 disponible.**
+[PR 549](https://github.com/jMoulis/fl-copilot/pull/549) fusionnée, source
+`518502738a739356c79856e3a77f7539a3a6a28f`, CI push/PR/master vertes :
+6 412 tests passés, 6 ignorés. Archive compilée localement, vérifiée, envoi
+accepté par Apple ; `VALID` / `IN_BETA_TESTING`, non expiré, groupe privé
+habituel et propriétaire seul. Aucun build cloud ni changement d’API.
+
+Progression de création unique ; les références associées au même produit/date
+sont revues avant publication, les autres PA peuvent être publiés et le document
+complété sans doublon. Erreurs auprès du bouton concerné. Recette réelle sur
+copie isolée : 1 226 lignes publiées en test automatisé ; simulateur, 709 créations,
+publication de 1 102 prix puis correction/finalisation/reprise à 1 104, conservés
+à la réouverture. Aucun doublon SQLite, confirmation terminée.
+**Recette iPhone du propriétaire encore attendue.** Voir
+[la livraison 87](../qa/BUILD_87_DELIVERY_2026_11_19.md).
+Les lots clos, fonctionnalités retirées et reports explicites restent inchangés.
+
 **19 novembre — retour PA sur build 86 : publication à corriger.**
 Progression répétée et refus malgré « 1 226 prêtes ». Reproduction isolée :
 plusieurs références affectées au même produit/date passent le rapprochement,
