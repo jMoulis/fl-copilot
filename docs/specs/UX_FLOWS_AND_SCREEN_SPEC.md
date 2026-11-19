@@ -1,3 +1,13 @@
+## Owner arbitration — PA import, 20 November 2026
+
+PA summary is the primary entry: recognised prices can be added to existing
+product history, unknown references remain optional and different prices for one
+product/date are selected independently from product-code maintenance. Keep the
+original/date/qualification and correction review. Remove the explicit PA-only
+finish-confirmations step; continue remaining references in place after partial
+publication. See `../qa/PA_SIMPLE_IMPORT_FLOW_2026_11_20.md`. This supersedes
+conflicting PA confirmation-session UX notes below, without changing other imports.
+
 ## Owner-approved PA choice — 19 November 2026
 
 A price collision is distinct from unidentified product identity. Offer explicit

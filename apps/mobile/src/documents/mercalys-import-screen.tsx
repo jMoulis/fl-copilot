@@ -14,7 +14,6 @@ import {
   getMercalysReviewCache,
 } from "./mercalys-review-cache";
 import type { MercalysBatchResult } from "@fl-copilot/domain";
-import { PurchasePriceRepository } from "../products/purchase-price-repository";
 import { tradingToday } from "../dates/calendar";
 import { purchasePriceNeedsReview } from "@fl-copilot/domain";
 import { isLocalOriginalReferenced } from "./source-upload-recovery";
@@ -270,6 +269,8 @@ export function MercalysImportScreen({
         : [],
     [summary, reviewSourceIndex],
   );
+  const isPurchasePrices = summary?.sourceType === "MERCALYS_PURCHASE_PRICES";
+  const confirmationRequired = pendingConfirmations && !isPurchasePrices;
   const loading = ["READING", "MATCHING", "VALIDATING"].includes(stage);
   const busy = loading || publishing || resolvingProducts || batchBusy;
   // Reading is cancellable and must not trap the user in the review sheet.
@@ -283,8 +284,15 @@ export function MercalysImportScreen({
   useEffect(() => () => reading.current?.abort(), [storeId]);
 
   useEffect(() => {
-    if (storeId && !initialBatchId) void analyticsScheduler.process(storeId);
-  }, [analyticsScheduler, storeId, initialBatchId]);
+    if (storeId && !initialBatchId && summary?.sourceType && !isPurchasePrices)
+      void analyticsScheduler.process(storeId);
+  }, [
+    analyticsScheduler,
+    storeId,
+    initialBatchId,
+    summary?.sourceType,
+    isPurchasePrices,
+  ]);
 
   const chooseWorkbook = useCallback(
     async (asset: NativeDocumentPickerAsset & { expectedChecksum: string }) => {
@@ -373,15 +381,26 @@ export function MercalysImportScreen({
         );
         assertReading();
         setSelectedChecksum(checksum);
+        const priorSession = actorUserId
+          ? new MercalysConfirmationSession(
+              sqlite,
+              storeId,
+              actorUserId,
+              checksum,
+            )
+          : undefined;
+        const pendingSession = await priorSession?.pending();
+        // This full catalogue-backed read already incorporates saved PA decisions.
+        // Retire old PA session markers without requiring an unrelated manual step.
+        if (
+          nextSummary.sourceType === "MERCALYS_PURCHASE_PRICES" &&
+          pendingSession
+        )
+          await priorSession!.finish();
+        assertReading();
         setPendingConfirmations(
-          actorUserId
-            ? await new MercalysConfirmationSession(
-                sqlite,
-                storeId,
-                actorUserId,
-                checksum,
-              ).pending()
-            : false,
+          nextSummary.sourceType !== "MERCALYS_PURCHASE_PRICES" &&
+            !!pendingSession,
         );
         if (priorImport) {
           const pending = await publicationRepository.continuation(
@@ -395,7 +414,11 @@ export function MercalysImportScreen({
             setSummary(pending.summary);
             setSelectedBytes(bytes);
             setSection(
-              pending.summary.productReviewCount ? "PRODUCTS" : "SUMMARY",
+              pending.summary.sourceType === "MERCALYS_PURCHASE_PRICES"
+                ? "SUMMARY"
+                : pending.summary.productReviewCount
+                  ? "PRODUCTS"
+                  : "SUMMARY",
             );
           } else setDuplicate(priorImport);
           setStage("COMPLETE");
@@ -410,11 +433,13 @@ export function MercalysImportScreen({
         setSelectedBytes(bytes);
         setReconciliation(overlap ?? undefined);
         setSection(
-          overlap
-            ? "DIFFERENCES"
-            : nextSummary.productReviewCount
-              ? "PRODUCTS"
-              : "SUMMARY",
+          nextSummary.sourceType === "MERCALYS_PURCHASE_PRICES"
+            ? "SUMMARY"
+            : overlap
+              ? "DIFFERENCES"
+              : nextSummary.productReviewCount
+                ? "PRODUCTS"
+                : "SUMMARY",
         );
         setStage("COMPLETE");
       } catch (caught) {
@@ -467,66 +492,80 @@ export function MercalysImportScreen({
     setPublicationError(undefined);
   }
 
-  async function refreshProductMatches(
-    currentSummary: MercalysImportValidationSummary,
-  ) {
-    if (!storeId || !validationCache) throw new Error("Aucun magasin actif.");
-    setResolutionPhase("MATCHING");
-    setMatchingProgress(undefined);
-    await yieldToInterface();
-    const catalog = await loadProductCatalog(repository, storeId);
-    const previous =
-      productCatalog && selectedChecksum
-        ? validationCache.get(
-            validationCache.key(storeId, selectedChecksum, productCatalog),
-          )
-        : undefined;
-    const matched = await rematchMercalysImportResponsive(
-      continuation ? (previous ?? currentSummary) : currentSummary,
-      storeId,
-      catalog,
-      undefined,
-      setMatchingProgress,
-      previous ? productCatalog : undefined,
-    );
-    const rematched = reviewPurchasePriceCollisions({
-      ...matched,
-      ...(currentSummary.purchasePriceSelections
-        ? { purchasePriceSelections: currentSummary.purchasePriceSelections }
-        : {}),
-    });
-    if (selectedChecksum)
-      validationCache.put(
-        validationCache.key(storeId, selectedChecksum, catalog),
-        rematched,
+  const refreshProductMatches = useCallback(
+    async (currentSummary: MercalysImportValidationSummary) => {
+      if (!storeId || !validationCache) throw new Error("Aucun magasin actif.");
+      setResolutionPhase("MATCHING");
+      setMatchingProgress(undefined);
+      await yieldToInterface();
+      const catalog = await loadProductCatalog(repository, storeId);
+      const previous =
+        productCatalog && selectedChecksum
+          ? validationCache.get(
+              validationCache.key(storeId, selectedChecksum, productCatalog),
+            )
+          : undefined;
+      const matched = await rematchMercalysImportResponsive(
+        continuation ? (previous ?? currentSummary) : currentSummary,
+        storeId,
+        catalog,
+        undefined,
+        setMatchingProgress,
+        previous ? productCatalog : undefined,
       );
-    const pending =
-      continuation && selectedChecksum
-        ? await publicationRepository.continuation(
-            storeId,
-            selectedChecksum,
-            rematched,
-          )
-        : null;
-    if (
-      continuation &&
-      (!pending || pending.sourceDocumentId !== continuation.sourceDocumentId)
-    )
-      throw Error("MERCALYS_CONTINUATION_SOURCE_CHANGED");
-    const nextSummary = pending?.summary ?? rematched;
-    const overlap = pending
-      ? null
-      : await publicationRepository.analyzeOverlap(storeId, nextSummary);
-    setProductCatalog(catalog);
-    setSummary(nextSummary);
-    setContinuation(pending ?? undefined);
-    setReconciliation(overlap ?? undefined);
-    setReviewSourceIndex(undefined);
-    setResolutionKey(undefined);
-    if (!nextSummary.productReviewCount) {
-      setSection(overlap ? "DIFFERENCES" : "SUMMARY");
-    }
-  }
+      const rematched = reviewPurchasePriceCollisions({
+        ...matched,
+        ...(currentSummary.purchasePriceSelections
+          ? { purchasePriceSelections: currentSummary.purchasePriceSelections }
+          : {}),
+      });
+      if (selectedChecksum)
+        validationCache.put(
+          validationCache.key(storeId, selectedChecksum, catalog),
+          rematched,
+        );
+      const pending =
+        continuation && selectedChecksum
+          ? await publicationRepository.continuation(
+              storeId,
+              selectedChecksum,
+              rematched,
+            )
+          : null;
+      if (
+        continuation &&
+        (!pending || pending.sourceDocumentId !== continuation.sourceDocumentId)
+      )
+        throw Error("MERCALYS_CONTINUATION_SOURCE_CHANGED");
+      const nextSummary = pending?.summary ?? rematched;
+      const overlap = pending
+        ? null
+        : await publicationRepository.analyzeOverlap(storeId, nextSummary);
+      setProductCatalog(catalog);
+      setSummary(nextSummary);
+      setContinuation(pending ?? undefined);
+      setReconciliation(overlap ?? undefined);
+      setReviewSourceIndex(undefined);
+      setResolutionKey(undefined);
+      if (!nextSummary.productReviewCount) {
+        setSection(overlap ? "DIFFERENCES" : "SUMMARY");
+      }
+      return {
+        summary: nextSummary,
+        continuation: pending ?? undefined,
+        reconciliation: overlap ?? undefined,
+      };
+    },
+    [
+      storeId,
+      validationCache,
+      productCatalog,
+      selectedChecksum,
+      continuation,
+      publicationRepository,
+      repository,
+    ],
+  );
 
   async function saveResolutions(
     resolutions: readonly MercalysProductResolution[],
@@ -549,9 +588,12 @@ export function MercalysImportScreen({
     setResolutionProgress({ completed: 0, total: resolutions.length });
     const completed: number[] = [];
     try {
-      // Durable before the first mutation: interruption cannot expose an unfinalized publication.
-      await confirmationSession.begin();
-      setPendingConfirmations(true);
+      // PA decisions update only affected lines; publication revalidates the
+      // catalogue once. Other import types retain their existing session policy.
+      if (!isPurchasePrices) {
+        await confirmationSession.begin();
+        setPendingConfirmations(true);
+      }
       for (const resolution of resolutions) {
         await yieldToInterface();
         await commitMercalysResolution(
@@ -585,7 +627,9 @@ export function MercalysImportScreen({
       }
     } catch {
       setError(
-        "L’action s’est interrompue ou les codes ont changé. Les décisions enregistrées sont conservées. Termine les confirmations pour actualiser la liste.",
+        isPurchasePrices
+          ? "L’action s’est interrompue. Les décisions enregistrées sont conservées ; les autres PA reconnus restent disponibles."
+          : "L’action s’est interrompue ou les codes ont changé. Les décisions enregistrées sont conservées. Termine les confirmations pour actualiser la liste.",
       );
     } finally {
       try {
@@ -600,6 +644,8 @@ export function MercalysImportScreen({
             completed,
           );
           setSummary(next);
+          if (isPurchasePrices && !next.productReviewCount)
+            setSection("SUMMARY");
           if (!continuation && validationCache && selectedChecksum)
             validationCache.put(
               validationCache.key(storeId, selectedChecksum, catalog),
@@ -610,7 +656,9 @@ export function MercalysImportScreen({
         }
       } catch {
         setError(
-          "Les décisions sont enregistrées. Termine les confirmations pour actualiser la liste.",
+          isPurchasePrices
+            ? "Les décisions sont enregistrées. Rouvre le fichier pour actualiser les références ; aucun prix ajouté n’est perdu."
+            : "Les décisions sont enregistrées. Termine les confirmations pour actualiser la liste.",
         );
       }
       actionLock.current = false;
@@ -669,6 +717,7 @@ export function MercalysImportScreen({
         selectedChecksum,
       ).save(next.purchasePriceSelections ?? []);
       setSummary(next);
+      if (!next.productReviewCount) setSection("SUMMARY");
       setReconciliation(overlap ?? undefined);
       setResolutionKey(undefined);
       setReviewSourceIndex(undefined);
@@ -725,8 +774,9 @@ export function MercalysImportScreen({
   }
 
   const publishValidLines = useCallback(async () => {
+    if (actionLock.current) return;
     if (
-      pendingConfirmations ||
+      confirmationRequired ||
       !storeId ||
       !filename ||
       !summary ||
@@ -752,24 +802,44 @@ export function MercalysImportScreen({
       );
       return;
     }
+    actionLock.current = true;
     setPublishing(true);
     setError(undefined);
     setPublicationError(undefined);
     let durableFile: ExpoFile | undefined;
     try {
-      if (continuation) {
+      const prepared = isPurchasePrices
+        ? await refreshProductMatches(summary)
+        : { summary, continuation };
+      const current = archiveAuthority.current;
+      if (
+        !current.archiveFocused ||
+        current.sqlite !== sqlite ||
+        current.session?.user.id !== actorUserId ||
+        current.session?.stores[0]?.storeId !== storeId ||
+        current.session?.stores[0]?.role !== "MANAGER"
+      )
+        throw Error("MERCALYS_REVIEW_SCOPE_CHANGED");
+      if (isPurchasePrices && confirmationSession) {
+        await confirmationSession.finish();
+        setPendingConfirmations(false);
+      }
+      if (prepared.continuation) {
         const result = await publicationRepository.resume({
           storeId,
-          sourceDocumentId: continuation.sourceDocumentId,
+          sourceDocumentId: prepared.continuation.sourceDocumentId,
           checksum: selectedChecksum,
-          summary,
+          summary: prepared.summary,
         });
         onChanged?.();
         setPublication({
           ...result,
-          publishedCount: continuation.publishedCount + result.publishedCount,
+          publishedCount:
+            prepared.continuation.publishedCount + result.publishedCount,
         });
-        const analyticsRun = await analyticsScheduler.process(storeId);
+        const analyticsRun = isPurchasePrices
+          ? { failedJobs: 0 }
+          : await analyticsScheduler.process(storeId);
         if (analyticsRun.failedJobs > 0)
           setPublicationError(
             "Les lignes sont publiées ; certains indicateurs restent à recalculer.",
@@ -791,7 +861,7 @@ export function MercalysImportScreen({
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         sizeBytes: selectedBytes.byteLength,
         checksum: selectedChecksum,
-        summary,
+        summary: prepared.summary,
         reconciliationApproval,
       });
       // The publication transaction now owns this original. Later failures must never delete it.
@@ -799,7 +869,9 @@ export function MercalysImportScreen({
       onChanged?.();
       setPublication(result);
       setReconciliation(undefined);
-      const analyticsRun = await analyticsScheduler.process(storeId);
+      const analyticsRun = isPurchasePrices
+        ? { failedJobs: 0 }
+        : await analyticsScheduler.process(storeId);
       if (analyticsRun.failedJobs > 0) {
         setPublicationError(
           "Les données sont publiées, mais certains indicateurs restent à recalculer.",
@@ -838,6 +910,7 @@ export function MercalysImportScreen({
       }
       setPublicationError(importErrorMessage(caught));
     } finally {
+      actionLock.current = false;
       setPublishing(false);
     }
   }, [
@@ -847,7 +920,10 @@ export function MercalysImportScreen({
     summary,
     selectedBytes,
     selectedChecksum,
-    pendingConfirmations,
+    confirmationRequired,
+    isPurchasePrices,
+    confirmationSession,
+    refreshProductMatches,
     reconciliation,
     continuation,
     actorUserId,
@@ -857,6 +933,50 @@ export function MercalysImportScreen({
     syncNow,
     onChanged,
   ]);
+  async function continuePriceReview() {
+    if (
+      actionLock.current ||
+      !storeId ||
+      !selectedChecksum ||
+      !summary ||
+      !publication
+    )
+      return;
+    actionLock.current = true;
+    setResolvingProducts(true);
+    setPublicationError(undefined);
+    try {
+      const pending = await publicationRepository.continuation(
+        storeId,
+        selectedChecksum,
+        summary,
+      );
+      const current = archiveAuthority.current;
+      if (
+        !pending ||
+        pending.sourceDocumentId !== publication.sourceDocumentId ||
+        !current.archiveFocused ||
+        current.sqlite !== sqlite ||
+        current.session?.user.id !== actorUserId ||
+        current.session?.stores[0]?.storeId !== storeId
+      )
+        throw Error("MERCALYS_REVIEW_SCOPE_CHANGED");
+      setContinuation(pending);
+      setSummary(pending.summary);
+      setPublication(undefined);
+      setSection("PRODUCTS");
+      setResolutionKey(undefined);
+      setReviewSourceIndex(undefined);
+      scrollToStart();
+    } catch {
+      setPublicationError(
+        "Les PA ajoutés sont conservés. La liste des références restantes n’a pas pu être ouverte ; réessaie.",
+      );
+    } finally {
+      actionLock.current = false;
+      setResolvingProducts(false);
+    }
+  }
   const reviewResultCallback = useRef(onReviewResult);
   reviewResultCallback.current = onReviewResult;
   useEffect(() => {
@@ -1051,11 +1171,11 @@ export function MercalysImportScreen({
           onCloseInitialBatch={onClose}
           onDiscuss={onDiscuss}
           onBusyChange={setBatchBusy}
-          onPublished={async () => {
+          onPublished={async (needsAnalytics) => {
             setUploadRevision((r) => r + 1);
             if (storeId) {
               try {
-                await analyticsScheduler.process(storeId);
+                if (needsAnalytics) await analyticsScheduler.process(storeId);
                 void syncNow(storeId);
               } catch {
                 throw Error("MERCALYS_BATCH_POST_PUBLICATION_PENDING");
@@ -1143,7 +1263,12 @@ export function MercalysImportScreen({
             {(
               [
                 ["SUMMARY", "Résumé"],
-                ["PRODUCTS", `Produits (${productResolutions.length})`],
+                [
+                  "PRODUCTS",
+                  isPurchasePrices
+                    ? `À compléter (${productResolutions.length})`
+                    : `Produits (${productResolutions.length})`,
+                ],
                 ["DIFFERENCES", "Comparaison"],
               ] as const
             )
@@ -1221,7 +1346,7 @@ export function MercalysImportScreen({
           </View>
         ) : null}
 
-        {pendingConfirmations && summary ? (
+        {confirmationRequired && summary ? (
           <SectionCard title="Confirmations enregistrées">
             <Text className="text-base text-muted">
               Tu peux continuer la liste ou terminer cette session. Une
@@ -1292,6 +1417,18 @@ export function MercalysImportScreen({
             })}
           </SectionCard>
         ) : null}
+        {isPurchasePrices &&
+        summary &&
+        section === "PRODUCTS" &&
+        !publication &&
+        !reconciliation &&
+        summary.readyCount > (continuation?.publishedCount ?? 0) ? (
+          <SecondaryButton
+            label="Ajouter les PA reconnus"
+            disabled={busy}
+            onPress={() => void publishValidLines()}
+          />
+        ) : null}
         {summary && section === "PRODUCTS" && productCatalog && storeId ? (
           <ProductResolutionSummary
             key={resolutionKey ?? "all"}
@@ -1334,7 +1471,6 @@ export function MercalysImportScreen({
         !reconciliation &&
         (section === "SUMMARY" || publication) ? (
           <ValidationSummary
-            storeId={storeId}
             summary={summary}
             previouslyPublishedCount={continuation?.publishedCount ?? 0}
             pendingPriceExclusions={
@@ -1350,9 +1486,17 @@ export function MercalysImportScreen({
               )
             }
             publication={publication}
-            publishing={publishing}
+            publishing={publishing || resolvingProducts}
             publicationError={publicationError}
-            pendingConfirmations={pendingConfirmations}
+            pendingConfirmations={confirmationRequired}
+            onReviewProducts={() => {
+              setSection("PRODUCTS");
+              setResolutionKey(undefined);
+              scrollToStart();
+            }}
+            onContinue={
+              isPurchasePrices ? () => void continuePriceReview() : undefined
+            }
             onPublish={() => {
               void publishValidLines();
             }}
@@ -1362,7 +1506,7 @@ export function MercalysImportScreen({
 
         {summary &&
         reconciliation &&
-        !pendingConfirmations &&
+        !confirmationRequired &&
         section === "SUMMARY" ? (
           <SectionCard title="Nouvelle version à examiner">
             <Text className="text-base text-ink">
@@ -1384,7 +1528,7 @@ export function MercalysImportScreen({
         ) : null}
         {summary &&
         reconciliation &&
-        !pendingConfirmations &&
+        !confirmationRequired &&
         section === "DIFFERENCES" ? (
           <MercalysReconciliationReview
             key={selectedChecksum}
@@ -1561,7 +1705,6 @@ async function loadProductCatalog(
 }
 
 function ValidationSummary({
-  storeId,
   summary,
   previouslyPublishedCount = 0,
   pendingPriceExclusions = false,
@@ -1569,10 +1712,11 @@ function ValidationSummary({
   publishing,
   publicationError,
   pendingConfirmations,
+  onReviewProducts,
+  onContinue,
   onPublish,
   onCancel,
 }: {
-  storeId?: string;
   summary: MercalysImportValidationSummary;
   previouslyPublishedCount?: number;
   pendingPriceExclusions?: boolean;
@@ -1580,35 +1724,23 @@ function ValidationSummary({
   publishing: boolean;
   publicationError?: string;
   pendingConfirmations: boolean;
+  onReviewProducts: () => void;
+  onContinue?: () => void;
   onPublish: () => void;
   onCancel: () => void;
 }) {
-  const { sqlite } = useLocalDatabase();
-  const [preview, setPreview] =
-    useState<Awaited<ReturnType<PurchasePriceRepository["preview"]>>>();
-  const [previewError, setPreviewError] = useState(false);
-  useEffect(() => {
-    let active = true;
-    setPreview(undefined);
-    setPreviewError(false);
-    if (
-      !pendingConfirmations &&
-      storeId &&
-      summary.sourceType === "MERCALYS_PURCHASE_PRICES"
-    ) {
-      new PurchasePriceRepository(sqlite)
-        .preview(storeId, summary)
-        .then((value) => {
-          if (active) setPreview(value);
-        })
-        .catch(() => {
-          if (active) setPreviewError(true);
-        });
-    }
-    return () => {
-      active = false;
-    };
-  }, [sqlite, storeId, summary, pendingConfirmations]);
+  const prices = summary.sourceType === "MERCALYS_PURCHASE_PRICES";
+  const missingReferences = summary.lines.filter(
+    (l) =>
+      l.match.state !== "AUTO_MATCH" &&
+      !hasPurchasePriceCollision(l) &&
+      !isUnselectedPurchasePrice(l),
+  ).length;
+  const conflictingPrices = new Set(
+    summary.lines
+      .filter(hasPurchasePriceCollision)
+      .map((l) => `${l.match.matchedProductId}:${l.record.businessDate}`),
+  ).size;
   return (
     <>
       <View className="gap-4 border-b border-line pb-5">
@@ -1667,10 +1799,24 @@ function ValidationSummary({
           tone="ready"
         />
         <CountLine
-          label="Produits à confirmer"
-          value={summary.productReviewCount}
+          label={prices ? "Références à compléter" : "Produits à confirmer"}
+          value={prices ? missingReferences : summary.productReviewCount}
           tone="review"
         />
+        {prices && conflictingPrices > 0 ? (
+          <CountLine
+            label="Prix à départager"
+            value={conflictingPrices}
+            tone="review"
+          />
+        ) : null}
+        {prices && summary.productReviewCount > 0 && !publication ? (
+          <SecondaryButton
+            label="Voir les références à compléter"
+            onPress={onReviewProducts}
+            disabled={publishing}
+          />
+        ) : null}
         {summary.lines.some(isUnselectedPurchasePrice) ? (
           <CountLine
             label="Lignes écartées par ton choix de PA"
@@ -1684,33 +1830,9 @@ function ValidationSummary({
             {summary.lines.some(hasPurchasePriceCollision) ? (
               <InlineAlert
                 title="Associations à vérifier"
-                message="Plusieurs références sont associées au même produit à la même date. Leurs prix restent à confirmer dans l’onglet Produits ; les autres lignes peuvent être publiées."
+                message="Plusieurs prix concernent le même produit à la même date. Tu pourras choisir le prix à retenir ; les autres PA reconnus peuvent déjà être ajoutés."
               />
             ) : null}
-            {preview ? (
-              <View className="gap-2">
-                <Text className="text-sm text-muted">
-                  Par rapport au dernier PA disponible à cette date, à unité
-                  identique :
-                </Text>
-                <Text className="text-sm text-ink">
-                  {preview.increased} en hausse · {preview.decreased} en baisse
-                  · {preview.unchanged} inchangés
-                </Text>
-                <Text className="text-sm text-muted">
-                  {preview.withoutComparison} sans comparaison ·{" "}
-                  {preview.toVerify} à vérifier (prix ou unité)
-                </Text>
-              </View>
-            ) : (
-              <Text className="text-sm text-muted">
-                {pendingConfirmations
-                  ? "La comparaison sera actualisée en terminant les confirmations."
-                  : previewError
-                    ? "Comparaison indisponible ; les prix du fichier restent consultables."
-                    : "Comparaison des prix…"}
-              </Text>
-            )}
             <CountLine
               label="Prix à vérifier (0,01 € ou 0,001 €)"
               value={
@@ -1749,7 +1871,7 @@ function ValidationSummary({
           accessibilityRole="header"
           className="text-xl font-semibold text-ink"
         >
-          Publication
+          {prices ? "Historique des prix d’achat" : "Publication"}
         </Text>
         {publication ? (
           <SourceOriginalButton
@@ -1759,7 +1881,11 @@ function ValidationSummary({
         ) : null}
         {publication ? (
           <InlineAlert
-            title={`${publication.publishedCount} ligne${publication.publishedCount > 1 ? "s" : ""} publiée${publication.publishedCount > 1 ? "s" : ""} localement`}
+            title={
+              prices
+                ? `${publication.publishedCount} PA ajouté${publication.publishedCount > 1 ? "s" : ""}`
+                : `${publication.publishedCount} ligne${publication.publishedCount > 1 ? "s" : ""} publiée${publication.publishedCount > 1 ? "s" : ""} localement`
+            }
             message={
               publication.remainingCount > 0
                 ? `${publication.remainingCount} ligne${publication.remainingCount > 1 ? "s restent" : " reste"} à corriger. La synchronisation du fichier est en attente.`
@@ -1768,8 +1894,9 @@ function ValidationSummary({
           />
         ) : (
           <Text className="text-base leading-6 text-muted">
-            Seules les lignes prêtes seront enregistrées. Les autres resteront à
-            corriger et le fichier sera conservé sur cet appareil.
+            {prices
+              ? "Les PA reconnus seront ajoutés à la date du fichier. Les références restantes sont conservées et pourront être complétées plus tard."
+              : "Seules les lignes prêtes seront enregistrées. Les autres resteront à corriger et le fichier sera conservé sur cet appareil."}
           </Text>
         )}
         {!publication &&
@@ -1794,13 +1921,29 @@ function ValidationSummary({
             message={publicationError}
           />
         ) : null}
+        {prices &&
+        publication &&
+        publication.remainingCount > 0 &&
+        onContinue ? (
+          <SecondaryButton
+            label="Compléter les références restantes"
+            disabled={publishing}
+            onPress={onContinue}
+          />
+        ) : null}
         <PrimaryButton
           label={
-            publication
-              ? "Lignes publiées"
-              : previouslyPublishedCount
-                ? "Publier les lignes restantes"
-                : "Publier les lignes valides"
+            prices
+              ? publication
+                ? "PA ajoutés"
+                : previouslyPublishedCount
+                  ? "Ajouter les PA restants"
+                  : "Ajouter les PA reconnus"
+              : publication
+                ? "Lignes publiées"
+                : previouslyPublishedCount
+                  ? "Publier les lignes restantes"
+                  : "Publier les lignes valides"
           }
           disabled={
             pendingConfirmations ||
@@ -1869,6 +2012,7 @@ function ProductResolutionSummary({
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
   const [expanded, setExpanded] = useState<string | null>();
+  const [editingIdentity, setEditingIdentity] = useState<string | null>(null);
   const creatable = resolutions.filter(({ canCreate }) => canCreate);
   const productById = new Map(
     catalog.products.map((product) => [product.id, product]),
@@ -1971,8 +2115,8 @@ function ProductResolutionSummary({
               <View className="gap-3 border-l-2 border-warning-soft pl-3">
                 {resolution.priceConflict ? (
                   <InlineAlert
-                    title="Plusieurs références pour le même produit"
-                    message={`Ces références ont un PA à la même date : ${resolution.priceConflict.map((p) => `${p.label} (ITM8 ${p.itm8 ?? "inconnu"}) : ${p.amount} €`).join(" ; ")}. Vérifie l’association. S’il s’agit d’articles différents, crée un produit distinct ou associe la référence au bon produit. Si ces références représentent le même article, choisis ci-dessous le PA à retenir pour ce fichier et cette date. Les autres lignes restent conservées sans être publiées.`}
+                    title="Choisir le prix d’achat"
+                    message="Ces références sont associées au même produit. Choisis le PA à retenir pour cette date ; les autres lignes du fichier restent conservées."
                   />
                 ) : null}
                 {resolution.priceConflict?.map((price) => (
@@ -1983,64 +2127,84 @@ function ProductResolutionSummary({
                     onPress={() => onChoosePrice(price.sourceIndex)}
                   />
                 ))}
-                <Text className="text-sm text-muted">
-                  {resolution.identifiers
-                    .map(({ type, value }) => `${type} ${value}`)
-                    .join(" · ") || "Aucun identifiant exploitable"}
-                </Text>
-                {candidates.some((p) => p.status !== "ACTIVE") ? (
-                  <InlineAlert
-                    title="Code déjà connu"
-                    message="Ce code appartient à un article archivé. Réactive-le depuis Produits → Nettoyer le catalogue avant de poursuivre."
-                  />
-                ) : null}
-                {candidates.slice(0, 3).map((product) => (
+                {resolution.priceConflict ? (
                   <SecondaryButton
-                    key={product.id}
-                    label={`Associer à ${product.label}`}
-                    disabled={
-                      loading ||
-                      product.status !== "ACTIVE" ||
-                      (!!resolution.priceConflict &&
-                        !!resolution.expectedProductIds?.includes(product.id))
+                    label="Corriger l’association produit"
+                    disabled={loading}
+                    onPress={() =>
+                      setEditingIdentity(
+                        editingIdentity === resolution.key
+                          ? null
+                          : resolution.key,
+                      )
                     }
-                    onPress={() => onConfirm(resolution, product.id)}
                   />
-                ))}
-                <MercalysImportProductPicker
-                  storeId={storeId}
-                  source={{
-                    label: resolution.label,
-                    identifiers: resolution.identifiers,
-                  }}
-                  catalog={catalog}
-                  conflictedProductIds={catalog.conflictedProductIds}
-                  busy={loading}
-                  onConfirm={(id) => onConfirm(resolution, id)}
-                />
-                {resolution.expectedProductIds ? (
-                  <Text className="text-sm text-warning">
-                    Cette décision réassocie les codes de cette référence pour
-                    les prochains imports. Les autres codes du produit actuel
-                    sont conservés.
-                  </Text>
                 ) : null}
-                {resolution.canCreate ? (
-                  <SecondaryButton
-                    label="Créer ce produit"
-                    disabled={loading}
-                    onPress={() => onCreate([resolution])}
-                  />
-                ) : resolution.canCreateAsDistinct ? (
-                  <SecondaryButton
-                    label="Créer comme nouveau produit"
-                    disabled={loading}
-                    onPress={() => onCreateDistinct(resolution)}
-                  />
-                ) : candidates.length === 0 ? (
-                  <Text className="text-sm text-warning">
-                    Recherchez le produit existant à associer à cette ligne.
-                  </Text>
+                {!resolution.priceConflict ||
+                editingIdentity === resolution.key ? (
+                  <>
+                    <Text className="text-sm text-muted">
+                      {resolution.identifiers
+                        .map(({ type, value }) => `${type} ${value}`)
+                        .join(" · ") || "Aucun identifiant exploitable"}
+                    </Text>
+                    {candidates.some((p) => p.status !== "ACTIVE") ? (
+                      <InlineAlert
+                        title="Code déjà connu"
+                        message="Ce code appartient à un article archivé. Réactive-le depuis Produits → Nettoyer le catalogue avant de poursuivre."
+                      />
+                    ) : null}
+                    {candidates.slice(0, 3).map((product) => (
+                      <SecondaryButton
+                        key={product.id}
+                        label={`Associer à ${product.label}`}
+                        disabled={
+                          loading ||
+                          product.status !== "ACTIVE" ||
+                          (!!resolution.priceConflict &&
+                            !!resolution.expectedProductIds?.includes(
+                              product.id,
+                            ))
+                        }
+                        onPress={() => onConfirm(resolution, product.id)}
+                      />
+                    ))}
+                    <MercalysImportProductPicker
+                      storeId={storeId}
+                      source={{
+                        label: resolution.label,
+                        identifiers: resolution.identifiers,
+                      }}
+                      catalog={catalog}
+                      conflictedProductIds={catalog.conflictedProductIds}
+                      busy={loading}
+                      onConfirm={(id) => onConfirm(resolution, id)}
+                    />
+                    {resolution.expectedProductIds ? (
+                      <Text className="text-sm text-warning">
+                        Cette décision réassocie les codes de cette référence
+                        pour les prochains imports. Les autres codes du produit
+                        actuel sont conservés.
+                      </Text>
+                    ) : null}
+                    {resolution.canCreate ? (
+                      <SecondaryButton
+                        label="Créer ce produit"
+                        disabled={loading}
+                        onPress={() => onCreate([resolution])}
+                      />
+                    ) : resolution.canCreateAsDistinct ? (
+                      <SecondaryButton
+                        label="Créer comme nouveau produit"
+                        disabled={loading}
+                        onPress={() => onCreateDistinct(resolution)}
+                      />
+                    ) : candidates.length === 0 ? (
+                      <Text className="text-sm text-warning">
+                        Recherchez le produit existant à associer à cette ligne.
+                      </Text>
+                    ) : null}
+                  </>
                 ) : null}
               </View>
             ) : null}

@@ -932,7 +932,7 @@ it("only proposes an analysis question for canonical published periods from the 
     n: 0,
   });
 });
-async function publicationFixture(unmatched = false) {
+async function publicationFixture(unmatched = false, prices = false) {
   const { MercalysImportPublicationRepository } =
     await import("./mercalys-import-publication");
   const { MercalysBatchPublication } =
@@ -942,7 +942,7 @@ async function publicationFixture(unmatched = false) {
   const s = await setup(3),
     productId = randomUUID();
   const bytes = [
-    workbook("Vente Nette", unmatched),
+    prices ? purchaseWorkbook() : workbook("Vente Nette", unmatched),
     workbook("Casse"),
     new Uint8Array([0]),
   ];
@@ -1335,4 +1335,47 @@ it("persists a completed review atomically without requeueing and rejects a stal
   expect(await s.adapter.getAllAsync("SELECT * FROM sync_outbox")).toHaveLength(
     0,
   );
+});
+
+function purchaseWorkbook() {
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    book,
+    XLSX.utils.aoa_to_sheet([
+      ["Numéro point de vente : 9083"],
+      ["Date : 18/11/2026 17:00:00"],
+      ["Date d’application : 14/11/2026"],
+      [
+        "ITM",
+        "EAN",
+        "LIBELLE",
+        "NOMENCLATURE",
+        "PRIX ACHAT PAR UNITE",
+        "ACTIF",
+      ],
+      ["00000001", "0000000000001", "Article", "FRUITS FRAIS", 2.85, "Oui"],
+    ]),
+    "Mercalys",
+  );
+  return new Uint8Array(
+    XLSX.write(book, { type: "array", bookType: "xlsx" }) as ArrayBuffer,
+  );
+}
+it("reports no analytics job for PA and retains it for movement imports in the same batch", async () => {
+  const s = await publicationFixture(false, true);
+  const results = await s.publisher.confirm(
+    await s.publisher.preview(s.input.id),
+  );
+  expect(results[0]).toMatchObject({
+    status: "PUBLISHED",
+    analyticsJobId: null,
+    publishedCount: 1,
+  });
+  expect(results[1]).toMatchObject({
+    status: "PUBLISHED",
+    analyticsJobId: expect.any(String),
+  });
+  expect(
+    s.db.prepare("SELECT COUNT(*) AS n FROM purchase_price_observations").get(),
+  ).toEqual({ n: 1 });
 });

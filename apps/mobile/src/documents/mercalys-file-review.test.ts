@@ -887,8 +887,11 @@ it("chooses a price without changing product identity, and restores the draft af
       drafts.set(key, value);
     return { changes: 1 };
   });
+  addPriceCodes("00000001", "00000002");
   await mount();
-  expect(button("Associer à TOMATE VRAC").props.disabled).toBe(true);
+  await press("Voir les références à compléter");
+  expect(button("Associer à TOMATE VRAC")).toBeUndefined();
+  expect(button("Corriger l’association produit")).toBeDefined();
   const choose = renderer!.root.findAll((n) =>
     n.props.label?.startsWith("Retenir 2,85 € HT"),
   )[0]!;
@@ -908,7 +911,7 @@ it("chooses a price without changing product identity, and restores the draft af
   await act(async () => renderer!.unmount());
   await mount();
   expect(text(renderer!.root)).toContain("Prix retenus pour ce fichier");
-  await press("Publier les lignes valides");
+  await press("Ajouter les PA reconnus");
   expect(p.publish).toHaveBeenCalledWith(
     expect.objectContaining({
       summary: expect.objectContaining({
@@ -920,4 +923,165 @@ it("chooses a price without changing product identity, and restores the draft af
       }),
     }),
   );
+});
+
+function addPriceCodes(...values: string[]) {
+  p.identifiers = values.map((value, index) => ({
+    entity: {
+      id: `77777777-7777-4777-8777-${String(index).padStart(12, "0")}`,
+      productId: p.products[0]!.entity.id,
+      storeId: p.products[0]!.entity.storeId,
+      type: "ITM8",
+      value,
+      status: "VALIDATED",
+      deletedAt: null,
+    },
+    syncState: "SYNCED",
+  }));
+}
+function partialPrices() {
+  const summary = structuredClone(
+    p.validate(),
+  ) as MercalysImportValidationSummary;
+  summary.sourceType = "MERCALYS_PURCHASE_PRICES";
+  summary.lines[0]!.record.purchasePrice = {
+    amount: "2.85",
+    sourceActive: true,
+    nomenclature: "FRUITS",
+  };
+  const unknown = structuredClone(summary.lines[0]!);
+  unknown.record.sourceIndex = 31;
+  unknown.record.itm8 = "00000999";
+  unknown.record.rawLabel = "REFERENCE INCONNUE";
+  unknown.match = {
+    ...unknown.match,
+    state: "NO_MATCH",
+    matchedProductId: null,
+    candidates: [],
+  };
+  summary.lines[0]!.match = {
+    ...summary.lines[0]!.match,
+    state: "AUTO_MATCH",
+    matchedProductId: String(p.products[0]!.entity.id),
+  };
+  summary.lines.push(unknown);
+  summary.detectedLineCount = 2;
+  summary.readyCount = 1;
+  summary.productReviewCount = 1;
+  addPriceCodes("00000001");
+  p.validate.mockReturnValue(summary);
+  p.analyze.mockResolvedValue(null);
+  return summary;
+}
+it("adds recognised PA without requiring catalogue completion or waiting for sales computations, then opens remaining references directly", async () => {
+  const summary = partialPrices();
+  p.publish.mockResolvedValue({
+    sourceDocumentId: "new-source",
+    publishedCount: 1,
+    remainingCount: 1,
+    replacedCount: 0,
+  });
+  await mount();
+  expect(button("Ajouter les PA reconnus").props.disabled).toBe(false);
+  expect(button("Créer les produits manquants")).toBeUndefined();
+  expect(button("Terminer les confirmations")).toBeUndefined();
+  await press("Ajouter les PA reconnus");
+  expect(p.publish).toHaveBeenCalledTimes(1);
+  expect(p.publish.mock.calls[0]![0].summary).toMatchObject({
+    readyCount: 1,
+    productReviewCount: 1,
+  });
+  expect(p.recompute).not.toHaveBeenCalled();
+  expect(p.sync).toHaveBeenCalledTimes(1);
+  expect(text(renderer!.root)).toContain("1 PA ajouté");
+  p.continuation.mockResolvedValue({
+    sourceDocumentId: "new-source",
+    summary,
+    publishedCount: 1,
+    remainingCount: 1,
+    publication: { records: [] },
+  });
+  const reads = p.read.mock.calls.length;
+  await press("Compléter les références restantes");
+  expect(p.read).toHaveBeenCalledTimes(reads);
+  expect(p.publish).toHaveBeenCalledTimes(1);
+  expect(text(renderer!.root)).toContain("REFERENCE INCONNUE");
+});
+it("retires old PA confirmation markers after a fresh read without imposing a manual finish", async () => {
+  partialPrices();
+  p.sqlite.getFirstAsync.mockImplementation(async (_sql, key) =>
+    String(key).startsWith("mercalys-confirmations:")
+      ? { value: "pending" }
+      : null,
+  );
+  await mount();
+  expect(
+    p.sqlite.runAsync.mock.calls.some(
+      (c) =>
+        String(c[0]).startsWith("DELETE FROM app_metadata") &&
+        String(c[1]).startsWith("mercalys-confirmations:"),
+    ),
+  ).toBe(true);
+  expect(button("Terminer les confirmations")).toBeUndefined();
+  await press("Ajouter les PA reconnus");
+  expect(p.publish).toHaveBeenCalledTimes(1);
+});
+it("revalidates PA mappings at addition time and prevents a second native tap from starting another publication", async () => {
+  partialPrices();
+  await mount();
+  // A catalogue pull happened since the preview: the old code is no longer known.
+  p.identifiers = [];
+  p.publish.mockImplementation(async (input) => {
+    if (!input.summary.readyCount)
+      throw Error("No validated Mercalys line is ready for publication.");
+  });
+  await act(async () => {
+    const add = button("Ajouter les PA reconnus").props.onPress;
+    add();
+    add();
+    await new Promise((r) => setTimeout(r, 30));
+  });
+  expect(p.publish).toHaveBeenCalledTimes(1);
+  expect(p.publish.mock.calls[0]![0].summary.readyCount).toBe(0);
+  expect(text(renderer!.root)).toContain("Publication impossible");
+  expect(p.sync).not.toHaveBeenCalled();
+  expect(p.recompute).not.toHaveBeenCalled();
+});
+
+it("keeps PA addition available after an optional catalogue decision without starting a global confirmation session", async () => {
+  partialPrices();
+  const commit = vi
+    .spyOn(confirmation, "commitMercalysResolution")
+    .mockResolvedValue(undefined);
+  await mount();
+  await press("Voir les références à compléter");
+  await press("Créer 1 produit depuis Mercalys");
+  expect(commit).toHaveBeenCalledTimes(1);
+  expect(
+    p.sqlite.runAsync.mock.calls.some(
+      (c) =>
+        String(c[0]).startsWith("INSERT INTO app_metadata") &&
+        String(c[1]).startsWith("mercalys-confirmations:"),
+    ),
+  ).toBe(false);
+  expect(button("Terminer les confirmations")).toBeUndefined();
+  expect(button("Ajouter les PA reconnus").props.disabled).toBe(false);
+  await press("Ajouter les PA reconnus");
+  expect(p.publish).toHaveBeenCalledTimes(1);
+});
+
+it("requires a renewed comparison when the PA source overlaps a price added since the preview", async () => {
+  const summary = partialPrices();
+  const overlap = {
+    ...compare({ ...summary, productReviewCount: 0 }),
+    sourceType: "MERCALYS_PURCHASE_PRICES" as const,
+  };
+  p.analyze.mockResolvedValueOnce(null).mockResolvedValue(overlap);
+  p.publish.mockRejectedValue(new MercalysOverlapReconciliationError(overlap));
+  await mount();
+  await press("Ajouter les PA reconnus");
+  expect(p.publish.mock.calls[0]![0].reconciliationApproval).toBeUndefined();
+  expect(text(renderer!.root)).toContain("La comparaison a changé");
+  expect(p.sync).not.toHaveBeenCalled();
+  expect(p.recompute).not.toHaveBeenCalled();
 });

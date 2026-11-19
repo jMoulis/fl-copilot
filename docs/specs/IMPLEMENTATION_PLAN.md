@@ -1,3 +1,14 @@
+## Owner-approved PA flow simplification — 20 November 2026
+
+Supersede the PA-only requirement to finish a global catalogue confirmation
+session. Open PA files on their summary, add recognised prices through canonical
+publication, and leave unresolved references available for optional completion.
+Revalidate once at addition; preserve dated price choices, source proof, explicit
+correction comparisons and duplicate protection. Continue partial imports in the
+same review screen. Do not wait for unrelated sales analytics or repeat automatic
+PA comparisons after each optional decision. Sales/waste session policy remains
+unchanged. See `../qa/PA_SIMPLE_IMPORT_FLOW_2026_11_20.md` for acceptance/delivery.
+
 ## Owner-approved PA choice — 19 November 2026
 
 When different source codes represent one catalogue product, the owner explicitly
