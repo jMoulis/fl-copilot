@@ -1,3 +1,16 @@
+## Owner-approved PA choice — 19 November 2026
+
+A price collision is distinct from unidentified product identity. Offer explicit
+“Retenir … € HT” actions with ITM8 and application date for source references
+mapped to the same product. Disable reassociating to that same product as a
+resolution of a price collision; retain changing the mapping for genuinely
+different products. Show the retained price and excluded line count, permit
+changing an unpublished choice, and restore it after closing/reopening. Only
+explicit publication writes the chosen PA. Excluded alternatives remain in the
+original and source records, no longer counted as products to resolve. A choice
+is specific to this file/date; tomorrow’s conflicting prices require a new choice.
+Do not silently change an already published PA from this screen.
+
 ## PA publication regression — 19 November 2026
 
 Before counting a PA row as ready, detect multiple source references mapped to

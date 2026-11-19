@@ -1,3 +1,16 @@
+## Owner-approved PA choice — 19 November 2026
+
+When different source codes represent one catalogue product, the owner explicitly
+chooses the price source row for that product/application date. Keep one product;
+never choose by order, amount or inferred activity. Reuse the existing source
+record IGNORED state for the unselected rows, preserving all original values and
+an explicit decision (actor, time, selected index and group). Draft choices are
+private local metadata keyed by store/owner/checksum; publication/resume commits
+records and canonical MERCALYS_PUBLISH Outbox atomically. Existing partially
+published files remain eligible; published observations cannot be replaced by
+this action. Test persistence, stale mappings, partial publication, sync replay,
+unique product/date, unchanged catalogue and native reopen. No AI or new service.
+
 ## PA publication regression — 19 November 2026
 
 Before counting a PA row as ready, detect multiple source references mapped to

@@ -1,4 +1,7 @@
-import { reviewPurchasePriceCollisions } from "./mercalys-purchase-price-review";
+import {
+  type PurchasePriceSelection,
+  reviewPurchasePriceCollisions,
+} from "./mercalys-purchase-price-review";
 import { parseMercalysPurchasePrices } from "@fl-copilot/import-core";
 import {
   prepareMercalysProductMatcher,
@@ -33,6 +36,8 @@ export interface MercalysImportValidationLine {
 }
 
 export interface MercalysImportValidationSummary {
+  purchasePriceSelections?: PurchasePriceSelection[];
+  publishedSourceIndexes?: number[];
   sourceType: MercalysSourceType;
   parserVersion: string;
   businessPeriodStart: string;
@@ -119,6 +124,12 @@ function withMatches(
     errorCount: summary.errorCount,
     lines,
     issueCodes: summary.issueCodes,
+    ...(summary.purchasePriceSelections
+      ? { purchasePriceSelections: summary.purchasePriceSelections }
+      : {}),
+    ...(summary.publishedSourceIndexes
+      ? { publishedSourceIndexes: summary.publishedSourceIndexes }
+      : {}),
   });
 }
 export function validateMercalysImport(

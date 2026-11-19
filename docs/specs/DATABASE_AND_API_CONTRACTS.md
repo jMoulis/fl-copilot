@@ -1,3 +1,18 @@
+## PA source selection — 19 November 2026
+
+Reuses existing source_records.status=IGNORED and normalizedPayload JSON under
+MERCALYS_PUBLISH; no migration, endpoint or new sync entity. Optional
+purchasePriceSelection metadata contains productId, businessDate, sourceIndexes,
+selectedSourceIndex, actorUserId and decidedAt. The selected row alone yields a
+purchase-price observation; ignored alternatives retain raw/normalized values.
+Unpublished decisions use app_metadata scoped by store/owner/source checksum;
+once published the decision travels through existing atomic publication and pull.
+Validate group identity and membership before honoring a pending choice. Preserve
+published mappings and never switch their selected source through continuation.
+The existing server verifies the original, amount and unique active product/day.
+Older mobile readers may refuse continuation of an IGNORED record; they cannot
+silently republish it. This mobile release needs no API change.
+
 ## Optional forecast history provenance — 19 November 2026
 
 `ForecastDay.sourceSnapshot` is optional and stores the retained day's actual

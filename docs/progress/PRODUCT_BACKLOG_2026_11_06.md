@@ -1,5 +1,14 @@
 # Backlog produit — point du 18 novembre 2026
 
+**19 novembre — choix explicite du PA pour un même article : recette en cours.**
+Le propriétaire confirme que plusieurs références peuvent désigner une seule
+fiche et souhaite retenir un PA. Choix par prix/code/date, alternatives conservées,
+reprise des imports existants et brouillon persistant. Tests ciblés et fichier
+fourni vérifiés sur copie isolée ; contrôle visuel en attente du déverrouillage
+du Mac. Aucun nouveau build livré : le build 87 reste la version TestFlight.
+Voir [le lot](../qa/PA_PRICE_CHOICE_2026_11_19.md). Les reports et lots clos restent
+inchangés. La demande de remise à zéro des imports n'a pas été exécutée.
+
 **19 novembre — correctif publication PA livré, build 87 disponible.**
 [PR 549](https://github.com/jMoulis/fl-copilot/pull/549) fusionnée, source
 `518502738a739356c79856e3a77f7539a3a6a28f`, CI push/PR/master vertes :

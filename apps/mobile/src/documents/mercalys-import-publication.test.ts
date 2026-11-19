@@ -1,4 +1,8 @@
-import { reviewPurchasePriceCollisions } from "./mercalys-purchase-price-review";
+import {
+  PurchasePriceSelectionDraft,
+  selectPurchasePrice,
+  reviewPurchasePriceCollisions,
+} from "./mercalys-purchase-price-review";
 import { PurchasePriceRepository } from "../products/purchase-price-repository";
 import {
   readMercalysPublication,
@@ -1571,3 +1575,223 @@ it.each(["2.20", "4.45"])(
     database.close();
   },
 );
+
+it.each([false, true])(
+  "retains one explicitly selected PA and its source alternatives across publication, reopen and pull (partial=%s)",
+  async (partial) => {
+    const { database, adapter } = await openDatabase();
+    insertProduct(database, "BULK");
+    insertProductRecord(database, productIds[2], "Poire");
+    const repository = new MercalysImportPublicationRepository(
+      adapter,
+      idGenerator(),
+      () => timestamp,
+    );
+    const lines = [productId, productId, productIds[2]].map((id, i) => {
+      const l = matchedLine(i + 10, id, 1);
+      Object.assign(l.record, {
+        itm8: `0000000${i}`,
+        ean: `000000000000${i}`,
+        quantity: null,
+        purchaseValue: null,
+        salesValue: null,
+        purchasePrice: {
+          amount: i === 1 ? "5.99" : "2.85",
+          sourceActive: true,
+          nomenclature: "FRUITS",
+        },
+      });
+      return l;
+    });
+    const original = {
+      ...reconciliationSummary(lines),
+      sourceType: "MERCALYS_PURCHASE_PRICES" as const,
+      parserVersion: "mercalys-purchase-prices.v1",
+    };
+    const first = partial ? await repository.publish(input(original)) : null;
+    const reviewed = first
+      ? (await repository.continuation(
+          storeId,
+          input(original).checksum,
+          original,
+        ))!.summary
+      : reviewPurchasePriceCollisions(original);
+    const chosen = selectPurchasePrice(reviewed, 10, productId, timestamp);
+    expect(chosen).toMatchObject({ readyCount: 2, productReviewCount: 0 });
+    expect(buildMercalysProductResolutions(chosen)).toHaveLength(0);
+    const draft = new PurchasePriceSelectionDraft(
+      adapter,
+      storeId,
+      productId,
+      input(original).checksum,
+    );
+    await draft.save(chosen.purchasePriceSelections!);
+    expect(
+      await new PurchasePriceSelectionDraft(
+        adapter,
+        storeId,
+        productId,
+        input(original).checksum,
+      ).read(),
+    ).toEqual(chosen.purchasePriceSelections);
+    expect(
+      await new PurchasePriceSelectionDraft(
+        adapter,
+        storeId,
+        productIds[2],
+        input(original).checksum,
+      ).read(),
+    ).toEqual([]);
+    const stale = structuredClone(chosen);
+    stale.lines[1]!.match.matchedProductId = productIds[2];
+    expect(
+      reviewPurchasePriceCollisions(stale).purchasePriceSelections,
+    ).toEqual([]);
+    const result = first
+      ? await repository.resume({
+          ...input(chosen),
+          sourceDocumentId: first.sourceDocumentId,
+        })
+      : await repository.publish(input(chosen));
+    expect(result.remainingCount).toBe(0);
+    const published = (await readMercalysPublication(
+      adapter,
+      storeId,
+      result.sourceDocumentId,
+    ))!;
+    expect(published.prices).toHaveLength(2);
+    expect(
+      published.prices.find((p) => p.productId === productId)?.amount,
+    ).toBe("2.85");
+    expect(published.records.map((r) => r.status)).toEqual([
+      "PUBLISHED",
+      "IGNORED",
+      "PUBLISHED",
+    ]);
+    expect(published.records[1]?.normalizedPayload).toMatchObject({
+      purchasePriceSelection: {
+        selectedSourceIndex: 10,
+        actorUserId: productId,
+      },
+      purchasePrice: { amount: "5.99" },
+    });
+    expect(
+      database.prepare("SELECT count(*) n FROM products").get(),
+    ).toMatchObject({ n: 2 });
+    const other = await openDatabase();
+    insertProduct(other.database, "BULK");
+    insertProductRecord(other.database, productIds[2], "Poire");
+    const packet = {
+      id: result.sourceDocumentId,
+      storeId,
+      remoteVersion: 2,
+      publication: published,
+    };
+    await applyMercalysPublication(other.adapter, storeId, packet);
+    await applyMercalysPublication(other.adapter, storeId, packet);
+    const reopened = await new MercalysImportPublicationRepository(
+      other.adapter,
+      idGenerator(),
+    ).continuation(storeId, input(original).checksum, original);
+    expect(reopened).toMatchObject({
+      publishedCount: 2,
+      remainingCount: 0,
+      summary: {
+        readyCount: 2,
+        productReviewCount: 0,
+        purchasePriceSelections: chosen.purchasePriceSelections,
+      },
+    });
+    expect(buildMercalysProductResolutions(reopened!.summary)).toHaveLength(0);
+    expect(
+      await repository.resume({
+        ...input(original),
+        sourceDocumentId: result.sourceDocumentId,
+      }),
+    ).toMatchObject({ publishedCount: 0, remainingCount: 0 });
+    expect(
+      other.database
+        .prepare("SELECT count(*) n FROM purchase_price_observations")
+        .get(),
+    ).toMatchObject({ n: 2 });
+    database.close();
+    other.database.close();
+  },
+);
+
+it("can retain the already-published PA and exclude a newly resolved alternative without replacing history", async () => {
+  const { database, adapter } = await openDatabase();
+  insertProduct(database, "BULK");
+  const repo = new MercalysImportPublicationRepository(
+    adapter,
+    idGenerator(),
+    () => timestamp,
+  );
+  const lines: MercalysImportValidationSummary["lines"] = [10, 11].map(
+    (index) => {
+      const l = matchedLine(index, productId, 1);
+      Object.assign(l.record, {
+        itm8: String(index),
+        quantity: null,
+        purchaseValue: null,
+        salesValue: null,
+        purchasePrice: {
+          amount: index === 10 ? "2.85" : "5.99",
+          sourceActive: true,
+          nomenclature: "FRUITS",
+        },
+      });
+      return l;
+    },
+  );
+  lines[1]!.match = {
+    ...lines[1]!.match,
+    state: "NO_MATCH",
+    matchedProductId: null,
+  };
+  const initial = {
+    ...reconciliationSummary(lines),
+    sourceType: "MERCALYS_PURCHASE_PRICES" as const,
+    parserVersion: "mercalys-purchase-prices.v1",
+  };
+  const result = await repo.publish(input(initial));
+  const before = (await readMercalysPublication(
+    adapter,
+    storeId,
+    result.sourceDocumentId,
+  ))!;
+  lines[1]!.match = structuredClone(lines[0]!.match);
+  const pending = (await repo.continuation(
+    storeId,
+    input(initial).checksum,
+    initial,
+  ))!;
+  expect(() =>
+    selectPurchasePrice(pending.summary, 11, productId, timestamp),
+  ).toThrow("PURCHASE_PRICE_SELECTION_CHANGED");
+  const chosen = selectPurchasePrice(pending.summary, 10, productId, timestamp);
+  expect(
+    await repo.resume({
+      ...input(chosen),
+      sourceDocumentId: result.sourceDocumentId,
+    }),
+  ).toMatchObject({ publishedCount: 0, remainingCount: 0 });
+  const after = (await readMercalysPublication(
+    adapter,
+    storeId,
+    result.sourceDocumentId,
+  ))!;
+  expect(after.prices).toEqual(before.prices);
+  expect(after.records[1]!.status).toBe("IGNORED");
+  expect(
+    (await repo.continuation(storeId, input(initial).checksum, initial))
+      ?.remainingCount,
+  ).toBe(0);
+  const packets = await adapter.getAllAsync<{ payload_json: string }>(
+    "SELECT payload_json FROM sync_outbox WHERE entity_type='mercalys_publication' ORDER BY local_sequence",
+  );
+  expect(JSON.parse(packets.at(-1)!.payload_json).records[1].status).toBe(
+    "IGNORED",
+  );
+  database.close();
+});
