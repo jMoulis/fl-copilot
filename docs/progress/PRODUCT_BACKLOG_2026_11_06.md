@@ -1,5 +1,26 @@
 # Backlog produit — point du 18 novembre 2026
 
+**19 novembre — recette iPhone choisie par le propriétaire.** Le propriétaire
+demande un build local avec les lots PR 546 (Mercalys) et PR 547 (Journal), afin de
+faire lui-même la recette sans attendre son retour au Mac. Ce choix remplace le
+préalable de recette simulateur pour cette livraison, sans déclarer la validation
+visuelle acquise. Les contrôles automatisés restent obligatoires. La livraison est
+en préparation ; aucune disponibilité TestFlight nouvelle n’est encore annoncée.
+La revue automatique a demandé une autorisation explicite pour fusionner dans
+master et publier ; confirmation demandée dans la conversation avant cette étape.
+
+**19 novembre — corrections du Journal en préparation, non livrées.**
+Demande propriétaire : météo conservée pour les jours passés, skeleton des tâches
+et icône Aujourd’hui permanente avant Actualiser. Branche `fix/journal-weather-navigation` :
+conservation par journée dans les archives et SQLite existants, dates de source
+préservées, repli explicite vers une prévision archivée si aucune mesure observée
+n’est disponible. Les semaines passées se lisent en base ; pas d’appel fournisseur
+pour les combler. Voir [le lot Journal](../qa/JOURNAL_WEATHER_CONTINUITY_2026_11_19.md).
+La [PR 546](https://github.com/jMoulis/fl-copilot/pull/546) Mercalys reste séparée,
+en brouillon, CI push/PR vertes (6 403 tests), recette native reportée par le propriétaire.
+Le build 85 est le dernier livré ; sa rapidité et ses réouvertures sont acceptées.
+Aucun nouveau build ni déploiement, les autres lots clos et reports restent inchangés.
+
 **19 novembre — nouvelle session de confirmations en préparation, non livrée.**
 Le propriétaire confirme que le build 85 est plus rapide et que les réouvertures
 ne relisent plus le fichier. Il approuve maintenant le rapprochement ITM8/EAN,

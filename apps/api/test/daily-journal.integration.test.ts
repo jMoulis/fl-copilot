@@ -175,6 +175,29 @@ describe.skipIf(!uri)("durable daily shop context", () => {
     expect(network).not.toHaveBeenCalled();
     expect(await db.collection("commercialWeekPlans").countDocuments()).toBe(0);
   });
+  it("reads a missing historical week without any external fetch", async () => {
+    const { settings } = await setup();
+    const network = vi.fn(() => {
+      throw Error("NO_HISTORICAL_PROVIDER_CALL");
+    });
+    const service = createWeekContextService(
+      database,
+      network,
+      () => new Date("2026-11-19T10:00:00Z"),
+      { preferStored: true },
+    );
+    const result = await service.read(
+      settings.storeId,
+      "2026-10-05",
+      true,
+      true,
+      true,
+      true,
+    );
+    expect(result.weather.days).toEqual([]);
+    expect(result.observedWeather?.issue).toBe("NO_ARCHIVE");
+    expect(network).not.toHaveBeenCalled();
+  });
   it("never reads another store's archives or mismatched geography, and tolerates unrelated settings updates", async () => {
     const { settings, db, read } = await setup();
     await collectDailyJournal(

@@ -281,3 +281,33 @@ it("selects one severity at a time, keeps unknown distinct from low, and exposes
       .every((n) => n.props.disabled),
   ).toBe(true);
 });
+
+it("keeps an icon-only Today control permanently immediately before refresh", async () => {
+  await mount(createElement(JournalScreen));
+  const buttons = () =>
+    tree!.root.findAll((n) => String(n.type) === "Pressable");
+  const today = () =>
+    buttons().find(
+      (n) => n.props.accessibilityLabel === "Revenir à aujourd’hui",
+    )!;
+  const labels = () => buttons().map((n) => n.props.accessibilityLabel);
+  const first = labels().indexOf("Revenir à aujourd’hui");
+  expect(labels()[first + 1]).toBe("Actualiser maintenant");
+  expect(today().findAll((n) => String(n.type) === "Text")).toHaveLength(0);
+  const initial = tree!.root.find((n) => String(n.type) === "DailyTaskList")
+    .props.date;
+  await act(() =>
+    buttons()
+      .find((n) => n.props.accessibilityLabel === "Semaine suivante")!
+      .props.onPress(),
+  );
+  expect(today()).toBeDefined();
+  expect(
+    tree!.root.find((n) => String(n.type) === "DailyTaskList").props.date,
+  ).not.toBe(initial);
+  await act(() => today().props.onPress());
+  expect(
+    tree!.root.find((n) => String(n.type) === "DailyTaskList").props.date,
+  ).toBe(initial);
+  expect(today()).toBeDefined();
+});

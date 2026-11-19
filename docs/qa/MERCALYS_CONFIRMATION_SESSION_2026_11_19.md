@@ -1,5 +1,11 @@
 # Mercalys — confirmations différées et catalogue, 19 novembre 2026
 
+**Arbitrage de livraison du 19 novembre :** le propriétaire demande le build
+local/TestFlight pour tester lui-même sur iPhone avant son retour au Mac. Pour
+cette livraison, cette recette remplace le préalable simulateur décrit plus bas.
+Aucune validation visuelle n’est revendiquée. Contrôles automatisés et vérification
+de l’archive maintenus ; aucun build EAS cloud payant.
+
 Statut : implémenté en branche, non fusionné et non livré. Le build 85 reste le
 build TestFlight courant. Le propriétaire en accepte la rapidité et la réouverture,
 puis demande cette évolution. Aucun appel IA ni changement serveur.

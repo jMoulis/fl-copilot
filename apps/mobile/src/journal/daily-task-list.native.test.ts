@@ -1,3 +1,4 @@
+import { notifyOutboxChanged } from "../sync/outbox-repository";
 import { DatabaseSync } from "node:sqlite";
 import { createElement, useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
@@ -257,4 +258,52 @@ it("does not create reminders or request permission for an untimed note and reop
     status: "TODO",
     completedAt: null,
   });
+});
+
+it("reserves list height while changing days, ignores late reads and preserves same-day content on refresh", async () => {
+  await mount();
+  const list = tree!.root.find(
+    (n) => String(n.type) === "View" && typeof n.props.onLayout === "function",
+  );
+  await act(() =>
+    list.props.onLayout({ nativeEvent: { layout: { height: 176 } } }),
+  );
+  type Rows = Awaited<ReturnType<PersonalTaskRepository["list"]>>;
+  const reads = new Map<string, (rows: Rows) => void>();
+  const spy = vi
+    .spyOn(PersonalTaskRepository.prototype, "list")
+    .mockImplementation(
+      (date) => new Promise<Rows>((resolve) => reads.set(date, resolve)),
+    );
+  const render = (date: string) =>
+    createElement(DailyTaskList, {
+      scope,
+      date,
+      today: "2026-11-14",
+      onTaskOpened() {},
+    });
+  const placeholders = () =>
+    tree!.root.findAll(
+      (n) =>
+        String(n.type) === "View" &&
+        n.props.accessibilityRole === "progressbar",
+    );
+  try {
+    await act(async () => {
+      notifyOutboxChanged();
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    });
+    expect(placeholders()).toHaveLength(0);
+    await act(() => reads.get("2026-11-14")!([]));
+    await act(() => tree!.update(render("2026-11-15")));
+    expect(placeholders()).toHaveLength(1);
+    expect(placeholders()[0]!.props.style.height).toBe(176);
+    await act(() => tree!.update(render("2026-11-16")));
+    await act(() => reads.get("2026-11-15")!([]));
+    expect(placeholders()).toHaveLength(1);
+    await act(() => reads.get("2026-11-16")!([]));
+    expect(placeholders()).toHaveLength(0);
+  } finally {
+    spy.mockRestore();
+  }
 });

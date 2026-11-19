@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { Db } from "mongodb";
 import {
   addContextDays,
+  retainWeatherHistory,
   filterTransportAlerts,
   dailyJournalContextSchema,
   parisDate,
@@ -124,22 +125,7 @@ export function mergeDailyWeek(
   const merged = structuredClone(next);
   merged.publicHolidays = retained(old.publicHolidays, next.publicHolidays);
   merged.schoolHolidays = retained(old.schoolHolidays, next.schoolHolidays);
-  merged.weather = retained(old.weather, next.weather);
-  if (next.weather.status !== "UNAVAILABLE") {
-    const oldDays = old.weather.days.filter(
-      (d) => !next.weather.days.some((n) => n.validDate === d.validDate),
-    );
-    merged.weather.days = [...next.weather.days, ...oldDays].sort((a, b) =>
-      a.validDate.localeCompare(b.validDate),
-    );
-    if (oldDays.length) {
-      merged.weather.status = "STALE";
-      merged.weather.validUntil =
-        [old.weather.validUntil, next.weather.validUntil]
-          .filter((s): s is string => !!s)
-          .sort()[0] ?? null;
-    }
-  }
+  merged.weather = retainWeatherHistory(old.weather, next.weather);
   if (next.economy) merged.economy = retained(old.economy, next.economy);
   else if (old.economy) merged.economy = { ...old.economy, status: "STALE" };
   if (next.observedWeather) {

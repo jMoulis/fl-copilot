@@ -2195,6 +2195,16 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       const { economy, observedWeather, journal, ...legacy } = result;
       return {
         ...legacy,
+        weather: {
+          ...result.weather,
+          days: result.weather.days.map(({ sourceSnapshot, ...day }) => ({
+            ...day,
+            ...(request.headers["x-context-weather-history"] === "1" &&
+            sourceSnapshot
+              ? { sourceSnapshot }
+              : {}),
+          })),
+        },
         ...(request.headers["x-context-journal"] === "1" && journal
           ? {
               journal: {

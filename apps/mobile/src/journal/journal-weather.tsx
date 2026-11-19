@@ -45,11 +45,16 @@ export function JournalWeather({
     [showForecast, setShowForecast] = useState(false);
   const now = new Date(),
     day = context?.weather.days.find((d) => d.validDate === date);
-  const observing =
-    date < parisDate(now.toISOString()) && !!context?.observedWeather;
+  const past = date < parisDate(now.toISOString());
   const observed = context?.observedWeather?.days.find(
     (d) => d.producerDate === date,
   );
+  const observing =
+    past &&
+    !!observed &&
+    Object.values(observed.measurements).some((m) => m.analysisValue !== null);
+  const forecastSource = day?.sourceSnapshot ?? context?.weather;
+  const forecastStale = !!forecastSource && contextIsStale(forecastSource, now);
   const forecastPresentation = weatherPresentation(day);
   const presentation = observing
       ? {
@@ -61,7 +66,9 @@ export function JournalWeather({
     stale =
       !!context &&
       contextIsStale(
-        observing ? context.observedWeather! : context.weather,
+        observing
+          ? context.observedWeather!
+          : (forecastSource ?? context.weather),
         now,
       );
   const available = observing
@@ -147,7 +154,9 @@ export function JournalWeather({
                   : day?.temperatureSampleCount
                     ? "Températures prévues"
                     : configured
-                      ? "Prévision indisponible"
+                      ? past
+                        ? "Aucune météo conservée"
+                        : "Prévision indisponible"
                       : "Magasin à configurer"}
             </Text>
           </View>
@@ -184,7 +193,7 @@ export function JournalWeather({
           <InlineAlert title="Contexte à actualiser" message={error} />
         ) : null}
         {section !== "calendar" ? (
-          observing ? (
+          past && context?.observedWeather ? (
             <JournalObservedWeather
               context={context!.observedWeather!}
               date={date}
@@ -242,15 +251,15 @@ export function JournalWeather({
                 la journée.
               </Text>
             ) : null}
-            {context?.weather.retrievedAt ? (
+            {forecastSource?.retrievedAt ? (
               <Text className="text-muted">
-                {stale ? "Données anciennes · " : ""}Récupérées le{" "}
-                {timestamp(context.weather.retrievedAt)}.
+                {forecastStale ? "Données anciennes · " : ""}Récupérées le{" "}
+                {timestamp(forecastSource.retrievedAt)}.
               </Text>
             ) : null}
-            {context?.weather.issuedAt ? (
+            {forecastSource?.issuedAt ? (
               <Text className="text-muted">
-                Prévision émise le {timestamp(context.weather.issuedAt)}.
+                Prévision émise le {timestamp(forecastSource.issuedAt)}.
               </Text>
             ) : null}
             <Text className="text-muted">

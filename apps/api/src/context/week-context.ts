@@ -178,6 +178,13 @@ export function createWeekContextService(
         now(),
         includeObservedWeather,
       );
+      if (options.preferStored && weekEnd < parisDate(now().toISOString())) {
+        // Browsing history never starts new provider calls to fill a missing archive.
+        result.weather.issue = null;
+        if (includeObservedWeather)
+          result.observedWeather = emptyObservedWeather("NO_ARCHIVE");
+        return result;
+      }
       // Independent failures: none can block commercial plans or erase other providers.
       await Promise.allSettled([
         ...(includeJournal
@@ -255,6 +262,7 @@ export function createWeekContextService(
             lon = point.longitude.toFixed(4);
           await Promise.allSettled([
             (async () => {
+              if (weekEnd < parisDate(now().toISOString())) return;
               const r = await cache.read(
                 `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${lat}&lon=${lon}`,
                 metForecastSchema,

@@ -1,3 +1,26 @@
+## Owner release arbitration — 19 November 2026
+
+The owner requests a local iPhone/TestFlight build to perform acceptance directly
+before returning to the Mac. For PRs 546/547 this supersedes the pre-build simulator
+gate. Automated checks and archive verification remain required; do not claim
+native visual acceptance before the owner's feedback. No paid cloud compilation.
+
+## Owner-approved Journal continuity — 19 November 2026
+
+Retain each previously collected forecast day in the existing server archive and
+SQLite cache when a refreshed horizon returns an empty past day. Keep its actual
+source timestamps and FORECAST type; never turn it into observed weather. Prefer
+usable observations, otherwise show a clearly labelled saved forecast. Historical
+Journal reads use stored context; forecast-provider requests serve today/future
+only. Preserve delayed observed-weather collection and existing provider TTLs.
+
+Replace the conditional return-to-today text row with a permanent accessible
+calendar/today icon immediately left of refresh, with the same touch target. Keep
+task content during same-day background reads; on date changes reserve the list
+height with a skeleton until local data arrives, without displaying another day's
+tasks or allowing stale responses to win. Native acceptance remains separate from
+unit/render tests and is required before a new iPhone build. No paid cloud build.
+
 ## Owner arbitration — 19 November 2026
 
 Mercalys coded imports use ITM8/EAN rather than text resemblance as the identity

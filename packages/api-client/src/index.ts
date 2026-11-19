@@ -451,7 +451,10 @@ export class ApiClient {
             ? { "x-context-observed-weather": "1" }
             : {}),
           ...(includeWeatherSymbols
-            ? { "x-context-weather-symbols": "1" }
+            ? {
+                "x-context-weather-symbols": "1",
+                "x-context-weather-history": "1",
+              }
             : {}),
         },
       },

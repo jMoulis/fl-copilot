@@ -39,6 +39,16 @@ export const forecastDaySchema = z
     precipitationMm: z.number().finite().nonnegative().nullable(),
     precipitationHours: z.number().int().nonnegative(),
     dayHours: z.number().int().min(23).max(25),
+    // Only present when days from an older horizon are retained beside fresh days.
+    sourceSnapshot: z
+      .object({
+        retrievedAt: z.string().datetime().nullable(),
+        issuedAt: z.string().datetime().nullable(),
+        validUntil: z.string().datetime().nullable(),
+        status,
+      })
+      .strict()
+      .optional(),
     // Optional for cached contexts and older API versions. A point forecast is
     // labelled with its own interval; it is not a whole-day weather summary.
     symbol: z

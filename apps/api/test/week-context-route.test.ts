@@ -14,6 +14,12 @@ import { storeContextFixture } from "../../../scripts/test-store-context-fixture
 it("requires store authorization before any provider request and validates week boundaries", async () => {
   const settings = storeContextFixture(),
     source = weeklyContextFixture(settings);
+  source.weather.days[0]!.sourceSnapshot = {
+    retrievedAt: source.weather.retrievedAt,
+    issuedAt: source.weather.issuedAt,
+    validUntil: source.weather.validUntil,
+    status: "STALE",
+  };
   source.journal = journalContextFixture();
   source.economy = economicContextFixture();
   source.observedWeather = observedWeatherContextFixture();
@@ -84,6 +90,18 @@ it("requires store authorization before any provider request and validates week 
     });
     expect(response.statusCode).toBe(200);
     expect(response.json().storeId).toBe(settings.storeId);
+    expect(response.json().weather.days[0]).not.toHaveProperty(
+      "sourceSnapshot",
+    );
+    const history = await app.inject({
+      url: "/api/v1/store/context?weekStart=2026-10-05",
+      headers: { ...headers, "x-context-weather-history": "1" },
+    });
+    expect(history.statusCode).toBe(200);
+    expect(history.json().weather.days[0].sourceSnapshot).toEqual(
+      source.weather.days[0]!.sourceSnapshot,
+    );
+
     expect(response.json()).not.toHaveProperty("economy");
     expect(response.json()).not.toHaveProperty("journal");
     expect(response.json()).not.toHaveProperty("observedWeather");
@@ -124,7 +142,7 @@ it("requires store authorization before any provider request and validates week 
       false,
     );
     expect(read).toHaveBeenNthCalledWith(
-      2,
+      3,
       settings.storeId,
       "2026-10-05",
       true,

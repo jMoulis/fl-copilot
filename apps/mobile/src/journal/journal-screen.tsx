@@ -203,6 +203,11 @@ function StoreJournal({
         </Text>
         <View style={{ flexDirection: "row" }}>
           <JournalArrow
+            label="Revenir à aujourd’hui"
+            icon="today-outline"
+            onPress={() => setDate(today)}
+          />
+          <JournalArrow
             label="Actualiser maintenant"
             icon="refresh-outline"
             disabled={busy || settings?.syncState !== "SYNCED"}
@@ -247,15 +252,6 @@ function StoreJournal({
           </Pressable>
         ))}
       </View>
-      {date !== today ? (
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => setDate(today)}
-          style={styles.today}
-        >
-          <Text style={styles.todayLabel}>Revenir à aujourd’hui</Text>
-        </Pressable>
-      ) : null}
       <View style={{ marginTop: 12 }}>
         <JournalWeather
           date={date}
@@ -563,7 +559,6 @@ const styles = StyleSheet.create({
     marginBottom: 17,
     maxWidth: "67%",
   },
-  todayLabel: { color: c.mint, fontSize: 13, fontWeight: "600" },
   dateHeading: {
     flexDirection: "row",
     alignItems: "center",
@@ -615,7 +610,6 @@ const styles = StyleSheet.create({
     height: 3,
     borderRadius: 2,
   },
-  today: { minHeight: 44, justifyContent: "center" },
   week: {
     marginTop: 22,
     marginBottom: 6,
