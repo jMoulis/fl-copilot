@@ -6,9 +6,9 @@ cette livraison, cette recette remplace le préalable simulateur décrit plus ba
 Aucune validation visuelle n’est revendiquée. Contrôles automatisés et vérification
 de l’archive maintenus ; aucun build EAS cloud payant.
 
-Statut : implémentation en branche `fix/journal-weather-navigation`, non livrée.
-Le lot Mercalys PR 546 reste séparé et attend sa recette native. Pas de nouveau
-build ni déploiement API à ce stade ; ne pas rouvrir les autres lots acceptés.
+Statut : PR 547 fusionnée avec le lot PA PR 546, API publiée et build local 86
+vérifié puis accepté à l’envoi par Apple. Recette propriétaire sur iPhone attendue.
+Voir [la preuve de livraison](BUILD_86_DELIVERY_2026_11_19.md).
 
 ## Diagnostic et correction
 
@@ -49,7 +49,7 @@ contenu, et un échec sort du skeleton avec une explication.
 ## Vérification
 
 Suite locale : 5 505 tests réussis, 900 ignorés par la configuration locale ;
-lint, typecheck et format réussis. CI push/PR à vérifier sur le SHA exact.
+lint, typecheck et format réussis. CI combinée push/PR puis master réussie : 6 409 tests, 6 ignorés.
 
 Tests ciblés : fusion par date côté serveur, persistance SQLite et nouvelles
 instances du dépôt, dates de source conservées, anciens clients sans extension,
@@ -61,7 +61,7 @@ La CI complète exécute les cas Mongo ignorés dans la configuration locale.
 Le contrôle natif reste à effectuer, le propriétaire ayant reporté le déverrouillage
 du Mac. Les tests de rendu ne constituent pas une recette visuelle du simulateur.
 
-## Recette avant livraison
+## Recette iPhone restante
 
 1. Avec une copie isolée du contexte, sélectionner hier et avant-hier : valeur
    conservée, date source originale, libellé Prévision archivée ou mesure observée.
@@ -72,9 +72,9 @@ du Mac. Les tests de rendu ne constituent pas une recette visuelle du simulateur
    Vérifier le skeleton, la hauteur réservée et le retour exact au jour courant.
 4. Vérifier les petites largeurs et gros caractères : pas de chevauchement de la
    date et des quatre boutons ; cibles tactiles et libellés accessibles conservés.
-5. Ouvrir et fermer le détail météo, puis refaire la recette Mercalys PR 546 avant
-   toute livraison native groupée. Compiler sur le Mac ; aucun EAS cloud payant.
+5. Ouvrir et fermer le détail météo, puis refaire la recette Mercalys PR 546 dans le build 86.
+   Aucun EAS cloud payant.
 
-La correction de conservation serveur nécessitera une livraison API explicite
-selon RELEASE_PROCESS, distincte du binaire mobile. Aucun secret, jeu de données
+La correction serveur a été livrée explicitement selon RELEASE_PROCESS,
+distinctement du binaire mobile. Aucun secret, jeu de données
 magasin ou capture privée n’est ajouté au dépôt.

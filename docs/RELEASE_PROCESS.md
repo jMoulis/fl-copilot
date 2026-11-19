@@ -27,6 +27,13 @@ TestFlight group. The owner accepted that exact build. Read
 observed evidence and the distinction between a local archive and an EAS cloud
 build record. Build 64 remains the previous accepted distribution fallback.
 
+## Owner authorization — 19 November 2026
+
+The owner reaffirmed standing authorization to create PRs and merge them after
+required checks. Do not ask again for routine PR creation or merging within an
+approved task. This does not expand the task scope or authorize paid EAS cloud
+builds, public distribution, new provider spending or unrelated releases.
+
 ## Delivery policy — 17 October 2026
 
 The owner approved reducing build consumption by grouping releases. This supersedes the previous requirement to build a Vercel preview and immediately deploy production for every atomic PR.

@@ -1,36 +1,27 @@
 # Backlog produit — point du 18 novembre 2026
 
-**19 novembre — recette iPhone choisie par le propriétaire.** Le propriétaire
-demande un build local avec les lots PR 546 (Mercalys) et PR 547 (Journal), afin de
-faire lui-même la recette sans attendre son retour au Mac. Ce choix remplace le
-préalable de recette simulateur pour cette livraison, sans déclarer la validation
-visuelle acquise. Les contrôles automatisés restent obligatoires. La livraison est
-en préparation ; aucune disponibilité TestFlight nouvelle n’est encore annoncée.
-La revue automatique a demandé une autorisation explicite pour fusionner dans
-master et publier ; confirmation demandée dans la conversation avant cette étape.
+**19 novembre — lots PA et Journal livrés pour recette iPhone, build 86.**
+PR [546](https://github.com/jMoulis/fl-copilot/pull/546) et
+[547](https://github.com/jMoulis/fl-copilot/pull/547) fusionnées ; source livrée
+`3b41f8933c47cc31259a377b6649639d9ab3bb9c`. CI push/PR puis master vertes ;
+6 409 tests réussis, 6 ignorés. Archive 0.1.0 (86) compilée sur le Mac, vérifiée
+et envoi accepté par Apple. Le traitement Apple et l’accès TestFlight sont
+contrôlés séparément de l’envoi dans les preuves privées de livraison.
 
-**19 novembre — corrections du Journal en préparation, non livrées.**
-Demande propriétaire : météo conservée pour les jours passés, skeleton des tâches
-et icône Aujourd’hui permanente avant Actualiser. Branche `fix/journal-weather-navigation` :
-conservation par journée dans les archives et SQLite existants, dates de source
-préservées, repli explicite vers une prévision archivée si aucune mesure observée
-n’est disponible. Les semaines passées se lisent en base ; pas d’appel fournisseur
-pour les combler. Voir [le lot Journal](../qa/JOURNAL_WEATHER_CONTINUITY_2026_11_19.md).
-La [PR 546](https://github.com/jMoulis/fl-copilot/pull/546) Mercalys reste séparée,
-en brouillon, CI push/PR vertes (6 403 tests), recette native reportée par le propriétaire.
-Le build 85 est le dernier livré ; sa rapidité et ses réouvertures sont acceptées.
-Aucun nouveau build ni déploiement, les autres lots clos et reports restent inchangés.
+Confirmations PA : rapprochement par ITM8/EAN, création groupée explicite des
+codes inconnus, mise à jour des lignes concernées après chaque décision et une
+actualisation globale à « Terminer les confirmations ». Application aux imports
+conservés ; nettoyage manuel réversible du catalogue. Journal : conservation de
+la météo renseignée et de ses dates de source, prévision archivée explicitement
+qualifiée, skeleton des tâches et icône Aujourd’hui permanente avant Actualiser.
+Le serveur météo est déployé et sa santé publique vérifiée, base connectée.
+Voir [la livraison](../qa/BUILD_86_DELIVERY_2026_11_19.md).
 
-**19 novembre — nouvelle session de confirmations en préparation, non livrée.**
-Le propriétaire confirme que le build 85 est plus rapide et que les réouvertures
-ne relisent plus le fichier. Il approuve maintenant le rapprochement ITM8/EAN,
-la création groupée des codes inconnus, l’actualisation unique à « Terminer les
-confirmations » et le nettoyage manuel réversible du catalogue. Application aux
-imports conservés sans réimport ni modification des publications passées.
-Implémentation sur `feat/mercalys-confirmation-session` ; recette native reportée
-par le propriétaire (« Je le ferai plus tard », Mac verrouillé). Aucun nouveau
-build ni déploiement. Voir [le lot et la recette restante](../qa/MERCALYS_CONFIRMATION_SESSION_2026_11_19.md).
-Les autres lots validés et reports explicites restent inchangés.
+Le propriétaire réaffirme son autorisation des PR et fusions. Il choisit de tester
+ce lot sur son iPhone sans attendre le simulateur ; **recette visuelle encore
+attendue**, aucune validation native revendiquée. La rapidité et les réouvertures
+du build 85 sont acceptées. Les lots précédemment clos, fonctionnalités retirées
+et reports explicites restent inchangés. Aucun build EAS cloud payant.
 
 **19 novembre — correctif incrémental livré, build 85 disponible.** PR 545
 fusionnée (`e44be8519770acf149919bf7de47a43b61acb8b4`), CI push/PR/master
