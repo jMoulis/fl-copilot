@@ -54,8 +54,9 @@ Un lot mixte réel SQLite vérifie qu'un PA n'a pas de job analytique et qu'un
 mouvement en conserve un. Les suites de publication/reprise/prix et les contrôles
 complets sont consignés dans la livraison privée.
 
-Code en validation ; cette note ne vaut ni livraison TestFlight ni validation
-physique. Le dernier build précédemment documenté est 87. Le contrôle visuel local
+PR 552 fusionnée après CI push/PR/master vertes. Le build 88 est disponible sur
+TestFlight ; la validation physique reste à recueillir. Voir
+[la livraison du build 88](BUILD_88_DELIVERY_2026_11_20.md). Le contrôle visuel local
 était bloqué par le verrouillage du Mac pendant l'audit ; ne pas le déclarer réussi.
 Aucun changement de production ni nouvel import utilisateur pendant les tests.
 
