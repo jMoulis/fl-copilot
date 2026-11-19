@@ -6,9 +6,10 @@ cette livraison, cette recette remplace le préalable simulateur décrit plus ba
 Aucune validation visuelle n’est revendiquée. Contrôles automatisés et vérification
 de l’archive maintenus ; aucun build EAS cloud payant.
 
-Statut : implémenté en branche, non fusionné et non livré. Le build 85 reste le
-build TestFlight courant. Le propriétaire en accepte la rapidité et la réouverture,
-puis demande cette évolution. Aucun appel IA ni changement serveur.
+Statut : PR 546 fusionnée, livrée avec le Journal PR 547 dans le build local 86,
+archive vérifiée et envoi accepté par Apple. Recette propriétaire attendue.
+Le build 85 reste la référence acceptée pour la rapidité et la réouverture.
+Aucun appel IA ajouté. Voir [la livraison](BUILD_86_DELIVERY_2026_11_19.md).
 
 ## Comportement approuvé
 
@@ -63,7 +64,7 @@ Les fichiers source, copie de catalogue, benchmark et harnais restent privés da
 `../maintenance/mercalys-session-2026-11-19/`, hors Git. Aucun enregistrement de test
 n’a été inséré en production.
 
-## Recette native restante — avant livraison
+## Recette native restante
 
 Le Mac est verrouillé ; le propriétaire reporte son déverrouillage. Aucun résultat
 visuel n’est revendiqué pour ce lot. La précédente recette build 85 ne le valide pas.
@@ -87,6 +88,6 @@ visuel n’est revendiqué pour ce lot. La précédente recette build 85 ne le v
 6. Enregistrer les captures et durées réelles hors Git, retirer les adaptations
    temporaires Metro/entry puis vérifier un diff propre à la fonctionnalité.
 
-La livraison suivra la recette : CI push et PR vertes sur le SHA exact, fusion,
-CI master, compilation locale sur le Mac et TestFlight privé habituel. Aucun EAS
-cloud payant sans nouvel accord explicite. Pas de déploiement API pour ce lot mobile.
+La livraison groupée a passé la CI push/PR/master, la compilation locale et la
+vérification d’archive. Le propriétaire remplace le préalable simulateur par sa
+recette iPhone. Aucun EAS cloud payant ; l’API publiée accompagne le lot Journal.
