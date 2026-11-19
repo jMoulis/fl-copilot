@@ -1,4 +1,7 @@
-import { hasPurchasePriceCollision } from "./mercalys-purchase-price-review";
+import {
+  hasPurchasePriceCollision,
+  isUnselectedPurchasePrice,
+} from "./mercalys-purchase-price-review";
 import {
   normalizeProductLabel,
   type ProductIdentifier,
@@ -26,7 +29,14 @@ export interface MercalysProductResolution {
   canCreateAsDistinct: boolean;
   /** Explicit review of an existing automatic association, never a bulk action. */
   expectedProductIds?: string[];
-  priceConflict?: Array<{ label: string; amount: string; itm8: string | null }>;
+  priceConflict?: Array<{
+    label: string;
+    amount: string;
+    itm8: string | null;
+    sourceIndex: number;
+    businessDate: string;
+    selectable: boolean;
+  }>;
 }
 
 interface ResolutionOptions {
@@ -49,6 +59,7 @@ export function buildMercalysProductResolutions(
       : undefined;
   const groups = new Map<string, MercalysImportValidationSummary["lines"]>();
   for (const line of summary.lines) {
+    if (isUnselectedPurchasePrice(line)) continue;
     const key = resolutionKey(line.record);
     if (line.match.state === "AUTO_MATCH" && key !== selectedKey) continue;
     groups.set(key, [...(groups.get(key) ?? []), line]);
@@ -93,6 +104,18 @@ export function buildMercalysProductResolutions(
                     l.record.businessDate === first.record.businessDate,
                 )
                 .map((l) => ({
+                  sourceIndex: l.record.sourceIndex,
+                  businessDate: l.record.businessDate,
+                  selectable: !summary.lines.some(
+                    (other) =>
+                      other.match.matchedProductId ===
+                        l.match.matchedProductId &&
+                      other.record.businessDate === l.record.businessDate &&
+                      summary.publishedSourceIndexes?.includes(
+                        other.record.sourceIndex,
+                      ) &&
+                      other.record.sourceIndex !== l.record.sourceIndex,
+                  ),
                   label: l.record.rawLabel,
                   amount: l.record.purchasePrice!.amount,
                   itm8: l.record.itm8,

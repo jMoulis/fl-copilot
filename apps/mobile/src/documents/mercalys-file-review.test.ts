@@ -856,3 +856,68 @@ it("shows publication failures beside the action, without claiming the original 
   expect(text(action.parent!)).toContain("Publication impossible");
   expect(p.remove).toHaveBeenCalled();
 });
+
+it("chooses a price without changing product identity, and restores the draft after reopening", async () => {
+  p.analyze.mockResolvedValue(null);
+  const initial = structuredClone(await p.validate());
+  initial.sourceType = "MERCALYS_PURCHASE_PRICES";
+  initial.lines[0].record.purchasePrice = {
+    amount: "2.85",
+    sourceActive: true,
+    nomenclature: "FRUITS",
+  };
+  initial.lines[0].match.state = "AUTO_MATCH";
+  initial.lines[0].match.matchedProductId = p.products[0]!.entity.id;
+  const second = structuredClone(initial.lines[0]);
+  second.record.sourceIndex = 31;
+  second.record.itm8 = "00000002";
+  second.record.purchasePrice.amount = "5.99";
+  initial.lines.push(second);
+  initial.detectedLineCount = 2;
+  p.validate.mockReturnValue(initial);
+  const drafts = new Map<string, string>();
+  p.sqlite.getFirstAsync.mockImplementation(async (_sql, key) =>
+    drafts.has(key) ? { value: drafts.get(key) } : null,
+  );
+  p.sqlite.runAsync.mockImplementation(async (sql, key, value) => {
+    if (
+      sql.startsWith("INSERT INTO app_metadata") &&
+      key.startsWith("mercalys-price-selection:")
+    )
+      drafts.set(key, value);
+    return { changes: 1 };
+  });
+  await mount();
+  expect(button("Associer à TOMATE VRAC").props.disabled).toBe(true);
+  const choose = renderer!.root.findAll((n) =>
+    n.props.label?.startsWith("Retenir 2,85 € HT"),
+  )[0]!;
+  await act(async () => {
+    choose.props.onPress();
+    choose.props.onPress();
+    await new Promise((r) => setTimeout(r, 20));
+  });
+  expect(drafts.size).toBe(1);
+  expect(text(renderer!.root)).toContain("Prix retenus pour ce fichier");
+  expect(button("Associer à TOMATE VRAC")).toBeUndefined();
+  expect(
+    p.sqlite.runAsync.mock.calls.filter((c) =>
+      String(c[0]).includes("product_identifier"),
+    ),
+  ).toHaveLength(0);
+  await act(async () => renderer!.unmount());
+  await mount();
+  expect(text(renderer!.root)).toContain("Prix retenus pour ce fichier");
+  await press("Publier les lignes valides");
+  expect(p.publish).toHaveBeenCalledWith(
+    expect.objectContaining({
+      summary: expect.objectContaining({
+        readyCount: 1,
+        productReviewCount: 0,
+        purchasePriceSelections: [
+          expect.objectContaining({ selectedSourceIndex: 30 }),
+        ],
+      }),
+    }),
+  );
+});

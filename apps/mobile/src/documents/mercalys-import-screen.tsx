@@ -1,4 +1,10 @@
-import { hasPurchasePriceCollision } from "./mercalys-purchase-price-review";
+import {
+  hasPurchasePriceCollision,
+  isUnselectedPurchasePrice,
+  PurchasePriceSelectionDraft,
+  reviewPurchasePriceCollisions,
+  selectPurchasePrice,
+} from "./mercalys-purchase-price-review";
 import {
   MercalysConfirmationSession,
   commitMercalysResolution,
@@ -187,9 +193,9 @@ export function MercalysImportScreen({
     [sqlite, storeId, actorUserId],
   );
   const validationCache = reviewCache ?? ownedReviewCache;
-  const [resolutionPhase, setResolutionPhase] = useState<"SAVING" | "MATCHING">(
-    "SAVING",
-  );
+  const [resolutionPhase, setResolutionPhase] = useState<
+    "SAVING" | "MATCHING" | "PRICE"
+  >("SAVING");
   const archiveFocused = useIsFocused();
   const archiveAuthority = useRef({
     session,
@@ -256,6 +262,7 @@ export function MercalysImportScreen({
   }>();
   const [error, setError] = useState<string>();
   const [publicationError, setPublicationError] = useState<string>();
+  const [priceChoiceError, setPriceChoiceError] = useState<string>();
   const productResolutions = useMemo(
     () =>
       summary
@@ -302,6 +309,7 @@ export function MercalysImportScreen({
       setResolutionProgress(undefined);
       setError(undefined);
       setPublicationError(undefined);
+      setPriceChoiceError(undefined);
 
       try {
         setFilename(asset.name);
@@ -325,7 +333,7 @@ export function MercalysImportScreen({
         await yieldToInterface();
         const catalog = await loadProductCatalog(repository, storeId);
         const cacheKey = validationCache.key(storeId, checksum, catalog);
-        const nextSummary =
+        let nextSummary =
           validationCache.get(cacheKey) ??
           (await validateMercalysImportResponsive(
             workbook,
@@ -336,6 +344,22 @@ export function MercalysImportScreen({
               if (!controller.signal.aborted) setMatchingProgress(progress);
             },
           ));
+        assertReading();
+        if (
+          actorUserId &&
+          nextSummary.sourceType === "MERCALYS_PURCHASE_PRICES"
+        ) {
+          const choices = await new PurchasePriceSelectionDraft(
+            sqlite,
+            storeId,
+            actorUserId,
+            checksum,
+          ).read();
+          nextSummary = reviewPurchasePriceCollisions({
+            ...nextSummary,
+            purchasePriceSelections: choices,
+          });
+        }
         assertReading();
         validationCache.put(cacheKey, nextSummary);
         setProductCatalog(catalog);
@@ -457,7 +481,7 @@ export function MercalysImportScreen({
             validationCache.key(storeId, selectedChecksum, productCatalog),
           )
         : undefined;
-    const rematched = await rematchMercalysImportResponsive(
+    const matched = await rematchMercalysImportResponsive(
       continuation ? (previous ?? currentSummary) : currentSummary,
       storeId,
       catalog,
@@ -465,6 +489,12 @@ export function MercalysImportScreen({
       setMatchingProgress,
       previous ? productCatalog : undefined,
     );
+    const rematched = reviewPurchasePriceCollisions({
+      ...matched,
+      ...(currentSummary.purchasePriceSelections
+        ? { purchasePriceSelections: currentSummary.purchasePriceSelections }
+        : {}),
+    });
     if (selectedChecksum)
       validationCache.put(
         validationCache.key(storeId, selectedChecksum, catalog),
@@ -587,6 +617,76 @@ export function MercalysImportScreen({
       setResolvingProducts(false);
     }
   }
+  async function choosePrice(
+    sourceIndex: number,
+    removeProductId?: string,
+    removeDate?: string,
+  ) {
+    if (
+      actionLock.current ||
+      !storeId ||
+      !actorUserId ||
+      !selectedChecksum ||
+      !summary
+    )
+      return;
+    actionLock.current = true;
+    setResolvingProducts(true);
+    setResolutionPhase("PRICE");
+    setPriceChoiceError(undefined);
+    try {
+      const next = removeProductId
+        ? reviewPurchasePriceCollisions({
+            ...summary,
+            purchasePriceSelections: summary.purchasePriceSelections?.filter(
+              (s) =>
+                s.productId !== removeProductId ||
+                s.businessDate !== removeDate,
+            ),
+          })
+        : selectPurchasePrice(
+            summary,
+            sourceIndex,
+            actorUserId,
+            new Date().toISOString(),
+          );
+      const overlap = continuation
+        ? null
+        : await publicationRepository.analyzeOverlap(storeId, next);
+      const current = archiveAuthority.current;
+      if (
+        !current.archiveFocused ||
+        current.sqlite !== sqlite ||
+        current.session?.user.id !== actorUserId ||
+        current.session?.stores[0]?.storeId !== storeId ||
+        current.session?.stores[0]?.role !== "MANAGER"
+      )
+        throw Error("MERCALYS_REVIEW_SCOPE_CHANGED");
+      await new PurchasePriceSelectionDraft(
+        sqlite,
+        storeId,
+        actorUserId,
+        selectedChecksum,
+      ).save(next.purchasePriceSelections ?? []);
+      setSummary(next);
+      setReconciliation(overlap ?? undefined);
+      setResolutionKey(undefined);
+      setReviewSourceIndex(undefined);
+      if (!continuation && validationCache && productCatalog)
+        validationCache.put(
+          validationCache.key(storeId, selectedChecksum, productCatalog),
+          next,
+        );
+    } catch {
+      setPriceChoiceError(
+        "Le choix du prix n’a pas pu être enregistré. Vérifie les lignes concernées puis réessaie.",
+      );
+    } finally {
+      actionLock.current = false;
+      setResolvingProducts(false);
+    }
+  }
+
   async function createMissingProducts(
     resolutions: readonly MercalysProductResolution[] = productResolutions,
   ) {
@@ -1141,6 +1241,57 @@ export function MercalysImportScreen({
             ) : null}
           </SectionCard>
         ) : null}
+        {priceChoiceError ? (
+          <InlineAlert
+            title="Choix du PA non enregistré"
+            message={priceChoiceError}
+          />
+        ) : null}
+        {summary?.purchasePriceSelections?.length && !publication ? (
+          <SectionCard title="Prix retenus pour ce fichier">
+            {summary.purchasePriceSelections.map((selection) => {
+              const selected = summary.lines.find(
+                (l) => l.record.sourceIndex === selection.selectedSourceIndex,
+              )!;
+              return (
+                <View
+                  key={`${selection.productId}:${selection.businessDate}`}
+                  className="gap-2"
+                >
+                  <Text className="text-base text-ink">
+                    {selected.record.rawLabel} ·{" "}
+                    {selected.record.purchasePrice?.amount.replace(".", ",")} €
+                    HT ·{" "}
+                    {formatPeriod(
+                      selection.businessDate,
+                      selection.businessDate,
+                    )}
+                  </Text>
+                  <Text className="text-sm text-muted">
+                    ITM8 {selected.record.itm8 ?? "non renseigné"} ·{" "}
+                    {selection.sourceIndexes.length - 1} autre(s) ligne(s)
+                    conservée(s) sans publication.
+                  </Text>
+                  {!summary.publishedSourceIndexes?.includes(
+                    selection.selectedSourceIndex,
+                  ) ? (
+                    <SecondaryButton
+                      label={`Modifier le PA retenu pour ${selected.record.rawLabel}`}
+                      disabled={busy}
+                      onPress={() =>
+                        void choosePrice(
+                          -1,
+                          selection.productId,
+                          selection.businessDate,
+                        )
+                      }
+                    />
+                  ) : null}
+                </View>
+              );
+            })}
+          </SectionCard>
+        ) : null}
         {summary && section === "PRODUCTS" && productCatalog && storeId ? (
           <ProductResolutionSummary
             key={resolutionKey ?? "all"}
@@ -1158,15 +1309,20 @@ export function MercalysImportScreen({
             onNavigate={scrollToStart}
             loading={resolvingProducts}
             activity={
-              resolutionPhase === "SAVING"
-                ? `Enregistrement des produits… ${resolutionProgress?.completed ?? 0}/${resolutionProgress?.total ?? 1}`
-                : ""
+              resolutionPhase === "PRICE"
+                ? "Enregistrement du choix du PA…"
+                : resolutionPhase === "SAVING"
+                  ? `Enregistrement des produits… ${resolutionProgress?.completed ?? 0}/${resolutionProgress?.total ?? 1}`
+                  : ""
             }
             onCreate={(resolutions) => {
               void createMissingProducts(resolutions);
             }}
             onCreateDistinct={(resolution) => {
               void createDistinctProduct(resolution);
+            }}
+            onChoosePrice={(sourceIndex) => {
+              void choosePrice(sourceIndex);
             }}
             onConfirm={(resolution, productId) => {
               void confirmProductMapping(resolution, productId);
@@ -1181,6 +1337,18 @@ export function MercalysImportScreen({
             storeId={storeId}
             summary={summary}
             previouslyPublishedCount={continuation?.publishedCount ?? 0}
+            pendingPriceExclusions={
+              !!continuation &&
+              summary.lines.some(
+                (l) =>
+                  isUnselectedPurchasePrice(l) &&
+                  continuation.publication.records.some(
+                    (r) =>
+                      r.sourceIndex === l.record.sourceIndex &&
+                      r.status === "WARNING",
+                  ),
+              )
+            }
             publication={publication}
             publishing={publishing}
             publicationError={publicationError}
@@ -1396,6 +1564,7 @@ function ValidationSummary({
   storeId,
   summary,
   previouslyPublishedCount = 0,
+  pendingPriceExclusions = false,
   publication,
   publishing,
   publicationError,
@@ -1406,6 +1575,7 @@ function ValidationSummary({
   storeId?: string;
   summary: MercalysImportValidationSummary;
   previouslyPublishedCount?: number;
+  pendingPriceExclusions?: boolean;
   publication?: FilePublication;
   publishing: boolean;
   publicationError?: string;
@@ -1501,6 +1671,13 @@ function ValidationSummary({
           value={summary.productReviewCount}
           tone="review"
         />
+        {summary.lines.some(isUnselectedPurchasePrice) ? (
+          <CountLine
+            label="Lignes écartées par ton choix de PA"
+            value={summary.lines.filter(isUnselectedPurchasePrice).length}
+            tone="ready"
+          />
+        ) : null}
         <CountLine label="Anomalies" value={summary.errorCount} tone="error" />
         {summary.sourceType === "MERCALYS_PURCHASE_PRICES" ? (
           <>
@@ -1595,7 +1772,9 @@ function ValidationSummary({
             corriger et le fichier sera conservé sur cet appareil.
           </Text>
         )}
-        {!publication && summary.readyCount <= previouslyPublishedCount ? (
+        {!publication &&
+        !pendingPriceExclusions &&
+        summary.readyCount <= previouslyPublishedCount ? (
           <InlineAlert
             title="Aucune ligne prête à publier"
             message={
@@ -1625,7 +1804,8 @@ function ValidationSummary({
           }
           disabled={
             pendingConfirmations ||
-            summary.readyCount <= previouslyPublishedCount ||
+            (!pendingPriceExclusions &&
+              summary.readyCount <= previouslyPublishedCount) ||
             publication !== undefined
           }
           loading={publishing}
@@ -1671,6 +1851,7 @@ function ProductResolutionSummary({
   activity,
   onCreate,
   onCreateDistinct,
+  onChoosePrice,
   onConfirm,
 }: {
   resolutions: MercalysProductResolution[];
@@ -1682,6 +1863,7 @@ function ProductResolutionSummary({
   activity: string;
   onCreate(resolutions: readonly MercalysProductResolution[]): void;
   onCreateDistinct(resolution: MercalysProductResolution): void;
+  onChoosePrice(sourceIndex: number): void;
   onConfirm(resolution: MercalysProductResolution, productId: string): void;
 }) {
   const [query, setQuery] = useState("");
@@ -1790,9 +1972,17 @@ function ProductResolutionSummary({
                 {resolution.priceConflict ? (
                   <InlineAlert
                     title="Plusieurs références pour le même produit"
-                    message={`Ces références ont un PA à la même date : ${resolution.priceConflict.map((p) => `${p.label} (ITM8 ${p.itm8 ?? "inconnu"}) : ${p.amount} €`).join(" ; ")}. Vérifie l’association. S’il s’agit d’articles différents, crée un produit distinct ou associe la référence au bon produit. Si les associations sont correctes, corrige l’export pour ne garder qu’un prix par produit et par date.`}
+                    message={`Ces références ont un PA à la même date : ${resolution.priceConflict.map((p) => `${p.label} (ITM8 ${p.itm8 ?? "inconnu"}) : ${p.amount} €`).join(" ; ")}. Vérifie l’association. S’il s’agit d’articles différents, crée un produit distinct ou associe la référence au bon produit. Si ces références représentent le même article, choisis ci-dessous le PA à retenir pour ce fichier et cette date. Les autres lignes restent conservées sans être publiées.`}
                   />
                 ) : null}
+                {resolution.priceConflict?.map((price) => (
+                  <SecondaryButton
+                    key={price.sourceIndex}
+                    label={`Retenir ${price.amount.replace(".", ",")} € HT · ITM8 ${price.itm8 ?? "non renseigné"} · ${formatPeriod(price.businessDate, price.businessDate)}`}
+                    disabled={loading || !price.selectable}
+                    onPress={() => onChoosePrice(price.sourceIndex)}
+                  />
+                ))}
                 <Text className="text-sm text-muted">
                   {resolution.identifiers
                     .map(({ type, value }) => `${type} ${value}`)
@@ -1808,7 +1998,12 @@ function ProductResolutionSummary({
                   <SecondaryButton
                     key={product.id}
                     label={`Associer à ${product.label}`}
-                    disabled={loading || product.status !== "ACTIVE"}
+                    disabled={
+                      loading ||
+                      product.status !== "ACTIVE" ||
+                      (!!resolution.priceConflict &&
+                        !!resolution.expectedProductIds?.includes(product.id))
+                    }
                     onPress={() => onConfirm(resolution, product.id)}
                   />
                 ))}

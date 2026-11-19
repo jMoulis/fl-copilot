@@ -1,4 +1,8 @@
-import { reviewPurchasePriceCollisions } from "./mercalys-purchase-price-review";
+import {
+  isUnselectedPurchasePrice,
+  purchasePriceSelectionSchema,
+  reviewPurchasePriceCollisions,
+} from "./mercalys-purchase-price-review";
 import {
   enqueueMercalysPublications,
   enqueueMercalysContinuation,
@@ -158,7 +162,7 @@ export class MercalysImportPublicationRepository {
       const old = records.get(line.record.sourceIndex);
       if (
         !old ||
-        !["PUBLISHED", "WARNING"].includes(old.status) ||
+        !["PUBLISHED", "WARNING", "IGNORED"].includes(old.status) ||
         JSON.stringify(
           canonicalMercalysRecords([
             old.normalizedPayload as unknown as ParsedMercalysArticleRecord,
@@ -166,7 +170,7 @@ export class MercalysImportPublicationRepository {
         ) !== JSON.stringify(canonicalMercalysRecords([line.record]))
       )
         throw Error("MERCALYS_CONTINUATION_SOURCE_CHANGED");
-      return old.status === "PUBLISHED"
+      return old.status === "PUBLISHED" || old.status === "IGNORED"
         ? {
             ...line,
             match: productMatchResultSchema.parse(
@@ -175,6 +179,37 @@ export class MercalysImportPublicationRepository {
           }
         : line;
     });
+    const selections = [...(summary.purchasePriceSelections ?? [])];
+    for (const record of publication.records) {
+      const saved = purchasePriceSelectionSchema.safeParse(
+        (record.normalizedPayload as Record<string, unknown>)
+          ?.purchasePriceSelection,
+      );
+      if (saved.success) {
+        const index = selections.findIndex(
+          (s) =>
+            s.productId === saved.data.productId &&
+            s.businessDate === saved.data.businessDate,
+        );
+        // A later decision may extend the same retained PA to newly resolved
+        // alternatives. Keep the superset; source-record order must not undo it.
+        const current = selections[index];
+        if (
+          current &&
+          current.selectedSourceIndex === saved.data.selectedSourceIndex &&
+          saved.data.sourceIndexes.every((i) =>
+            current.sourceIndexes.includes(i),
+          )
+        )
+          continue;
+        if (index >= 0) selections.splice(index, 1);
+        selections.push(saved.data);
+      } else if (record.status === "IGNORED")
+        throw Error("MERCALYS_CONTINUATION_SOURCE_CHANGED");
+    }
+    const publishedSourceIndexes = publication.records
+      .filter((r) => r.status === "PUBLISHED")
+      .map((r) => r.sourceIndex!);
     const readyCount = lines.filter(
       (line) => line.match.state === "AUTO_MATCH",
     ).length;
@@ -215,12 +250,15 @@ export class MercalysImportPublicationRepository {
         (r) => r.status === "PUBLISHED",
       ).length,
       remainingCount:
-        publication.records.filter((r) => r.status !== "PUBLISHED").length +
-        summary.errorCount,
+        publication.records.filter(
+          (r) => !["PUBLISHED", "IGNORED"].includes(r.status),
+        ).length + summary.errorCount,
       summary: reviewPurchasePriceCollisions(
         {
           ...summary,
           lines,
+          purchasePriceSelections: selections,
+          publishedSourceIndexes,
           readyCount,
           productReviewCount: lines.length - readyCount,
         },
@@ -281,6 +319,11 @@ export class MercalysImportPublicationRepository {
           l.match.state === "AUTO_MATCH" &&
           l.match.matchedProductId,
       );
+      const excluded = current.summary.lines.filter(
+        (l) =>
+          byIndex.get(l.record.sourceIndex)?.status === "WARNING" &&
+          isUnselectedPurchasePrice(l),
+      );
       const now = this.now(),
         jobId = this.generateId();
       for (const line of additions) {
@@ -300,6 +343,7 @@ export class MercalysImportPublicationRepository {
           JSON.stringify({
             ...(record.normalizedPayload as Record<string, unknown>),
             match: line.match,
+            ...priceSelectionPayload(current.summary, line),
           }),
           now,
           record.id,
@@ -310,7 +354,25 @@ export class MercalysImportPublicationRepository {
         if (Number(changed.changes) !== 1)
           throw Error("MERCALYS_CONTINUATION_SOURCE_CHANGED");
       }
-      if (additions.length) {
+      for (const line of excluded) {
+        const record = byIndex.get(line.record.sourceIndex)!;
+        const changed = await tx.runAsync(
+          "UPDATE source_records SET normalized_payload_json=?,status='IGNORED',warning_codes_json='[\"PURCHASE_PRICE_NOT_SELECTED\"]',version=version+1,updated_at=? WHERE id=? AND store_id=? AND source_document_id=? AND status='WARNING' AND version=?",
+          JSON.stringify({
+            ...(record.normalizedPayload as Record<string, unknown>),
+            match: line.match,
+            ...priceSelectionPayload(current.summary, line),
+          }),
+          now,
+          record.id,
+          input.storeId,
+          input.sourceDocumentId,
+          record.version,
+        );
+        if (Number(changed.changes) !== 1)
+          throw Error("MERCALYS_CONTINUATION_SOURCE_CHANGED");
+      }
+      if (additions.length || excluded.length) {
         if (current.summary.sourceType !== "MERCALYS_PURCHASE_PRICES")
           await enqueueAnalyticsRecomputationJob(tx, {
             jobId,
@@ -333,7 +395,8 @@ export class MercalysImportPublicationRepository {
       result = {
         sourceDocumentId: input.sourceDocumentId,
         publishedCount: additions.length,
-        remainingCount: current.remainingCount - additions.length,
+        remainingCount:
+          current.remainingCount - additions.length - excluded.length,
         replacedCount: 0,
       };
     });
@@ -463,10 +526,21 @@ export class MercalysImportPublicationRepository {
           normalizedPayload: {
             ...line.record,
             match: line.match,
+            ...priceSelectionPayload(input.summary, line),
           },
-          status: ready ? "PUBLISHED" : "WARNING",
+          status: ready
+            ? "PUBLISHED"
+            : isUnselectedPurchasePrice(line)
+              ? "IGNORED"
+              : "WARNING",
           errorCodes: [],
-          warningCodes: ready ? [] : ["PRODUCT_REVIEW_REQUIRED"],
+          warningCodes: ready
+            ? []
+            : [
+                isUnselectedPurchasePrice(line)
+                  ? "PURCHASE_PRICE_NOT_SELECTED"
+                  : "PRODUCT_REVIEW_REQUIRED",
+              ],
           version: 1,
           createdAt,
           updatedAt: createdAt,
@@ -990,4 +1064,14 @@ async function insertObservationFromLine(
       }),
     );
   }
+}
+
+function priceSelectionPayload(
+  summary: MercalysImportValidationSummary,
+  line: MercalysImportValidationLine,
+) {
+  const selection = summary.purchasePriceSelections?.find((s) =>
+    s.sourceIndexes.includes(line.record.sourceIndex),
+  );
+  return selection ? { purchasePriceSelection: selection } : {};
 }

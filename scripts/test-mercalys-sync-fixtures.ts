@@ -67,6 +67,7 @@ export function mercalysWorkbook(
   date = "2026-10-07",
   sales = 12.4,
   includeReview = true,
+  alternativePurchasePrice?: number,
 ) {
   const fr = date.split("-").reverse().join("/");
   const book = XLSX.utils.book_new();
@@ -93,6 +94,18 @@ export function mercalysWorkbook(
               sales,
               "Oui",
             ],
+            ...(alternativePurchasePrice === undefined
+              ? []
+              : [
+                  [
+                    "00000002",
+                    "0000000000029",
+                    "TOMATE VRAC",
+                    "LEGUMES FRAIS",
+                    alternativePurchasePrice,
+                    "Oui",
+                  ],
+                ]),
           ]
         : [
             [

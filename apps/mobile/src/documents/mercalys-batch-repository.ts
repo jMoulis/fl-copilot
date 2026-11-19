@@ -261,7 +261,7 @@ export class MercalysBatchRepository {
     }>(
       `SELECT d.checksum, d.source_type,
         (SELECT COUNT(*) FROM source_records r WHERE r.source_document_id=d.id AND r.store_id=d.store_id AND r.deleted_at IS NULL AND r.status='PUBLISHED') AS published_count,
-        (SELECT COUNT(*) FROM source_records r WHERE r.source_document_id=d.id AND r.store_id=d.store_id AND r.deleted_at IS NULL AND r.status!='PUBLISHED') AS remaining_count
+        (SELECT COUNT(*) FROM source_records r WHERE r.source_document_id=d.id AND r.store_id=d.store_id AND r.deleted_at IS NULL AND r.status NOT IN ('PUBLISHED','IGNORED')) AS remaining_count
        FROM source_documents d WHERE d.store_id=? AND d.deleted_at IS NULL
         AND d.local_processing_status='PUBLISHED'
         AND d.source_type IN ('MERCALYS_SALES','MERCALYS_WASTE','MERCALYS_PURCHASE_PRICES')
