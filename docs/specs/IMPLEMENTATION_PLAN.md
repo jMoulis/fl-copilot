@@ -1,3 +1,25 @@
+## Owner-approved Mercalys sessions and catalogue cleanup — 19 November 2026
+
+Use ITM8/EAN identity for coded Mercalys rows: a known unambiguous active product
+is reused, conflicting/inactive owners require review, and wholly unknown codes
+allow explicit grouped creation regardless of label resemblance. No-code rows
+retain reviewed matching. Apply on reopening existing retained sources, preserving
+published history and previous code decisions. No automatic mass creation.
+
+Save each confirmation locally with canonical Outbox immediately; update affected
+rows only. Persist a private per-source pending-finalization marker before edits.
+“Terminer les confirmations” performs one complete refresh and current publication
+checks; publication is disabled until finalization. Exiting/restarting preserves
+saved decisions and pending status. Guard double taps and stale code ownership.
+
+Provide a local catalogue cleanup view with chosen no-sale period, last known sale,
+source coverage qualification and latest published PA-file presence. Archive only
+explicitly selected articles using existing INACTIVE product status and ordinary
+Outbox; restoration is available and historical observations remain untouched.
+Archived identifiers continue to block duplicate import creation. Verify isolated
+native rapid actions, interruption/reopen, retroactive source review and cleanup.
+No AI, new infrastructure, production test records or paid cloud compilation.
+
 ## PA review regression after build 84 — 18 November 2026
 
 Owner rejects repeated full identification after a product creation and on every

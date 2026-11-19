@@ -1,4 +1,4 @@
-import * as productResolution from "./mercalys-product-resolution";
+import * as confirmation from "./mercalys-confirmation-session";
 import { MercalysReviewCache } from "./mercalys-review-cache";
 import { createElement, type ReactNode } from "react";
 import {
@@ -29,7 +29,12 @@ const p = vi.hoisted(() => ({
   close: vi.fn(),
   changed: vi.fn(),
   read: vi.fn(),
-  sqlite: { getFirstAsync: vi.fn() },
+  sqlite: {
+    getFirstAsync: vi.fn(),
+    runAsync: vi.fn(),
+    getAllAsync: vi.fn(),
+    withExclusiveTransactionAsync: vi.fn(),
+  },
   recover: vi.fn(),
   originalsEnabled: false,
   digest: vi.fn(),
@@ -178,8 +183,12 @@ vi.mock("./mercalys-import-publication", async (importActual) => ({
 }));
 vi.mock("../products/product-master-repository", () => ({
   ProductMasterRepository: class {
+    getProduct = async (id: string) =>
+      p.products.find((r) => r.entity.id === id);
+    upsertAlias = async () => {};
     listProducts = async () => p.products;
     listIdentifiersByStore = async () => p.identifiers;
+    findIdentifiersByCodes = async () => p.identifiers;
     listAliasesByStore = async () => [];
     upsertIdentifier = async (entity: Record<string, unknown>) => {
       p.identifiers.push({ entity, syncState: "PENDING" });
@@ -291,7 +300,12 @@ beforeEach(() => {
     globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
   ).IS_REACT_ACT_ENVIRONMENT = true;
   vi.clearAllMocks();
-  p.sqlite = { getFirstAsync: vi.fn() };
+  p.sqlite = {
+    getFirstAsync: vi.fn(),
+    runAsync: vi.fn(),
+    getAllAsync: vi.fn(),
+    withExclusiveTransactionAsync: vi.fn(async (task) => task(p.sqlite)),
+  };
   p.originalsEnabled = false;
   p.sqlite.getFirstAsync.mockReset().mockResolvedValue(null);
   p.recover.mockReset();
@@ -420,6 +434,7 @@ it("opens a retained corrected file, resolves its product through the real mappi
   expect(p.publish).not.toHaveBeenCalled();
   await press("Confirmer le produit");
   await press("Associer à TOMATE VRAC");
+  await press("Terminer les confirmations");
   expect(p.identifiers).toHaveLength(1);
   expect(p.changed).toHaveBeenCalledTimes(1);
   expect(text(renderer!.root)).toContain("Comparer les deux versions");
@@ -512,6 +527,7 @@ it("reopens comparison if observations change before apply instead of claiming a
   await mount();
   await press("Confirmer le produit");
   await press("Associer à TOMATE VRAC");
+  await press("Terminer les confirmations");
   const blocked = compare(p.validate.mock.results[0]!.value);
   blocked.fingerprint = "changed-again";
   p.publish.mockRejectedValue(new MercalysOverlapReconciliationError(blocked));
@@ -557,6 +573,7 @@ it("reopens a partial duplicate and completes only the unpublished rows through 
   expect(text(renderer!.root)).toContain("Publication à compléter");
   expect(text(renderer!.root)).not.toContain("Ce fichier a déjà été importé");
   await press("Associer à TOMATE VRAC");
+  await press("Terminer les confirmations");
   expect(button("Publier les lignes restantes").props.disabled).toBe(false);
   expect(p.resume).not.toHaveBeenCalled();
   await press("Publier les lignes restantes");
@@ -613,6 +630,7 @@ it.each(["COMMITTED", "READ_FAILURE", "ROLLED_BACK", "DELETE_FAILED"])(
     await mount();
     await press("Confirmer le produit");
     await press("Associer à TOMATE VRAC");
+    await press("Terminer les confirmations");
     p.publish.mockRejectedValue(new Error("PUBLICATION_FAILED"));
     if (mode === "COMMITTED") p.referenced.mockResolvedValue(true);
     if (mode === "READ_FAILURE")
@@ -768,40 +786,38 @@ it("reports a completed review result without giving it publication authority", 
   expect(p.publish).not.toHaveBeenCalled();
 });
 
-it("shows immediate saving feedback for distinct creation, then progress while refreshing the file", async () => {
-  let complete!: (count: number) => void;
-  const createProducts = vi
-    .spyOn(productResolution, "createMercalysProducts")
+it("saves without whole-file refresh, then explicitly finalizes the session", async () => {
+  let complete!: () => void;
+  const commit = vi
+    .spyOn(confirmation, "commitMercalysResolution")
     .mockImplementation(
       () =>
-        new Promise<number>((resolve) => {
+        new Promise<void>((resolve) => {
           complete = resolve;
         }),
     );
   await mount();
   await press("Confirmer le produit");
-  await press("Créer comme nouveau produit");
-  expect(createProducts).toHaveBeenCalledTimes(1);
-  expect(text(renderer!.root)).toContain("Enregistrement des produits… 0/1");
-  expect(button("Créer comme nouveau produit").props.disabled).toBe(true);
-  let finish!: () => void;
-  p.analyze.mockImplementation(
-    (_store, summary) =>
-      new Promise((resolve) => {
-        finish = () => resolve(compare(summary));
-      }),
-  );
+  const analyzes = p.analyze.mock.calls.length;
   await act(async () => {
-    complete(1);
+    const createProduct = button("Créer comme nouveau produit").props.onPress;
+    // Two native events in the same render must not start overlapping writes.
+    createProduct();
+    createProduct();
     await new Promise((resolve) => setTimeout(resolve, 20));
   });
-  expect(text(renderer!.root)).toContain(
-    "Actualisation du fichier… 1/1 lignes examinées",
-  );
+  expect(commit).toHaveBeenCalledTimes(1);
+  expect(text(renderer!.root)).toContain("Enregistrement des produits… 0/1");
   await act(async () => {
-    finish();
+    complete();
+    await new Promise((resolve) => setTimeout(resolve, 20));
   });
-  expect(text(renderer!.root)).not.toContain("Enregistrement des produits…");
+  expect(p.analyze).toHaveBeenCalledTimes(analyzes);
+  expect(button("Terminer les confirmations")).toBeDefined();
+  expect(button("Appliquer la nouvelle version")).toBeUndefined();
+  await press("Terminer les confirmations");
+  expect(p.analyze).toHaveBeenCalledTimes(analyzes + 1);
+  commit.mockRestore();
 });
 
 it("keeps the verified review through a complete route unmount without an injected cache", async () => {

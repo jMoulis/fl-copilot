@@ -27,6 +27,21 @@ export class MercalysBatchRepository {
       throw Error("MERCALYS_BATCH_SCOPE_INVALID");
     return assertIntakeConversation(this.db, this.scope, conversationId);
   }
+  async pendingConfirmations() {
+    const prefix = `mercalys-confirmations:v1:${this.scope.storeId}:${this.scope.ownerId}:`;
+    const rows = await this.db.getAllAsync<{ key: string }>(
+      "SELECT key FROM app_metadata WHERE key LIKE ?",
+      `${prefix}%`,
+    );
+    return rows.map((r) => r.key.slice(prefix.length));
+  }
+  async assertConfirmationsFinished(checksum: string) {
+    const row = await this.db.getFirstAsync(
+      "SELECT value FROM app_metadata WHERE key=?",
+      `mercalys-confirmations:v1:${this.scope.storeId}:${this.scope.ownerId}:${checksum}`,
+    );
+    if (row) throw Error("MERCALYS_CONFIRMATIONS_PENDING");
+  }
   get ownerId() {
     return this.scope.ownerId;
   }

@@ -39,6 +39,7 @@ export function CatalogueList({
   onChange,
   onOpen,
   onAdd,
+  onCleanup,
   onBack,
   loading,
   error,
@@ -51,6 +52,7 @@ export function CatalogueList({
   onChange(value: CatalogueView): void;
   onOpen(id: string): void;
   onAdd(): void;
+  onCleanup?(): void;
   onBack?(): void;
   loading: boolean;
   error?: string;
@@ -248,6 +250,13 @@ export function CatalogueList({
               </Text>
             ) : null}
 
+            {onCleanup ? (
+              <SecondaryButton
+                label="Nettoyer le catalogue"
+                onPress={onCleanup}
+                disabled={storeMissing}
+              />
+            ) : null}
             {storeMissing ? (
               <InlineAlert
                 title="Aucun magasin actif"

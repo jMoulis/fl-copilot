@@ -8,6 +8,7 @@ import { SheetJsSpreadsheetParser } from "./sheetjs-spreadsheet-parser";
 import {
   validateMercalysImportResponsive,
   MercalysImportValidationError,
+  type MercalysMatchingPolicy,
 } from "./mercalys-import-validation";
 import type { MercalysImportPublicationRepository } from "./mercalys-import-publication";
 import { localOperationFailureCode } from "../observability/local-operation-failure";
@@ -16,6 +17,7 @@ export class MercalysBatchPreparation {
   constructor(
     private batches: MercalysBatchRepository,
     private dependencies: {
+      matchingPolicy?: MercalysMatchingPolicy;
       read(uri: string): Promise<Uint8Array<ArrayBuffer>>;
       checksum(bytes: Uint8Array<ArrayBuffer>): Promise<string>;
       catalog(): Promise<ProductMatchCatalog>;
@@ -32,6 +34,7 @@ export class MercalysBatchPreparation {
     };
     cancel();
     const item = await this.batches.get(batchId, itemId);
+    await this.batches.assertConfirmationsFinished(item.checksum);
     const location = await this.batches.retainedLocation(batchId, itemId);
     cancel();
     const bytes = await this.dependencies.read(location);
@@ -50,6 +53,8 @@ export class MercalysBatchPreparation {
       this.batches.storeId,
       await this.dependencies.catalog(),
       signal,
+      undefined,
+      this.dependencies.matchingPolicy,
     );
     cancel();
     return { item, summary, localUri: location };
@@ -96,6 +101,12 @@ export class MercalysBatchPreparation {
       }
     } catch (reason) {
       cancel();
+      // A deliberately unfinished session is not a failed import or sync error.
+      if (
+        reason instanceof Error &&
+        reason.message === "MERCALYS_CONFIRMATIONS_PENDING"
+      )
+        return item;
       try {
         this.dependencies.reportFailure?.(reason);
       } catch {

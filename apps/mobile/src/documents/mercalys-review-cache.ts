@@ -9,9 +9,18 @@ export class MercalysReviewCache {
   private entry?: { key: string; summary: string };
   key(storeId: string, checksum: string, catalog: ProductMatchCatalog) {
     return JSON.stringify([
+      "mercalys-codes-v1",
       storeId,
       checksum,
       productMatchingSignature(storeId, catalog),
+      catalog.products
+        .filter((p) => p.storeId === storeId && !p.deletedAt)
+        .map((p) => [p.id, p.status])
+        .sort(),
+      catalog.identifiers
+        .filter((i) => i.storeId === storeId && !i.deletedAt)
+        .map((i) => [i.productId, i.type, i.value, i.status])
+        .sort(),
     ]);
   }
   get(key: string): MercalysImportValidationSummary | undefined {
