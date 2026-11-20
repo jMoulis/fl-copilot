@@ -76,7 +76,14 @@ export function planArticleReference(
     blocked: [],
     summary,
   };
-  const occupied = new Set<string>();
+  const sourceOwners = new Map<string, Set<number>>();
+  for (const line of summary.lines)
+    for (const code of codes(line.record)) {
+      const key = `${code.type}:${code.value}`;
+      const owners = sourceOwners.get(key) ?? new Set<number>();
+      owners.add(line.record.sourceIndex);
+      sourceOwners.set(key, owners);
+    }
   const blockedIndexes = new Set<number>();
   for (const line of summary.lines) {
     if (summary.publishedSourceIndexes?.includes(line.record.sourceIndex))
@@ -91,11 +98,14 @@ export function planArticleReference(
       block();
       continue;
     }
-    if (identifiers.some((c) => occupied.has(`${c.type}:${c.value}`))) {
+    if (
+      identifiers.some(
+        (c) => (sourceOwners.get(`${c.type}:${c.value}`)?.size ?? 0) > 1,
+      )
+    ) {
       block();
       continue;
     }
-    identifiers.forEach((c) => occupied.add(`${c.type}:${c.value}`));
     const existing = catalog.identifiers.filter(
       (c) =>
         !c.deletedAt &&

@@ -165,6 +165,20 @@ const context = {
   now: () => at,
   assertCurrentScope() {},
 };
+it("leaves both rows of a source EAN collision for review regardless of order", async () => {
+  const duplicated = rows.map((r, i) =>
+    r.map((v, k) => (i === 1 && k === 1 ? rows[0]![1]! : v)),
+  );
+  for (const data of [duplicated, [...duplicated].reverse()]) {
+    const plan = await preview(data);
+    expect(plan.blocked).toHaveLength(2);
+    expect(plan.created).toBe(0);
+    expect(plan.summary.readyCount).toBe(0);
+    expect(
+      plan.summary.lines.every((l) => l.match.matchedProductId === null),
+    ).toBe(true);
+  }
+});
 it("previews without writes, creates distinct references and prices, then recognises sales/casse codes without manual mapping", async () => {
   const before = db.prepare("SELECT total_changes() n").get();
   const plan = await preview();
