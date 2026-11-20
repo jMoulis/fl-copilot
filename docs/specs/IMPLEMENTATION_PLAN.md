@@ -1,3 +1,14 @@
+## Owner-approved barcode lookup — 20 November 2026
+
+Reprioritize barcode scanning from the deferred backlog for product lookup only.
+Use existing expo-camera and local ProductMasterRepository EAN reads. Open the
+existing product route for a single validated owner independently of list filters;
+never create/associate an unknown or ambiguous code. No AI, remote lookup, schema
+or new dependency. Preserve catalogue context on Back and cancel late responses
+after close/background. Physical optical acceptance remains required in the next
+grouped iPhone build. The proposed article referential import is separate.
+See `../qa/PRODUCT_BARCODE_SEARCH_2026_11_20.md`.
+
 ## Owner-approved PA flow simplification — 20 November 2026
 
 Supersede the PA-only requirement to finish a global catalogue confirmation

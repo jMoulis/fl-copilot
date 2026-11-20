@@ -8,7 +8,14 @@ type CatalogueVisuals = {
   state: VisualLibraryState | null;
   readUri(asset: VisualAsset): Promise<string | null>;
 };
-import { memo, useMemo, useRef, useState, useEffect } from "react";
+import {
+  memo,
+  useMemo,
+  useRef,
+  useState,
+  useEffect,
+  type ReactNode,
+} from "react";
 import { FlatList, Pressable, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -46,6 +53,7 @@ export function CatalogueList({
   onRefresh,
   storeMissing = false,
   visuals,
+  scanControl,
 }: {
   items: ProductListItem[];
   view: CatalogueView;
@@ -60,6 +68,7 @@ export function CatalogueList({
   onRefresh(): void;
   storeMissing?: boolean;
   visuals?: CatalogueVisuals;
+  scanControl?: ReactNode;
 }) {
   const [filters, setFilters] = useState(false);
   const list = useRef<FlatList<ProductListItem>>(null);
@@ -168,6 +177,7 @@ export function CatalogueList({
                   </Pressable>
                 ) : null}
               </View>
+              {scanControl}
               <IconButton
                 active={active}
                 label={
