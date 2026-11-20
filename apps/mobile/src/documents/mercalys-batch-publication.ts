@@ -92,6 +92,15 @@ export class MercalysBatchPublication {
             continue;
           }
           if (automatic) seenOriginals.add(originalKey);
+          if (summary.parserVersion === "mercalys-article-reference.v1") {
+            items.push({
+              ...base,
+              ...count,
+              status: "BLOCKED",
+              code: "ARTICLE_REFERENCE_REVIEW_REQUIRED",
+            });
+            continue;
+          }
           if (
             !summary.readyCount ||
             (await this.publication.analyzeOverlap(

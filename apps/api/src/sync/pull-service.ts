@@ -794,6 +794,12 @@ export function createMongoSyncPullService(
                 query.purchasePrices !== "true"
               )
                 return null;
+              if (
+                entity.publication.source.parserVersion ===
+                  "mercalys-article-reference.v1" &&
+                query.articleReferences !== "true"
+              )
+                return null;
               // Legacy clients only insert source records and cannot safely consume row revisions.
               if (
                 query.mercalysRecordUpdates !== "true" &&

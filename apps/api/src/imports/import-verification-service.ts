@@ -30,6 +30,7 @@ export interface RemoteMercalysParser {
   parse(
     bytes: Uint8Array,
     sourceType: VerifyImportRequest["sourceType"],
+    parserVersion?: string,
   ): {
     parserVersion: string;
     businessPeriodStart: string;
@@ -110,7 +111,11 @@ export function createMongoImportVerificationService(
         if (checksum !== input.checksum) {
           throw new Error("SOURCE_CHECKSUM_MISMATCH");
         }
-        const parsed = parser.parse(bytes, input.sourceType);
+        const parsed = parser.parse(
+          bytes,
+          input.sourceType,
+          input.articleReference ? "mercalys-article-reference.v1" : undefined,
+        );
         parserVersion = parsed.parserVersion;
         remoteRecordCount = parsed.records.length;
         const remoteFingerprint = fingerprintMercalysRecords(parsed.records);
@@ -169,10 +174,12 @@ export function createMongoImportVerificationService(
 }
 
 const defaultRemoteMercalysParser: RemoteMercalysParser = {
-  parse(bytes, sourceType) {
+  parse(bytes, sourceType, parserVersion) {
     const workbook = new SheetJsSpreadsheetParser().parse(bytes);
     return sourceType === "MERCALYS_PURCHASE_PRICES"
-      ? parseMercalysPurchasePrices(workbook)
+      ? parseMercalysPurchasePrices(workbook, {
+          articleReference: parserVersion === "mercalys-article-reference.v1",
+        })
       : sourceType === "MERCALYS_SALES"
         ? parseMercalysSales(workbook)
         : parseMercalysWaste(workbook);

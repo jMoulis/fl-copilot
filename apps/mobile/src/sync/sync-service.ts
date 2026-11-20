@@ -150,6 +150,7 @@ export interface MobileSyncServiceOptions {
   mercalysPublications?: boolean;
   mercalysRecordUpdates?: boolean;
   purchasePrices?: boolean;
+  articleReferences?: boolean;
   maxRetries?: number;
   baseRetryDelayMs?: number;
   now?: () => string;
@@ -351,6 +352,12 @@ export class MobileSyncService {
       !this.options.copilotOwnerId
     )
       throw Error("COPILOT_HISTORY_OWNER_REQUIRED");
+    const articleReferencesAdopted =
+      !this.options.articleReferences ||
+      !!(await this.database.getFirstAsync(
+        "SELECT value FROM app_metadata WHERE key=?",
+        `article-references:${storeId}`,
+      ));
     const purchasePricesAdopted =
       !this.options.purchasePrices ||
       !!(await this.database.getFirstAsync(
@@ -509,6 +516,7 @@ export class MobileSyncService {
       !actionsAdopted ||
       !mercalysAdopted ||
       !purchasePricesAdopted ||
+      !articleReferencesAdopted ||
       !mercalysUpdatesAdopted ||
       !executionAdopted ||
       !actualsAdopted ||
@@ -609,6 +617,16 @@ export class MobileSyncService {
         code: "PURCHASE_PRICES_SERVER_UPGRADE_REQUIRED",
         messageFr:
           "Le service doit être mis à jour pour synchroniser les prix d’achat. Tes imports locaux sont conservés.",
+        retryable: false,
+      });
+    if (
+      this.options.articleReferences &&
+      snapshot.entities.articleReferences !== true
+    )
+      throw new ApiClientError(426, {
+        code: "ARTICLE_REFERENCES_SERVER_UPGRADE_REQUIRED",
+        messageFr:
+          "Le service doit être mis à jour pour synchroniser le référentiel. Tes imports locaux sont conservés.",
         retryable: false,
       });
     await applyBootstrap(

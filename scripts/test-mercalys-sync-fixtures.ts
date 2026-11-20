@@ -68,6 +68,7 @@ export function mercalysWorkbook(
   sales = 12.4,
   includeReview = true,
   alternativePurchasePrice?: number,
+  articleReference = false,
 ) {
   const fr = date.split("-").reverse().join("/");
   const book = XLSX.utils.book_new();
@@ -85,6 +86,7 @@ export function mercalysWorkbook(
               "NOMENCLATURE",
               "PRIX ACHAT PAR UNITE",
               "ACTIF",
+              ...(articleReference ? ["PV TTC", "Code TVA"] : []),
             ],
             [
               "00000001",
@@ -93,6 +95,7 @@ export function mercalysWorkbook(
               "LEGUMES FRAIS",
               sales,
               "Oui",
+              ...(articleReference ? [2.39, "5,5%"] : []),
             ],
             ...(alternativePurchasePrice === undefined
               ? []

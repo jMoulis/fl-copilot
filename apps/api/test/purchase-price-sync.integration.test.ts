@@ -24,7 +24,11 @@ import {
   syncPullQuerySchema,
   type MercalysPublication,
 } from "@fl-copilot/sync-contracts";
-import { fingerprintMercalysRecords } from "@fl-copilot/import-core";
+import {
+  fingerprintMercalysRecords,
+  parseMercalysPurchasePrices,
+  SheetJsSpreadsheetParser,
+} from "@fl-copilot/import-core";
 import { runMongoMigrations } from "../src/database/migrations";
 const uri = process.env.TEST_MONGODB_URI;
 describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
@@ -38,9 +42,14 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
     afterAll(async () => {
       await client?.close();
     });
-    it.each([false, true])(
-      "verifies the original, rejects altered amount/unit/review status, retries once and gates legacy clients (price choice=%s)",
-      async (priceChoice) => {
+    it.each([
+      { priceChoice: false, reference: false, legacyColumns: false },
+      { priceChoice: true, reference: false, legacyColumns: false },
+      { priceChoice: false, reference: true, legacyColumns: false },
+      { priceChoice: false, reference: false, legacyColumns: true },
+    ])(
+      "verifies the original, rejects altered prices/status, retries and gates legacy clients (%j)",
+      async ({ priceChoice, reference, legacyColumns }) => {
         const db = client.db(`fl_pa_${randomUUID().replaceAll("-", "")}`),
           device = new MercalysTestDatabase(),
           other = new MercalysTestDatabase();
@@ -68,7 +77,19 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
             0.001,
             false,
             priceChoice ? 5.99 : undefined,
+            reference || legacyColumns,
           );
+          if (legacyColumns) {
+            const legacy = parseMercalysPurchasePrices(
+              new SheetJsSpreadsheetParser().parse(file.bytes),
+              { articleReference: false },
+            );
+            file.input.summary.parserVersion = legacy.parserVersion;
+            file.input.summary.lines = file.input.summary.lines.map((l, i) => ({
+              ...l,
+              record: legacy.records[i]!,
+            }));
+          }
           if (priceChoice) {
             file.input.summary.lines[1]!.match = structuredClone(
               file.input.summary.lines[0]!.match,
@@ -117,6 +138,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
               file.input.summary.lines.map((l) => l.record),
             ),
             localRecordCount: p.records.length,
+            ...(reference ? { articleReference: true as const } : {}),
           });
           expect(verified.status).toBe("MATCH");
           const push = createMongoSyncPushService(
@@ -155,6 +177,20 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
             (x: MercalysPublication) => {
               x.prices[0]!.priceStatus = "KNOWN";
             },
+            ...(reference
+              ? [
+                  (x: MercalysPublication) => {
+                    x.prices[0]!.sellingPriceTtc = "99";
+                    const r = x.records.find(
+                      (r) => r.id === x.prices[0]!.sourceRecordId,
+                    )!;
+                    const n = r.normalizedPayload as {
+                      purchasePrice: { reference: { sellingPriceTtc: string } };
+                    };
+                    n.purchasePrice.reference.sellingPriceTtc = "99";
+                  },
+                ]
+              : []),
           ]) {
             const forged = structuredClone(p);
             mutate(forged);
@@ -199,12 +235,24 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
             }),
           );
           expect(legacy.changes).toHaveLength(0);
+          if (reference) {
+            const oldPaClient = await pull.pull(
+              storeId,
+              syncPullQuerySchema.parse({
+                mercalysPublications: "true",
+                mercalysRecordUpdates: "true",
+                purchasePrices: "true",
+              }),
+            );
+            expect(oldPaClient.changes).toHaveLength(0);
+          }
           const page = await pull.pull(
             storeId,
             syncPullQuerySchema.parse({
               mercalysPublications: "true",
               mercalysRecordUpdates: "true",
               purchasePrices: "true",
+              ...(reference ? { articleReferences: "true" } : {}),
             }),
           );
           expect(page.changes).toHaveLength(1);
@@ -226,6 +274,35 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
             price_status: "TO_VERIFY",
             sync_state: "SYNCED",
           });
+          if (reference) {
+            expect(
+              (
+                await new PurchasePriceRepository(other).history(
+                  storeId,
+                  productId,
+                  "2026-11-18",
+                )
+              )[0],
+            ).toMatchObject({
+              selling_price_ttc: "2.39",
+              vat_rate: "5.5",
+              reference_status: "TEMPORARILY_UNAVAILABLE",
+            });
+            await expect(
+              new PurchasePriceRepository(device).confirm(
+                storeId,
+                productId,
+                p.prices[0]!.id,
+                1,
+                {
+                  now: mercalysTimestamp,
+                  generateId: randomUUID,
+                  assertCurrentScope() {},
+                },
+              ),
+            ).rejects.toThrow();
+            return;
+          }
           await new PurchasePriceRepository(device).confirm(
             storeId,
             productId,

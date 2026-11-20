@@ -15,6 +15,7 @@ import {
 import {
   purchasePriceObservationSchema,
   purchasePriceNeedsReview,
+  referencePriceUnavailable,
   salesObservationSchema,
   productMatchResultSchema,
   sourceRecordSchema,
@@ -524,7 +525,14 @@ export class MercalysImportPublicationRepository {
           sourcePage: null,
           rawPayload: line.record.rawValues,
           normalizedPayload: {
-            ...line.record,
+            // Reference exports already retain these exact cells in rawPayload.
+            // Do not duplicate them in the normalized snapshot/Outbox payload.
+            ...Object.fromEntries(
+              Object.entries(line.record).filter(
+                ([key]) =>
+                  !line.record.purchasePrice?.reference || key !== "rawValues",
+              ),
+            ),
             match: line.match,
             ...priceSelectionPayload(input.summary, line),
           },
@@ -979,11 +987,28 @@ async function insertObservationFromLine(
       productId: product.id,
       businessDate: line.record.businessDate,
       amount: quote.amount,
+      ...(quote.reference
+        ? {
+            sellingPriceTtc: quote.reference.sellingPriceTtc,
+            vatRate: quote.reference.vatRate,
+            referenceStatus: referencePriceUnavailable(
+              quote.amount,
+              quote.reference.sellingPriceTtc,
+            )
+              ? "TEMPORARILY_UNAVAILABLE"
+              : "AVAILABLE",
+          }
+        : {}),
       unit: product.sales_unit,
       taxBasis: "HT",
       currency: "EUR",
       priceStatus:
         purchasePriceNeedsReview(quote.amount) ||
+        (quote.reference &&
+          referencePriceUnavailable(
+            quote.amount,
+            quote.reference.sellingPriceTtc,
+          )) ||
         product.sales_unit === "UNKNOWN"
           ? "TO_VERIFY"
           : "KNOWN",

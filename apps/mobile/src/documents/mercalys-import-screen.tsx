@@ -6,6 +6,12 @@ import {
   selectPurchasePrice,
 } from "./mercalys-purchase-price-review";
 import {
+  isArticleReference,
+  planArticleReference,
+  publishArticleReference,
+  type ArticleReferencePlan,
+} from "./mercalys-article-reference";
+import {
   MercalysConfirmationSession,
   commitMercalysResolution,
 } from "./mercalys-confirmation-session";
@@ -15,7 +21,10 @@ import {
 } from "./mercalys-review-cache";
 import type { MercalysBatchResult } from "@fl-copilot/domain";
 import { tradingToday } from "../dates/calendar";
-import { purchasePriceNeedsReview } from "@fl-copilot/domain";
+import {
+  purchasePriceNeedsReview,
+  referencePriceUnavailable,
+} from "@fl-copilot/domain";
 import { isLocalOriginalReferenced } from "./source-upload-recovery";
 import { useIsFocused } from "expo-router";
 import { SourceOriginalButton } from "./source-original-button";
@@ -227,6 +236,7 @@ export function MercalysImportScreen({
   const [stage, setStage] = useState<ImportStage>("IDLE");
   const [filename, setFilename] = useState<string>();
   const [summary, setSummary] = useState<MercalysImportValidationSummary>();
+  const [referencePlan, setReferencePlan] = useState<ArticleReferencePlan>();
   const [productCatalog, setProductCatalog] = useState<ImportProductCatalog>();
   const [selectedBytes, setSelectedBytes] = useState<Uint8Array<ArrayBuffer>>();
   const [selectedChecksum, setSelectedChecksum] = useState<string>();
@@ -306,6 +316,7 @@ export function MercalysImportScreen({
       setMatchingProgress(undefined);
       setFilename(undefined);
       setSummary(undefined);
+      setReferencePlan(undefined);
       setProductCatalog(undefined);
       setSelectedBytes(undefined);
       setSelectedChecksum(undefined);
@@ -411,7 +422,17 @@ export function MercalysImportScreen({
           assertReading();
           if (pending && pending.remainingCount > 0) {
             setContinuation(pending);
-            setSummary(pending.summary);
+            if (isArticleReference(pending.summary)) {
+              const plan = planArticleReference(
+                pending.summary,
+                catalog,
+                storeId,
+                randomUUID,
+                new Date().toISOString(),
+              );
+              setReferencePlan(plan);
+              setSummary(plan.summary);
+            } else setSummary(pending.summary);
             setSelectedBytes(bytes);
             setSection(
               pending.summary.sourceType === "MERCALYS_PURCHASE_PRICES"
@@ -423,6 +444,17 @@ export function MercalysImportScreen({
           } else setDuplicate(priorImport);
           setStage("COMPLETE");
           return;
+        }
+        if (isArticleReference(nextSummary)) {
+          const plan = planArticleReference(
+            nextSummary,
+            catalog,
+            storeId,
+            randomUUID,
+            new Date().toISOString(),
+          );
+          nextSummary = plan.summary;
+          setReferencePlan(plan);
         }
         const overlap = await publicationRepository.analyzeOverlap(
           storeId,
@@ -468,6 +500,7 @@ export function MercalysImportScreen({
   }, [retainedAsset, storeId, chooseWorkbook]);
 
   function reset() {
+    setReferencePlan(undefined);
     if (retainedAsset && onClose) {
       onClose();
       return;
@@ -513,12 +546,23 @@ export function MercalysImportScreen({
         setMatchingProgress,
         previous ? productCatalog : undefined,
       );
-      const rematched = reviewPurchasePriceCollisions({
+      let rematched = reviewPurchasePriceCollisions({
         ...matched,
         ...(currentSummary.purchasePriceSelections
           ? { purchasePriceSelections: currentSummary.purchasePriceSelections }
           : {}),
       });
+      if (isArticleReference(rematched)) {
+        const plan = planArticleReference(
+          rematched,
+          catalog,
+          storeId,
+          randomUUID,
+          new Date().toISOString(),
+        );
+        rematched = plan.summary;
+        setReferencePlan(plan);
+      }
       if (selectedChecksum)
         validationCache.put(
           validationCache.key(storeId, selectedChecksum, catalog),
@@ -808,9 +852,10 @@ export function MercalysImportScreen({
     setPublicationError(undefined);
     let durableFile: ExpoFile | undefined;
     try {
-      const prepared = isPurchasePrices
-        ? await refreshProductMatches(summary)
-        : { summary, continuation };
+      const prepared =
+        isPurchasePrices && !referencePlan
+          ? await refreshProductMatches(summary)
+          : { summary, continuation };
       const current = archiveAuthority.current;
       if (
         !current.archiveFocused ||
@@ -824,7 +869,7 @@ export function MercalysImportScreen({
         await confirmationSession.finish();
         setPendingConfirmations(false);
       }
-      if (prepared.continuation) {
+      if (prepared.continuation && !referencePlan) {
         const result = await publicationRepository.resume({
           storeId,
           sourceDocumentId: prepared.continuation.sourceDocumentId,
@@ -847,27 +892,52 @@ export function MercalysImportScreen({
         void syncNow(storeId);
         return;
       }
-      const directory = new Directory(Paths.document, "mercalys-imports");
-      directory.create({ idempotent: true, intermediates: true });
-      durableFile = new ExpoFile(directory, `${randomUUID()}.xlsx`);
-      durableFile.create({ intermediates: true });
-      durableFile.write(selectedBytes);
+      if (!prepared.continuation) {
+        const directory = new Directory(Paths.document, "mercalys-imports");
+        directory.create({ idempotent: true, intermediates: true });
+        durableFile = new ExpoFile(directory, `${randomUUID()}.xlsx`);
+        durableFile.create({ intermediates: true });
+        durableFile.write(selectedBytes);
+      }
 
-      const result = await publicationRepository.publish({
+      const referenceInput = {
         storeId,
         filename,
-        localFileUri: durableFile.uri,
+        localFileUri: durableFile?.uri ?? "",
         mimeType:
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         sizeBytes: selectedBytes.byteLength,
         checksum: selectedChecksum,
         summary: prepared.summary,
         reconciliationApproval,
-      });
+      };
+      const result = referencePlan
+        ? await publishArticleReference(sqlite, referenceInput, referencePlan, {
+            deviceId,
+            generateId: randomUUID,
+            now: () => new Date().toISOString(),
+            sourceDocumentId: prepared.continuation?.sourceDocumentId,
+            assertCurrentScope: () => {
+              const authority = archiveAuthority.current;
+              if (
+                !authority.archiveFocused ||
+                authority.sqlite !== sqlite ||
+                authority.session?.user.id !== actorUserId ||
+                authority.session?.stores[0]?.storeId !== storeId ||
+                authority.session?.stores[0]?.role !== "MANAGER"
+              )
+                throw Error("MERCALYS_REVIEW_SCOPE_CHANGED");
+            },
+          })
+        : await publicationRepository.publish(referenceInput);
       // The publication transaction now owns this original. Later failures must never delete it.
       durableFile = undefined;
       onChanged?.();
-      setPublication(result);
+      setPublication({
+        ...result,
+        publishedCount:
+          (prepared.continuation?.publishedCount ?? 0) + result.publishedCount,
+      });
       setReconciliation(undefined);
       const analyticsRun = isPurchasePrices
         ? { failedJobs: 0 }
@@ -924,6 +994,8 @@ export function MercalysImportScreen({
     isPurchasePrices,
     confirmationSession,
     refreshProductMatches,
+    referencePlan,
+    deviceId,
     reconciliation,
     continuation,
     actorUserId,
@@ -962,7 +1034,19 @@ export function MercalysImportScreen({
       )
         throw Error("MERCALYS_REVIEW_SCOPE_CHANGED");
       setContinuation(pending);
-      setSummary(pending.summary);
+      if (isArticleReference(pending.summary)) {
+        const catalog = await loadProductCatalog(repository, storeId);
+        const plan = planArticleReference(
+          pending.summary,
+          catalog,
+          storeId,
+          randomUUID,
+          new Date().toISOString(),
+        );
+        setProductCatalog(catalog);
+        setReferencePlan(plan);
+        setSummary(plan.summary);
+      } else setSummary(pending.summary);
       setPublication(undefined);
       setSection("PRODUCTS");
       setResolutionKey(undefined);
@@ -1024,6 +1108,7 @@ export function MercalysImportScreen({
   useEffect(() => {
     if (
       pendingConfirmations ||
+      (summary && isArticleReference(summary)) ||
       retainedAsset ||
       stage !== "COMPLETE" ||
       loading ||
@@ -1372,6 +1457,33 @@ export function MercalysImportScreen({
             message={priceChoiceError}
           />
         ) : null}
+        {referencePlan && !publication ? (
+          <SectionCard title="Mise à jour du référentiel">
+            <SummaryLine
+              label="Références conservées"
+              value={String(referencePlan.retained)}
+            />
+            <SummaryLine
+              label="Fiches à créer"
+              value={String(referencePlan.created)}
+            />
+            <SummaryLine
+              label="Dont références à séparer"
+              value={String(referencePlan.separated)}
+            />
+            <Text className="text-sm text-muted">
+              Chaque référence conserve ses propres prix datés. Les anciennes
+              ventes restent intactes. Les catégories existantes sont conservées
+              ; les unités et conditionnements absents restent à compléter.
+            </Text>
+            {referencePlan.blocked.length ? (
+              <InlineAlert
+                title="Associations à vérifier"
+                message={`${referencePlan.blocked.length} références restent à vérifier séparément : ${referencePlan.blocked.slice(0, 5).join(", ")}. Les autres références peuvent être enregistrées.`}
+              />
+            ) : null}
+          </SectionCard>
+        ) : null}
         {summary?.purchasePriceSelections?.length && !publication ? (
           <SectionCard title="Prix retenus pour ce fichier">
             {summary.purchasePriceSelections.map((selection) => {
@@ -1488,7 +1600,10 @@ export function MercalysImportScreen({
             publication={publication}
             publishing={publishing || resolvingProducts}
             publicationError={publicationError}
-            pendingConfirmations={confirmationRequired}
+            pendingConfirmations={
+              confirmationRequired ||
+              Boolean(referencePlan && summary.errorCount)
+            }
             onReviewProducts={() => {
               setSection("PRODUCTS");
               setResolutionKey(undefined);
@@ -1730,6 +1845,7 @@ function ValidationSummary({
   onCancel: () => void;
 }) {
   const prices = summary.sourceType === "MERCALYS_PURCHASE_PRICES";
+  const reference = isArticleReference(summary);
   const missingReferences = summary.lines.filter(
     (l) =>
       l.match.state !== "AUTO_MATCH" &&
@@ -1754,7 +1870,9 @@ function ValidationSummary({
           label="Source"
           value={
             summary.sourceType === "MERCALYS_PURCHASE_PRICES"
-              ? "Prix d’achat Mercalys"
+              ? reference
+                ? "Référentiel articles Mercalys"
+                : "Prix d’achat Mercalys"
               : summary.sourceType === "MERCALYS_SALES"
                 ? "Ventes Mercalys"
                 : "Casse Mercalys"
@@ -1834,12 +1952,23 @@ function ValidationSummary({
               />
             ) : null}
             <CountLine
-              label="Prix à vérifier (0,01 € ou 0,001 €)"
+              label={
+                reference
+                  ? "Références temporairement hors base"
+                  : "Prix à vérifier (0,01 € ou 0,001 €)"
+              }
               value={
                 summary.lines.filter(
                   (l) =>
                     l.record.purchasePrice &&
-                    purchasePriceNeedsReview(l.record.purchasePrice.amount),
+                    (reference
+                      ? referencePriceUnavailable(
+                          l.record.purchasePrice.amount,
+                          l.record.purchasePrice.reference?.sellingPriceTtc,
+                        )
+                      : purchasePriceNeedsReview(
+                          l.record.purchasePrice.amount,
+                        )),
                 ).length
               }
               tone="review"
@@ -1871,7 +2000,11 @@ function ValidationSummary({
           accessibilityRole="header"
           className="text-xl font-semibold text-ink"
         >
-          {prices ? "Historique des prix d’achat" : "Publication"}
+          {reference
+            ? "Référentiel et prix datés"
+            : prices
+              ? "Historique des prix d’achat"
+              : "Publication"}
         </Text>
         {publication ? (
           <SourceOriginalButton
@@ -1894,9 +2027,11 @@ function ValidationSummary({
           />
         ) : (
           <Text className="text-base leading-6 text-muted">
-            {prices
-              ? "Les PA reconnus seront ajoutés à la date du fichier. Les références restantes sont conservées et pourront être complétées plus tard."
-              : "Seules les lignes prêtes seront enregistrées. Les autres resteront à corriger et le fichier sera conservé sur cet appareil."}
+            {reference
+              ? "La confirmation met à jour les références présentées et enregistre leurs PA HT et PV TTC à la date du fichier. Aucun ancien mouvement n’est réécrit."
+              : prices
+                ? "Les PA reconnus seront ajoutés à la date du fichier. Les références restantes sont conservées et pourront être complétées plus tard."
+                : "Seules les lignes prêtes seront enregistrées. Les autres resteront à corriger et le fichier sera conservé sur cet appareil."}
           </Text>
         )}
         {!publication &&
@@ -1933,17 +2068,21 @@ function ValidationSummary({
         ) : null}
         <PrimaryButton
           label={
-            prices
+            reference
               ? publication
-                ? "PA ajoutés"
-                : previouslyPublishedCount
-                  ? "Ajouter les PA restants"
-                  : "Ajouter les PA reconnus"
-              : publication
-                ? "Lignes publiées"
-                : previouslyPublishedCount
-                  ? "Publier les lignes restantes"
-                  : "Publier les lignes valides"
+                ? "Référentiel enregistré"
+                : "Mettre à jour le référentiel"
+              : prices
+                ? publication
+                  ? "PA ajoutés"
+                  : previouslyPublishedCount
+                    ? "Ajouter les PA restants"
+                    : "Ajouter les PA reconnus"
+                : publication
+                  ? "Lignes publiées"
+                  : previouslyPublishedCount
+                    ? "Publier les lignes restantes"
+                    : "Publier les lignes valides"
           }
           disabled={
             pendingConfirmations ||
@@ -2309,6 +2448,17 @@ function progressState(stage: ImportStage, target: ImportStage) {
 }
 
 function importErrorMessage(error: unknown) {
+  const referenceCode = error instanceof Error ? error.message : "";
+  if (referenceCode === "ARTICLE_REFERENCE_INVALID")
+    return "Corrige les anomalies du fichier ou les références signalées avant de confirmer le référentiel. Rien de cette tentative n’a été enregistré.";
+  if (referenceCode === "ARTICLE_REFERENCE_OLDER_THAN_CURRENT")
+    return "Un référentiel plus récent est déjà enregistré. Ce fichier historique ne peut pas remplacer ses libellés ou ses associations.";
+  if (referenceCode === "ARTICLE_REFERENCE_PREVIEW_CHANGED")
+    return "Le catalogue a changé depuis l’aperçu. Rouvre le fichier pour actualiser les changements proposés ; rien de cette tentative n’a été enregistré.";
+  if (referenceCode === "ARTICLE_REFERENCE_CONFLICT")
+    return "Une fiche concernée présente un conflit de synchronisation. Résous-le avant de mettre à jour le référentiel ; tes données sont conservées.";
+  if (referenceCode === "MERCALYS_REFERENCE_COLUMNS_INCOMPLETE")
+    return "Le référentiel doit contenir les colonnes PV TTC et Code TVA ensemble. Vérifie l’export.";
   if (
     error instanceof Error &&
     error.message === "MERCALYS_ORIGINAL_RECOVERY_FAILED"

@@ -970,6 +970,13 @@ CREATE INDEX copilot_layout_illustration_generation_scope ON copilot_layout_illu
     CREATE INDEX purchase_price_source ON purchase_price_observations(store_id,source_document_id);
   `,
   },
+  {
+    version: 67,
+    name: "article-reference-dated-selling-prices",
+    sql: `ALTER TABLE purchase_price_observations ADD COLUMN selling_price_ttc TEXT;
+    ALTER TABLE purchase_price_observations ADD COLUMN vat_rate TEXT;
+    ALTER TABLE purchase_price_observations ADD COLUMN reference_status TEXT;`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

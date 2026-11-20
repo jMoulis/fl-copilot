@@ -37,6 +37,7 @@ export interface ParsedMercalysArticleRecord {
     amount: string;
     sourceActive: boolean;
     nomenclature: string;
+    reference?: { sellingPriceTtc: string; vatRate: string };
   };
   purchaseValue: number | null;
   rceValue: number | null;
@@ -48,6 +49,8 @@ export interface ParsedMercalysArticleRecord {
     priceAmount?: RawMercalysValue;
     sourceActive?: RawMercalysValue;
     nomenclature?: RawMercalysValue;
+    sellingPriceTtc?: RawMercalysValue;
+    vatRate?: RawMercalysValue;
   };
 }
 

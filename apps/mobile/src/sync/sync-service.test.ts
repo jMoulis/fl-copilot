@@ -1827,44 +1827,49 @@ it("keeps a pending command when logout retires a committed push acknowledgement
   database.close();
 });
 
-it("adopts daily PA support once on an existing device and resumes ordinary pull", async () => {
-  const { adapter, database } = temporaryDatabase();
-  await runLocalMigrations(adapter);
-  database
-    .prepare(
-      "INSERT INTO sync_inbox_state(store_id,cursor,protocol_version) VALUES (?,?,1)",
-    )
-    .run(storeId, "old-cursor");
-  const snapshot = bootstrapResponse();
-  snapshot.entities.purchasePrices = true;
-  let bootstraps = 0,
-    pulls = 0;
-  const service = new MobileSyncService(
-    adapter,
-    {
-      bootstrap: async () => {
-        bootstraps++;
-        return snapshot;
+it.each(["purchasePrices", "articleReferences"] as const)(
+  "adopts %s support once on an existing device and resumes ordinary pull",
+  async (capability) => {
+    const { adapter, database } = temporaryDatabase();
+    await runLocalMigrations(adapter);
+    database
+      .prepare(
+        "INSERT INTO sync_inbox_state(store_id,cursor,protocol_version) VALUES (?,?,1)",
+      )
+      .run(storeId, "old-cursor");
+    const snapshot = bootstrapResponse();
+    snapshot.entities[capability] = true;
+    let bootstraps = 0,
+      pulls = 0;
+    const service = new MobileSyncService(
+      adapter,
+      {
+        bootstrap: async () => {
+          bootstraps++;
+          return snapshot;
+        },
+        push: async () => ({ results: [], serverTime: snapshot.serverTime }),
+        pull: async () => {
+          pulls++;
+          return emptyPull("new-cursor");
+        },
       },
-      push: async () => ({ results: [], serverTime: snapshot.serverTime }),
-      pull: async () => {
-        pulls++;
-        return emptyPull("new-cursor");
-      },
-    },
-    { appVersion: "test", deviceId, purchasePrices: true, maxRetries: 0 },
-  );
-  try {
-    await service.sync(storeId);
-    await service.sync(storeId);
-    expect(bootstraps).toBe(1);
-    expect(pulls).toBe(2);
-    expect(
-      database
-        .prepare("SELECT value FROM app_metadata WHERE key=?")
-        .get(`purchase-prices:${storeId}`),
-    ).toEqual({ value: "1" });
-  } finally {
-    database.close();
-  }
-});
+      { appVersion: "test", deviceId, [capability]: true, maxRetries: 0 },
+    );
+    try {
+      await service.sync(storeId);
+      await service.sync(storeId);
+      expect(bootstraps).toBe(1);
+      expect(pulls).toBe(2);
+      expect(
+        database
+          .prepare("SELECT value FROM app_metadata WHERE key=?")
+          .get(
+            `${capability === "purchasePrices" ? "purchase-prices" : "article-references"}:${storeId}`,
+          ),
+      ).toEqual({ value: "1" });
+    } finally {
+      database.close();
+    }
+  },
+);

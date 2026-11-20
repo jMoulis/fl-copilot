@@ -587,6 +587,7 @@ export class ApiClient {
     automaticMemory = false,
     personalTasks = false,
     purchasePrices = false,
+    articleReferences = false,
   ) {
     const query = new URLSearchParams();
     if (commercialReview) query.set("commercialReview", "true");
@@ -636,6 +637,7 @@ export class ApiClient {
     if (mercalysPublications) query.set("mercalysPublications", "true");
     if (mercalysRecordUpdates) query.set("mercalysRecordUpdates", "true");
     if (purchasePrices) query.set("purchasePrices", "true");
+    if (articleReferences) query.set("articleReferences", "true");
     if (documentArchives) query.set("documentArchives", "true");
     if (cursor) query.set("cursor", cursor);
     if (limit !== undefined) query.set("limit", String(limit));
@@ -707,6 +709,7 @@ export class ApiClient {
     automaticMemory = false,
     personalTasks = false,
     purchasePrices = false,
+    articleReferences = false,
   ) {
     const query = new URLSearchParams();
     if (rawObservationDays !== undefined)
@@ -758,6 +761,7 @@ export class ApiClient {
     if (mercalysPublications) query.set("mercalysPublications", "true");
     if (mercalysRecordUpdates) query.set("mercalysRecordUpdates", "true");
     if (purchasePrices) query.set("purchasePrices", "true");
+    if (articleReferences) query.set("articleReferences", "true");
     const suffix = query.toString() ? `?${query}` : "";
     return this.request(
       `/api/v1/sync/bootstrap${suffix}`,

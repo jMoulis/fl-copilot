@@ -1,3 +1,13 @@
+## Owner-approved article reference import — 20 November 2026
+
+Recognize PV TTC and Code TVA alongside PA fields. Show a read-only preview of
+references retained, products created and legacy associations separated, then one
+explicit Update reference action. No auto-apply after selection or batch/email
+receipt. Catalogue and dated prices commit atomically. Keep legacy PA-only imports.
+Price history shows reference PV/TVA, unknown units honestly, or temporary off-base
+status without presenting 999 as an actual price. Preserve source and old history.
+See `../qa/ARTICLE_REFERENCE_2026_11_20.md`.
+
 ## Owner-approved barcode lookup — 20 November 2026
 
 Show an accessible barcode icon beside catalogue search. Open a full-screen

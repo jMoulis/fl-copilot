@@ -1,4 +1,5 @@
 import type { OutboxDatabase } from "../sync/outbox-repository";
+import { referencePriceUnavailable } from "@fl-copilot/domain";
 import type {
   MercalysImportValidationLine,
   MercalysImportValidationSummary,
@@ -11,6 +12,9 @@ export type ReconciliationCategory =
 
 export interface ReconciliationValues {
   purchasePrice?: string | null;
+  sellingPriceTtc?: string | null;
+  vatRate?: string | null;
+  referenceStatus?: string | null;
   quantity: string | null;
   purchaseValue: string | null;
   rceValue: string | null;
@@ -267,6 +271,9 @@ async function loadExistingObservations(
       product_label: string;
       business_date: string;
       amount: string;
+      selling_price_ttc: string | null;
+      vat_rate: string | null;
+      reference_status: string | null;
       normalized_payload_json: string;
     }>(
       `SELECT o.*, p.label AS product_label, r.normalized_payload_json FROM purchase_price_observations o JOIN products p ON p.id=o.product_id JOIN source_documents d ON d.id=o.source_document_id LEFT JOIN source_records r ON r.id=o.source_record_id AND r.store_id=o.store_id WHERE o.store_id=? AND o.business_date BETWEEN ? AND ? AND o.deleted_at IS NULL AND d.deleted_at IS NULL AND d.local_processing_status='PUBLISHED' ORDER BY o.business_date,o.product_id,o.id`,
@@ -291,6 +298,13 @@ async function loadExistingObservations(
         marginValue: null,
         marginRate: null,
         purchasePrice: row.amount,
+        ...(row.selling_price_ttc != null
+          ? {
+              sellingPriceTtc: row.selling_price_ttc,
+              vatRate: row.vat_rate,
+              referenceStatus: row.reference_status,
+            }
+          : {}),
       },
     }));
   }
@@ -386,6 +400,18 @@ function valuesFromIncoming(
     ...(record.purchasePrice
       ? { purchasePrice: record.purchasePrice.amount }
       : {}),
+    ...(record.purchasePrice?.reference
+      ? {
+          sellingPriceTtc: record.purchasePrice.reference.sellingPriceTtc,
+          vatRate: record.purchasePrice.reference.vatRate,
+          referenceStatus: referencePriceUnavailable(
+            record.purchasePrice.amount,
+            record.purchasePrice.reference.sellingPriceTtc,
+          )
+            ? "TEMPORARILY_UNAVAILABLE"
+            : "AVAILABLE",
+        }
+      : {}),
     purchaseValue: nullableDecimal(record.purchaseValue),
     rceValue:
       summary.sourceType === "MERCALYS_SALES"
@@ -411,7 +437,11 @@ function valuesEqual(
   existing: ReconciliationValues | null,
   incoming: ReconciliationValues | null,
 ) {
-  return JSON.stringify(existing) === JSON.stringify(incoming);
+  const canonical = (value: ReconciliationValues | null) =>
+    value && Object.entries(value).sort(([a], [b]) => a.localeCompare(b));
+  return (
+    JSON.stringify(canonical(existing)) === JSON.stringify(canonical(incoming))
+  );
 }
 
 function sourceIdentity(record: { itm8?: unknown; ean?: unknown }) {

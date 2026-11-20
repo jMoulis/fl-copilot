@@ -10,7 +10,10 @@ import type { ParsedMercalysArticleRecord } from "./mercalys-article-parser";
 
 export const MERCALYS_PURCHASE_PRICE_PARSER_VERSION =
   "mercalys-purchase-prices.v1";
-export function parseMercalysPurchasePrices(workbook: SpreadsheetWorkbook) {
+export function parseMercalysPurchasePrices(
+  workbook: SpreadsheetWorkbook,
+  options: { articleReference?: boolean } = {},
+) {
   const d = detectMercalysSource(workbook);
   if (
     d.status !== "DETECTED" ||
@@ -34,6 +37,12 @@ export function parseMercalysPurchasePrices(workbook: SpreadsheetWorkbook) {
     "ACTIF",
   ].map((h) => headers.indexOf(h));
   const records: ParsedMercalysArticleRecord[] = [];
+  const pvColumn = headers.indexOf("PV TTC"),
+    vatColumn = headers.indexOf("CODE TVA");
+  const isReference =
+    options.articleReference !== false && pvColumn >= 0 && vatColumn >= 0;
+  if (options.articleReference !== false && pvColumn >= 0 !== vatColumn >= 0)
+    throw Error("MERCALYS_REFERENCE_COLUMNS_INCOMPLETE");
   const issues: { code: string; sourceIndex: number | null }[] = [];
   const identifiers = new Set<string>();
   let declaredLineCount: number | null = null;
@@ -60,12 +69,28 @@ export function parseMercalysPurchasePrices(workbook: SpreadsheetWorkbook) {
       .slice(0, 2)
       .every((c) => c?.kind === "STRING" && /^\d+$/.test(text(c)));
     const amount = price.replace(/\s/g, "").replace(",", ".");
+    const sellingPriceTtc = text(row[pvColumn])
+      .replace(/\s/g, "")
+      .replace(",", ".");
+    const vatText = row[vatColumn]?.formattedValue?.includes("%")
+      ? row[vatColumn]!.formattedValue!
+      : text(row[vatColumn]);
+    const vatRate = vatText
+      .replace(/\s/g, "")
+      .replace(/%$/, "")
+      .replace(",", ".");
     if (
       !validIdentifiers ||
       !rawLabel ||
       !/^\d+(?:\.\d+)?$/.test(amount) ||
       !["OUI", "NON"].includes(normalizeSemanticText(active)) ||
-      cells.some((c) => c?.formula)
+      cells.some((c) => c?.formula) ||
+      (isReference &&
+        (!/^\d+(?:\.\d+)?$/.test(sellingPriceTtc) ||
+          !/^\d+(?:\.\d+)?$/.test(vatRate) ||
+          Number(vatRate) > 100 ||
+          row[pvColumn]?.formula ||
+          row[vatColumn]?.formula))
     ) {
       issues.push({ code: "INVALID_PURCHASE_PRICE_ROW", sourceIndex });
       continue;
@@ -92,11 +117,18 @@ export function parseMercalysPurchasePrices(workbook: SpreadsheetWorkbook) {
         amount,
         sourceActive: normalizeSemanticText(active) === "OUI",
         nomenclature,
+        ...(isReference ? { reference: { sellingPriceTtc, vatRate } } : {}),
       },
       rawValues: {
         priceAmount: cells[4]?.value as string | number,
         sourceActive: active,
         nomenclature,
+        ...(isReference
+          ? {
+              sellingPriceTtc: row[pvColumn]!.value as string | number,
+              vatRate: row[vatColumn]!.value as string | number,
+            }
+          : {}),
         itm8: itm,
         ean,
         rawLabel,
@@ -121,7 +153,9 @@ export function parseMercalysPurchasePrices(workbook: SpreadsheetWorkbook) {
       .match(/Num[eé]ro point de vente\s*:\s*(\d+)/i)?.[1] ?? null;
   return {
     sourceType: "MERCALYS_PURCHASE_PRICES" as const,
-    parserVersion: MERCALYS_PURCHASE_PRICE_PARSER_VERSION,
+    parserVersion: isReference
+      ? "mercalys-article-reference.v1"
+      : MERCALYS_PURCHASE_PRICE_PARSER_VERSION,
     businessPeriodStart: d.businessDate,
     businessPeriodEnd: d.businessDate,
     sheetName: sheet.name,

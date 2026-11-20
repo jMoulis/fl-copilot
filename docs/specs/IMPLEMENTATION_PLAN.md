@@ -1,3 +1,17 @@
+## Owner-approved authoritative article reference — 20 November 2026
+
+The dated Mercalys article export (PA/PV TTC/TVA) supplies catalogue identities
+before sales/waste. One explicit preview confirmation reuses compatible single-
+reference products, separates different ITMs from legacy groups and assigns source
+codes via canonical writers. Preserve old observations/IDs; never invent their
+historical split. Ignore source nomenclature for categories, retain known attributes
+and keep absent unit/packaging UNKNOWN. Missing rows do not delete products; ACTIF
+does not toggle status. Technical PA 0.01/0.001/999 or PV 999 is temporary unavailability.
+Migration 67 stores dated PV/TVA beside PA. Catalogue/source/prices/Outbox commit
+together. Preserve checksum, source verification, correction review and legacy PA
+behavior. Gate the format by articleReferences capability; API must precede native
+release. See `../qa/ARTICLE_REFERENCE_2026_11_20.md`. No AI or implicit production write.
+
 ## Owner-approved barcode lookup — 20 November 2026
 
 Reprioritize barcode scanning from the deferred backlog for product lookup only.

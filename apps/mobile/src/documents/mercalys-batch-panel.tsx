@@ -562,8 +562,8 @@ export function MercalysBatchPanel({
         swipeToClose
       >
         <Text className="text-sm text-muted">
-          Ventes, casse ou prix d’achat, XLSX ou ZIP. Les fichiers prêts sont
-          publiés automatiquement ; les autres restent à examiner.
+          Ventes, casse ou référentiel articles, XLSX ou ZIP. Les fichiers prêts
+          sont publiés automatiquement ; les autres restent à examiner.
         </Text>
         <SecondaryButton
           label="Choisir des fichiers XLSX"
@@ -1206,7 +1206,7 @@ function status(item: MercalysBatchItem) {
           ? "Le fichier conservé a changé. Sélectionnez de nouveau l’original."
           : "Lecture impossible — reprendre ce fichier")
     );
-  return `${r.sourceType === "MERCALYS_PURCHASE_PRICES" ? "Prix d’achat" : r.sourceType === "MERCALYS_SALES" ? "Ventes" : "Casse"} · ${r.businessPeriodStart.split("-").reverse().join("/")} → ${r.businessPeriodEnd.split("-").reverse().join("/")}\n${r.readyCount} lignes prêtes · ${r.productReviewCount} produits à confirmer · ${r.errorCount} erreurs${r.overlap ? " · rapprochement nécessaire" : ""}`;
+  return `${r.sourceType === "MERCALYS_PURCHASE_PRICES" ? (r.parserVersion === "mercalys-article-reference.v1" ? "Référentiel articles" : "Prix d’achat") : r.sourceType === "MERCALYS_SALES" ? "Ventes" : "Casse"} · ${r.businessPeriodStart.split("-").reverse().join("/")} → ${r.businessPeriodEnd.split("-").reverse().join("/")}\n${r.readyCount} lignes prêtes · ${r.productReviewCount} produits à confirmer · ${r.errorCount} erreurs${r.overlap ? " · rapprochement nécessaire" : ""}`;
 }
 
 function archiveError(code: string) {

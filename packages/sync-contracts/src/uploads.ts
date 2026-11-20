@@ -113,6 +113,7 @@ export const completeSourceUploadResponseSchema = z.object({
 });
 
 export const verifyImportRequestSchema = z.object({
+  articleReference: z.literal(true).optional(),
   sourceType: uploadSourceTypeSchema.extract([
     "MERCALYS_SALES",
     "MERCALYS_WASTE",
