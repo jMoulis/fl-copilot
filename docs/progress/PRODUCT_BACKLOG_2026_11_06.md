@@ -1,5 +1,15 @@
 # Backlog produit — point du 20 novembre 2026
 
+**20 novembre — scan gencode : implémentation, recette native en attente.**
+Le propriétaire repriorise la recherche produit par code-barres avant l'évolution
+du référentiel. Icône dans la recherche produits, caméra existante, recherche
+EAN exacte dans SQLite et ouverture de la fiche sans modifier les filtres.
+Codes inconnus, non validés ou ambigus : aucune création/réassociation.
+Aucune API, migration ni IA. Le build 88 ne contient pas ce lot ; pas de nouvelle
+archive lancée pour ce changement seul. Recette physique dans le prochain lot
+iPhone : code connu/inconnu, retour catalogue, permission, fermeture/réouverture.
+Voir [le suivi du scan](../qa/PRODUCT_BARCODE_SEARCH_2026_11_20.md).
+
 **20 novembre — parcours PA simplifié livré, build 88 disponible.**
 PR 552 fusionnée, CI push/PR/master vertes ; archive compilée localement,
 vérifiée et disponible dans le groupe TestFlight privé habituel, propriétaire

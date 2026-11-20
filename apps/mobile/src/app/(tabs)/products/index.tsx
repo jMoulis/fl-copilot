@@ -6,6 +6,7 @@ import { useAuth } from "@/auth/auth-provider";
 import { useLocalDatabase } from "@/providers/database-provider";
 import { useProductList } from "@/products/use-product-editor";
 import { CatalogueList } from "@/products/catalogue-list";
+import { ProductBarcodeSearch } from "@/products/product-barcode-search";
 import {
   CatalogueViewRepository,
   initialCatalogueView,
@@ -133,6 +134,7 @@ function StoreCatalogue({
       view={view}
       onChange={update}
       onOpen={open}
+      scanControl={<ProductBarcodeSearch onOpen={open} />}
       onBack={() =>
         router.canGoBack() ? router.back() : router.replace("/(tabs)/copilot")
       }

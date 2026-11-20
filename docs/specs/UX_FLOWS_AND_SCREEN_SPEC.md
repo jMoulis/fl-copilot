@@ -1,3 +1,15 @@
+## Owner-approved barcode lookup — 20 November 2026
+
+Show an accessible barcode icon beside catalogue search. Open a full-screen
+camera with Close, explicit permission/settings access and optional torch.
+Scan EAN-8/EAN-13/UPC-A and query the current store's local identifiers independently
+of the current search and filters. A unique validated reference opens the existing
+product push route; Back retains catalogue context. Inactive references remain
+viewable without reactivation. Unknown/ambiguous/unvalidated codes show the value
+and explanation with Scan another code, without any catalogue write. Stop the
+camera in background; cancel late navigation after close/blur. Typed search stays
+available if the native camera is unavailable. Physical iPhone acceptance pending.
+
 ## Owner arbitration — PA import, 20 November 2026
 
 PA summary is the primary entry: recognised prices can be added to existing
