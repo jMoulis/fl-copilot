@@ -1,15 +1,15 @@
-# État courant — pilote iPhone, actualisé le 18 novembre 2026
+# État courant — pilote iPhone, actualisé le 20 novembre 2026
 
-**20 novembre — simplification du parcours PA approuvée, en validation.**
-Le propriétaire prend le dernier build comme référence et demande de séparer
-l'ajout des prix de l'entretien du catalogue : résumé PA d'abord, ajout des
-références reconnues, traitement facultatif des autres et choix du prix distinct
-de la réassociation produit. Retrait de la finalisation manuelle globale pour
-les PA, revalidation avant ajout et accès direct à la suite d'un import partiel.
-[Comportement, contrôles et limites](../qa/PA_SIMPLE_IMPORT_FLOW_2026_11_20.md).
-Pas de remise à zéro, nouvelle API ou modification des données utilisateur.
-Code/préparation, disponibilité du prochain build et recette iPhone sont distincts.
-Les anciennes notes ci-dessous conservent leur date.
+**20 novembre — parcours PA simplifié livré, build 88 disponible.**
+PR 552 fusionnée, CI push/PR/master vertes ; archive compilée localement,
+vérifiée et disponible dans le groupe TestFlight privé habituel, propriétaire
+seul. Résumé PA, ajout des prix reconnus sans finalisation globale de catalogue,
+suite directe de l'import partiel et choix du PA distinct de la réassociation.
+Les choix de PR 551 sont inclus. Aucun build cloud ni changement d'API.
+**Recette iPhone du propriétaire en attente.** La tentative Expo Go isolée reste
+bloquée au démarrage par un module natif manquant, pas présentée comme validée.
+[Livraison, preuves et courte recette](../qa/BUILD_88_DELIVERY_2026_11_20.md).
+Les imports existants, originaux et historiques sont conservés, sans remise à zéro.
 
 **19 novembre — choix explicite du PA pour un même article : recette en cours.**
 Le propriétaire confirme que plusieurs références peuvent désigner une seule
@@ -143,16 +143,25 @@ Build 78 confirmé disponible en test interne TestFlight (`VALID` /
 
 ## Version utilisée
 
+- iOS **0.1.0 (88)** : source `b2152fbee6d93140363b4c2ce30ef2a02bdd60ad`,
+  compilée localement, archive vérifiée et TestFlight privé `VALID` /
+  `IN_BETA_TESTING`, propriétaire seul. Parcours PA simplifié et choix du prix
+  de PR 551 inclus. Recette propriétaire en attente ;
+  [preuve de livraison](../qa/BUILD_88_DELIVERY_2026_11_20.md).
+- Le lot 88 ne publie aucune API. La livraison météo de PR 547 est décrite dans
+  [le build 86](../qa/BUILD_86_DELIVERY_2026_11_19.md) ; les états serveur plus
+  anciens ci-dessous conservent leur date, pas une promesse de version courante.
+
+Les versions suivantes décrivent les livraisons antérieures :
+
 - Nouveau build **0.1.0 (79)** : PR 539, source
   `6f67d2a701d77923b07ec71aa4f64fd5970b7c1a`, compilé localement et vérifié,
   envoi accepté par Apple. TestFlight privé `VALID` / `IN_BETA_TESTING` ; recette propriétaire
   en attente. Lot PA quotidiens, incluant les évolutions du build 78.
-- API courante : même source PR 539, déploiement
+- API documentée le 18 novembre : même source PR 539, déploiement
   `dpl_4WGdCzjpJc47sCrb1QE3q2eUUwYn`, région `cdg1`, alias
   `https://fl-copilot.vercel.app`. Santé/base connectée et refus privé 401 vérifiés.
   Déploiement antérieur conservé : `dpl_2RknNqVV9fa3ajnMemx14sfrjaBS`.
-
-Les versions suivantes décrivent les livraisons antérieures :
 
 - Nouveau build **0.1.0 (78)** : PR 538 fusionnée, CI push/PR/master vertes,
   archive compilée localement et vérifiée, envoi accepté par Apple. Source
@@ -178,14 +187,14 @@ Les versions suivantes décrivent les livraisons antérieures :
 
 ## Socle validé
 
-| Périmètre               | Statut courant                                                        | Réserve conservée                                                                                                                 |
-| ----------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| M0–M6                   | Clôturés pour le pilote iPhone                                        | La qualification multiplateforme reste distincte.                                                                                 |
-| M7, chantiers 1/3/4/5/7 | Clôturés pour leur périmètre fonctionnel pilote                       | Les nouvelles évolutions ne rouvrent pas les recettes acceptées.                                                                  |
-| M7, chantier 2          | Conseil qualitatif accepté ; approfondissement numérique reporté      | PA quotidiens livrés (recette build 79 en attente) ; simulations futures reportées. Les calculateurs existants restent conservés. |
-| M7, chantier 6          | Contexte magasin déclaré disponible ; implantation détaillée reportée | Plan merchandising du groupement, mesures et faisabilité physique.                                                                |
-| M8                      | Pilote iPhone clôturé                                                 | Sauvegarde serveur Atlas et restauration isolée explicitement reportées.                                                          |
-| M9                      | Non démarré, reporté                                                  | Android et qualification dédiée d'accessibilité.                                                                                  |
+| Périmètre               | Statut courant                                                        | Réserve conservée                                                                                                                                       |
+| ----------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M0–M6                   | Clôturés pour le pilote iPhone                                        | La qualification multiplateforme reste distincte.                                                                                                       |
+| M7, chantiers 1/3/4/5/7 | Clôturés pour leur périmètre fonctionnel pilote                       | Les nouvelles évolutions ne rouvrent pas les recettes acceptées.                                                                                        |
+| M7, chantier 2          | Conseil qualitatif accepté ; approfondissement numérique reporté      | PA quotidiens livrés (recette du parcours simplifié build 88 en attente) ; simulations futures reportées. Les calculateurs existants restent conservés. |
+| M7, chantier 6          | Contexte magasin déclaré disponible ; implantation détaillée reportée | Plan merchandising du groupement, mesures et faisabilité physique.                                                                                      |
+| M8                      | Pilote iPhone clôturé                                                 | Sauvegarde serveur Atlas et restauration isolée explicitement reportées.                                                                                |
+| M9                      | Non démarré, reporté                                                  | Android et qualification dédiée d'accessibilité.                                                                                                        |
 
 Les copies/restaurations locales et les conflits iPhone/simulateur ne valent pas
 validation d'une restauration cloud Atlas. Cette réserve reste visible.
