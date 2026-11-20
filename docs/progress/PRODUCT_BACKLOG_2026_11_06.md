@@ -1,22 +1,15 @@
 # Backlog produit — point du 20 novembre 2026
 
-**20 novembre — référentiel articles : implémentation et qualification.**
-Le fichier PA/PV/TVA devient la source des références avant ventes/casse. Aperçu et
-confirmation uniques, séparation des ITM regroupés, historique préservé, unités
-absentes UNKNOWN, nomenclature ignorée pour les catégories. Les sentinelles de prix
-restent hors calculs. Fichier réel de 1 226 lignes vérifié sur SQLite isolé ; aucune
-donnée réelle modifiée. API compatible puis prochain build groupé avec scan requis ;
-le build 88 ne contient pas ce lot. [Périmètre et recette](../qa/ARTICLE_REFERENCE_2026_11_20.md).
-
-**20 novembre — scan gencode : implémentation, recette native en attente.**
-Le propriétaire repriorise la recherche produit par code-barres avant l'évolution
-du référentiel. Icône dans la recherche produits, caméra existante, recherche
-EAN exacte dans SQLite et ouverture de la fiche sans modifier les filtres.
-Codes inconnus, non validés ou ambigus : aucune création/réassociation.
-Aucune API, migration ni IA. Le build 88 ne contient pas ce lot ; pas de nouvelle
-archive lancée pour ce changement seul. Recette physique dans le prochain lot
-iPhone : code connu/inconnu, retour catalogue, permission, fermeture/réouverture.
-Voir [le suivi du scan](../qa/PRODUCT_BARCODE_SEARCH_2026_11_20.md).
+**20 novembre — référentiel et scan disponibles sur TestFlight 89.**
+PR 554/555 fusionnées, CI push/PR/master vertes ; API compatible déployée et
+santé/base vérifiées avant l’archive. Référentiel PA HT/PV TTC/TVA à confirmation
+unique, séparation des ITM sans réécriture des anciens historiques, sentinelles
+hors calculs, attributs absents UNKNOWN. Scan EAN exact et local depuis Produits.
+Archive locale 0.1.0 (89) vérifiée, Apple VALID / IN_BETA_TESTING, non expirée ;
+groupe privé habituel, propriétaire seul. Preuves et recette dans [la livraison 89](../qa/BUILD_89_DELIVERY_2026_11_20.md).
+**Recette iPhone encore ouverte.** Aucun import propriétaire exécuté, aucun build
+cloud. Migration 67 : ne pas désinstaller/réinitialiser ni considérer un retour
+au binaire 88 comme qualifié. Les lots clos et reports explicites restent inchangés.
 
 **20 novembre — parcours PA simplifié livré, build 88 disponible.**
 PR 552 fusionnée, CI push/PR/master vertes ; archive compilée localement,
