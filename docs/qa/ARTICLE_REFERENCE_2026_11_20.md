@@ -78,9 +78,13 @@ omission sans effacement, correction PV seul, date/catalogue, confirmation nativ
 explicite non automatisée, preuve Mongo, rejeu et second appareil, anciens clients
 et décodage historique, adoption sans boucle.
 
-Code et CI à qualifier avant fusion. Le build 88 ne contient ni ce référentiel ni
-le scan de PR 554. Ce document n'atteste aucun nouveau build ou déploiement.
-La recette physique du prochain lot reste ouverte :
+PR 555 fusionnée après CI push/PR, puis CI master réussie : 646 suites et
+6 452 tests réussis, une suite et six tests ignorés. Les collisions EAN entre
+deux ITM source distincts bloquent les deux références, quel que soit leur ordre ;
+les autres références prêtes restent publiables. API compatible déployée avant
+l'archive locale 0.1.0 (89), contenant aussi le scan de PR 554.
+[Livraison et statut Apple](BUILD_89_DELIVERY_2026_11_20.md).
+La recette physique reste ouverte :
 
 1. Depuis Imports, lire créations/séparations puis confirmer le référentiel.
    Vérifier les deux bananes bio et leurs prix/source ; unité absente à préciser,

@@ -37,8 +37,10 @@ Strict mobile TypeScript, lint/format and exact-head push/PR CI gate the merge.
 
 ## Physical iPhone recipe — pending
 
-Build 88 predates this feature. No new binary or API deployment is triggered by
-this lot alone; include it in the next grouped local iPhone release.
+Included with the article referential in local build 0.1.0 (89), source
+`a2ecb2adb27f091b34e8fd3f7826272b35487aad`. Exact-head CI passed before
+merge. [Delivery and Apple status](BUILD_89_DELIVERY_2026_11_20.md).
+Physical optical acceptance is still pending.
 
 1. In Produits, set a search/category filter, scan a known packaged EAN (including
    one outside the active filter), check the correct fiche opens, Back preserves
@@ -51,5 +53,6 @@ this lot alone; include it in the next grouped local iPhone release.
    encoding normalization is deliberately not implemented without its business
    format; an unmatched variant remains unknown rather than a guessed product.
 
-The upcoming authoritative article export and correction of pre-existing code
-groupings remain separate work; the scanner uses existing validated associations.
+The authoritative article export is included in this grouped release. The scanner
+uses the current validated associations, including those confirmed through the
+referential; scanning itself never repairs pre-existing code groupings.

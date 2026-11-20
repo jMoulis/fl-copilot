@@ -1,5 +1,16 @@
 # État courant — pilote iPhone, actualisé le 20 novembre 2026
 
+**20 novembre — référentiel et scan disponibles sur TestFlight 89.**
+PR 554/555 fusionnées, CI push/PR/master vertes ; API compatible déployée et
+santé/base vérifiées avant l’archive. Référentiel PA HT/PV TTC/TVA à confirmation
+unique, séparation des ITM sans réécriture des anciens historiques, sentinelles
+hors calculs, attributs absents UNKNOWN. Scan EAN exact et local depuis Produits.
+Archive locale 0.1.0 (89) vérifiée, Apple VALID / IN_BETA_TESTING, non expirée ;
+groupe privé habituel, propriétaire seul. Preuves et recette dans [la livraison 89](../qa/BUILD_89_DELIVERY_2026_11_20.md).
+**Recette iPhone encore ouverte.** Aucun import propriétaire exécuté, aucun build
+cloud. Migration 67 : ne pas désinstaller/réinitialiser ni considérer un retour
+au binaire 88 comme qualifié. Les lots clos et reports explicites restent inchangés.
+
 **20 novembre — parcours PA simplifié livré, build 88 disponible.**
 PR 552 fusionnée, CI push/PR/master vertes ; archive compilée localement,
 vérifiée et disponible dans le groupe TestFlight privé habituel, propriétaire
