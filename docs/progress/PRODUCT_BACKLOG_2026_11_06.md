@@ -1,5 +1,13 @@
 # Backlog produit — point du 20 novembre 2026
 
+**20 novembre — référentiel articles : implémentation et qualification.**
+Le fichier PA/PV/TVA devient la source des références avant ventes/casse. Aperçu et
+confirmation uniques, séparation des ITM regroupés, historique préservé, unités
+absentes UNKNOWN, nomenclature ignorée pour les catégories. Les sentinelles de prix
+restent hors calculs. Fichier réel de 1 226 lignes vérifié sur SQLite isolé ; aucune
+donnée réelle modifiée. API compatible puis prochain build groupé avec scan requis ;
+le build 88 ne contient pas ce lot. [Périmètre et recette](../qa/ARTICLE_REFERENCE_2026_11_20.md).
+
 **20 novembre — scan gencode : implémentation, recette native en attente.**
 Le propriétaire repriorise la recherche produit par code-barres avant l'évolution
 du référentiel. Icône dans la recherche produits, caméra existante, recherche

@@ -1,4 +1,7 @@
-import { purchasePriceNeedsReview } from "@fl-copilot/domain";
+import {
+  purchasePriceNeedsReview,
+  referencePriceUnavailable,
+} from "@fl-copilot/domain";
 import { createHash } from "node:crypto";
 import { Decimal128, type Document } from "mongodb";
 import {
@@ -118,7 +121,10 @@ export async function applyMercalysPublicationCommand(
   const workbook = new SheetJsSpreadsheetParser().parse(bytes),
     original =
       p.source.sourceType === "MERCALYS_PURCHASE_PRICES"
-        ? parseMercalysPurchasePrices(workbook)
+        ? parseMercalysPurchasePrices(workbook, {
+            articleReference:
+              p.source.parserVersion === "mercalys-article-reference.v1",
+          })
         : p.source.sourceType === "MERCALYS_SALES"
           ? parseMercalysSales(workbook)
           : parseMercalysWaste(workbook);
@@ -203,11 +209,25 @@ export async function applyMercalysPublicationCommand(
       if (
         !n.purchasePrice ||
         !equalDecimal(o.amount, Number(n.purchasePrice.amount)) ||
+        (n.purchasePrice.reference
+          ? o.sellingPriceTtc !== n.purchasePrice.reference.sellingPriceTtc ||
+            o.vatRate !== n.purchasePrice.reference.vatRate ||
+            o.referenceStatus !==
+              (referencePriceUnavailable(
+                o.amount,
+                n.purchasePrice.reference.sellingPriceTtc,
+              )
+                ? "TEMPORARILY_UNAVAILABLE"
+                : "AVAILABLE")
+          : o.sellingPriceTtc != null ||
+            o.vatRate != null ||
+            o.referenceStatus != null) ||
         (!oldObservations.has(o.id) &&
           productIds.has(o.productId) &&
           o.unit !== productUnits.get(o.productId)) ||
         (o.priceStatus === "KNOWN" &&
           (o.unit === "UNKNOWN" ||
+            o.referenceStatus === "TEMPORARILY_UNAVAILABLE" ||
             (purchasePriceNeedsReview(o.amount) && !o.confirmedAt)))
       )
         return rejected("MERCALYS_PURCHASE_PRICE_INVALID");

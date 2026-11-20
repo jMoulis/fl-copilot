@@ -1,3 +1,22 @@
+## Authoritative article references — 20 November 2026
+
+Reuse Product/ProductIdentifier and MERCALYS_PUBLISH rather than introducing a
+second catalogue or sync entity. Preview-confirmed reference mutations and the
+source/dated prices commit in one local transaction with canonical Outbox commands.
+Migration 67 adds nullable selling_price_ttc, vat_rate and reference_status columns
+to purchase_price_observations. Corresponding optional publication fields are
+sellingPriceTtc, vatRate (percentage points), referenceStatus (AVAILABLE or
+TEMPORARILY_UNAVAILABLE). New parsed quotes carry reference PV/TVA; legacy quotes
+remain unchanged. Unknown units and temporary source sentinels cannot become KNOWN.
+
+articleReferences is an opt-in bootstrap/pull capability and bootstrap entity flag;
+older clients skip new parserVersion mercalys-article-reference.v1 publications.
+verifyImportRequest.articleReference=true selects this source decoder; absent
+retains the legacy PA interpretation. Original proof and observation lineage are
+still checked. Retain immutable rawPayload without duplicating rawValues inside
+the new normalizedPayload. No historical observation IDs are reassigned when
+legacy code groups are separated. See `../qa/ARTICLE_REFERENCE_2026_11_20.md`.
+
 ## PA source selection — 19 November 2026
 
 Reuses existing source_records.status=IGNORED and normalizedPayload JSON under

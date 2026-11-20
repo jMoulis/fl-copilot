@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   purchasePriceObservationSchema,
   purchasePriceQuoteSchema,
+  referencePriceUnavailable,
   salesObservationSchema,
   wasteObservationSchema,
   sourceRecordSchema,
@@ -135,6 +136,24 @@ export const mercalysPublicationSchema = z
         o.amount !== n.data.purchasePrice.amount
       )
         fail();
+      if (n.success && n.data.purchasePrice) {
+        const ref = n.data.purchasePrice.reference;
+        if (
+          ref
+            ? o.sellingPriceTtc !== ref.sellingPriceTtc ||
+              o.vatRate !== ref.vatRate ||
+              o.referenceStatus !==
+                (referencePriceUnavailable(o.amount, ref.sellingPriceTtc)
+                  ? "TEMPORARILY_UNAVAILABLE"
+                  : "AVAILABLE") ||
+              (o.referenceStatus === "TEMPORARILY_UNAVAILABLE" &&
+                o.priceStatus === "KNOWN")
+            : o.sellingPriceTtc != null ||
+              o.vatRate != null ||
+              o.referenceStatus != null
+        )
+          fail();
+      }
     }
     for (const o of p.waste)
       if (o.sourceType !== "MERCALYS" || o.purchaseValueEstimated !== null)

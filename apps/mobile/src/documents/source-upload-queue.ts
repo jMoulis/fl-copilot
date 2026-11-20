@@ -477,6 +477,9 @@ export class SourceUploadQueue {
       businessPeriodEnd: row.business_period_end,
       localNormalizedFingerprint: fingerprintMercalysRecords(normalized),
       localRecordCount: normalized.length,
+      ...(normalized.some((r) => r.purchasePrice?.reference)
+        ? { articleReference: true as const }
+        : {}),
     };
   }
 

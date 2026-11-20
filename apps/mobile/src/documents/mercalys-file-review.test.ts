@@ -36,9 +36,17 @@ const p = vi.hoisted(() => ({
     withExclusiveTransactionAsync: vi.fn(),
   },
   recover: vi.fn(),
+  referencePreview: vi.fn(),
+  referencePublish: vi.fn(),
   originalsEnabled: false,
   digest: vi.fn(),
   recompute: vi.fn(async () => ({ failedJobs: 0 })),
+}));
+vi.mock("./mercalys-article-reference", () => ({
+  isArticleReference: (s: MercalysImportValidationSummary) =>
+    s.parserVersion === "mercalys-article-reference.v1",
+  planArticleReference: p.referencePreview,
+  publishArticleReference: p.referencePublish,
 }));
 vi.mock("expo-router", () => ({ useIsFocused: () => true }));
 vi.mock("@expo/vector-icons/Ionicons", () => ({ default: "Icon" }));
@@ -295,6 +303,55 @@ async function mount(
     await new Promise((resolve) => setTimeout(resolve, 20));
   });
 }
+it("requires a single explicit reference confirmation and uses the atomic reference publisher", async () => {
+  const summary = structuredClone(
+    p.validate(),
+  ) as MercalysImportValidationSummary;
+  summary.sourceType = "MERCALYS_PURCHASE_PRICES";
+  summary.parserVersion = "mercalys-article-reference.v1";
+  summary.readyCount = 1;
+  summary.productReviewCount = 0;
+  summary.lines[0]!.match = {
+    ...summary.lines[0]!.match,
+    state: "AUTO_MATCH",
+    matchedProductId: "22222222-2222-4222-8222-222222222222",
+  };
+  summary.lines[0]!.record.purchasePrice = {
+    amount: "1.5",
+    sourceActive: true,
+    nomenclature: "ignored",
+    reference: { sellingPriceTtc: "2.39", vatRate: "5.5" },
+  };
+  p.validate.mockReturnValue(summary);
+  p.analyze.mockResolvedValue(null);
+  p.referencePreview.mockReturnValue({
+    signature: "current",
+    products: [],
+    identifiers: [],
+    replacedIdentifierIds: [],
+    created: 1,
+    separated: 0,
+    retained: 0,
+    blocked: [],
+    summary,
+  });
+  p.referencePublish.mockResolvedValue({
+    sourceDocumentId: "new-source",
+    localFileId: "file",
+    analyticsJobId: null,
+    publishedCount: 1,
+    remainingCount: 0,
+    replacedCount: 0,
+  });
+  await mount();
+  expect(text(renderer!.root)).toContain("Mise à jour du référentiel");
+  expect(p.referencePublish).not.toHaveBeenCalled();
+  expect(p.publish).not.toHaveBeenCalled();
+  await press("Mettre à jour le référentiel");
+  expect(p.referencePublish).toHaveBeenCalledOnce();
+  expect(p.publish).not.toHaveBeenCalled();
+  expect(text(renderer!.root)).toContain("Référentiel enregistré");
+});
 beforeEach(() => {
   (
     globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }

@@ -108,32 +108,55 @@ export function ProductPurchasePrices({
       ) : null}
       {visible.map((row, i) => (
         <View key={row.id} className="gap-2 border-b border-line py-3">
-          <Text className="text-lg font-semibold text-ink">
-            {new Intl.NumberFormat("fr-FR", {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 3,
-            }).format(Number(row.amount))}{" "}
-            € HT /{" "}
-            {
-              (
-                {
-                  KG: "kg",
-                  PIECE: "pièce",
-                  PACK: "conditionnement",
-                  UNKNOWN: "unité à préciser",
-                } as Record<string, string>
-              )[row.unit]
-            }
-          </Text>
+          {row.reference_status === "TEMPORARILY_UNAVAILABLE" ? (
+            <Text className="text-lg font-semibold text-muted">
+              Prix indisponibles
+            </Text>
+          ) : (
+            <Text className="text-lg font-semibold text-ink">
+              {new Intl.NumberFormat("fr-FR", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 3,
+              }).format(Number(row.amount))}{" "}
+              € HT /{" "}
+              {
+                (
+                  {
+                    KG: "kg",
+                    PIECE: "pièce",
+                    PACK: "conditionnement",
+                    UNKNOWN: "unité à préciser",
+                  } as Record<string, string>
+                )[row.unit]
+              }
+            </Text>
+          )}
           <Text className="text-sm text-muted">
-            {i === 0 ? "Dernier PA connu du" : "PA du"}{" "}
+            {row.reference_status
+              ? "Relevé du"
+              : i === 0
+                ? "Dernier PA connu du"
+                : "PA du"}{" "}
             {formatFrenchCalendarDate(row.business_date)} ·{" "}
             {row.sync_state === "SYNCED" ? "Synchronisé" : "À synchroniser"}
           </Text>
           {row.price_status === "TO_VERIFY" ? (
             <Text className="text-sm text-warning">
-              Prix à vérifier · exclu des calculs
+              {row.reference_status === "TEMPORARILY_UNAVAILABLE"
+                ? "Référence temporairement hors base · prix non exploitable"
+                : "Prix à vérifier · exclu des calculs"}
               {row.unit === "UNKNOWN" ? " · unité du produit à préciser" : ""}
+            </Text>
+          ) : null}
+          {row.selling_price_ttc != null &&
+          row.reference_status !== "TEMPORARILY_UNAVAILABLE" ? (
+            <Text className="text-sm text-muted">
+              PV de référence :{" "}
+              {Number(row.selling_price_ttc).toLocaleString("fr-FR", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 3,
+              })}{" "}
+              € TTC · TVA {row.vat_rate?.replace(".", ",")} %
             </Text>
           ) : null}
           <SourceOriginalButton
@@ -141,6 +164,7 @@ export function ProductPurchasePrices({
             label="Voir le fichier source"
           />
           {row.price_status === "TO_VERIFY" &&
+          row.reference_status !== "TEMPORARILY_UNAVAILABLE" &&
           row.unit !== "UNKNOWN" &&
           manager ? (
             <SecondaryButton

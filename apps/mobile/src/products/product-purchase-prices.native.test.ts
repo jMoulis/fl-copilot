@@ -117,3 +117,31 @@ it("shows an honest empty state without a fabricated zero price", async () => {
     0,
   );
 });
+it("shows temporary off-base state without presenting 999 as a price or allowing confirmation", async () => {
+  state.rows = [
+    {
+      ...row,
+      amount: "0.01",
+      selling_price_ttc: "999",
+      vat_rate: "5.5",
+      reference_status: "TEMPORARILY_UNAVAILABLE",
+    },
+  ];
+  await act(async () => {
+    tree = create(
+      createElement(ProductPurchasePrices, {
+        storeId: "store",
+        productId: "product",
+      }),
+    );
+  });
+  const text = JSON.stringify(tree!.toJSON());
+  expect(text).toContain("Prix indisponibles");
+  expect(text).toContain("temporairement hors base");
+  expect(text).not.toContain("999");
+  expect(
+    tree!.root.findAll(
+      (n) => String(n.type) === "Button" && n.props.label === "Confirmer ce PA",
+    ),
+  ).toHaveLength(0);
+});

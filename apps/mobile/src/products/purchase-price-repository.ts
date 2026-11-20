@@ -8,6 +8,9 @@ import { enqueueMercalysContinuation } from "../documents/mercalys-publication-s
 export type PurchasePriceRow = {
   id: string;
   amount: string;
+  selling_price_ttc?: string | null;
+  vat_rate?: string | null;
+  reference_status?: "AVAILABLE" | "TEMPORARILY_UNAVAILABLE" | null;
   unit: string;
   business_date: string;
   price_status: "KNOWN" | "TO_VERIFY";
@@ -100,7 +103,12 @@ export class PurchasePriceRepository {
         productId,
         id,
       );
-      if (!row || row.version !== version || row.unit === "UNKNOWN")
+      if (
+        !row ||
+        row.version !== version ||
+        row.unit === "UNKNOWN" ||
+        row.reference_status === "TEMPORARILY_UNAVAILABLE"
+      )
         throw Error("PURCHASE_PRICE_CHANGED");
       if (row.price_status === "KNOWN") return;
       const conflict = await tx.getFirstAsync(
