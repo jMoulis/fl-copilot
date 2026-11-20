@@ -6,6 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiClient, ApiClientError } from "@fl-copilot/api-client";
 import type {
@@ -129,6 +130,97 @@ afterEach(() => {
 });
 
 describe("mobile sync service", () => {
+  it("drains a catalogue import across request pages and keeps a rejected command for review", async () => {
+    const { adapter, database } = temporaryDatabase();
+    await runLocalMigrations(adapter);
+    const repository = new ProductMasterRepository(adapter);
+    for (let index = 0; index < 205; index++)
+      await repository.upsertProduct(
+        {
+          id: randomUUID(),
+          storeId,
+          label: `Article ${index}`,
+          category: "UNKNOWN",
+          nature: "UNKNOWN",
+          salesUnit: "UNKNOWN",
+          status: "ACTIVE",
+          version: 1,
+          createdAt: "2026-11-20T08:00:00.000Z",
+          updatedAt: "2026-11-20T08:00:00.000Z",
+        },
+        { commandId: randomUUID(), deviceId },
+      );
+    const pages: number[] = [];
+    let rejected: string | undefined;
+    const transport: SyncTransport = {
+      bootstrap: async () => {
+        throw Error("Unexpected bootstrap");
+      },
+      pull: async (_store, cursor) => emptyPull(cursor),
+      push: async (request) => {
+        pages.push(request.commands.length);
+        rejected ??= request.commands[0]!.commandId;
+        return {
+          serverTime: "2026-11-20T09:00:00.000Z",
+          results: request.commands.map((command) =>
+            command.commandId === rejected
+              ? {
+                  commandId: command.commandId,
+                  entityType: command.entityType,
+                  entityId: command.entityId,
+                  status: "REJECTED" as const,
+                  error: {
+                    code: "PRODUCT_REVIEW_REQUIRED",
+                    messageFr: "À vérifier.",
+                    retryable: false,
+                  },
+                }
+              : {
+                  commandId: command.commandId,
+                  entityType: command.entityType,
+                  entityId: command.entityId,
+                  status: "APPLIED" as const,
+                  remoteVersion: 1,
+                  remoteEntity: command.payload,
+                },
+          ),
+        };
+      },
+    };
+    const service = new MobileSyncService(adapter, transport, {
+      appVersion: "0.1.0",
+      deviceId,
+    });
+    await expect(service.push(storeId)).resolves.toEqual({
+      pushed: 204,
+      conflicts: 0,
+      failed: 1,
+    });
+    expect(pages).toEqual([100, 100, 5]);
+    expect(
+      database
+        .prepare(
+          "SELECT status,last_error_code FROM sync_outbox WHERE command_id=?",
+        )
+        .get(rejected!),
+    ).toMatchObject({
+      status: "FAILED",
+      last_error_code: "PRODUCT_REVIEW_REQUIRED",
+    });
+    expect(
+      database
+        .prepare("SELECT COUNT(*) n FROM sync_outbox WHERE status='PENDING'")
+        .get(),
+    ).toMatchObject({ n: 0 });
+    await expect(service.push(storeId)).resolves.toEqual({
+      pushed: 0,
+      conflicts: 0,
+      failed: 0,
+    });
+    expect(pages).toHaveLength(3);
+    database.close();
+  });
+
   it("retains the same command after a timed-out push, ignores late acknowledgement and safely replays it", async () => {
     const { adapter, database } = temporaryDatabase();
     await runLocalMigrations(adapter);

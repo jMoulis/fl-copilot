@@ -914,6 +914,12 @@ export class MobileSyncService {
     )
       await this.bootstrapUnlocked(storeId);
     const summary = { pushed: 0, conflicts: 0, failed: 0 };
+    const initialQueue = await this.database.getFirstAsync<{
+      sequence: number | null;
+    }>(
+      "SELECT MAX(local_sequence) AS sequence FROM sync_outbox WHERE store_id=? AND status='PENDING'",
+      storeId,
+    );
     const deferred = new Set<string>();
     for (let retry = 0; retry <= this.maxRetries; retry += 1) {
       const commands = await new OutboxRepository(
@@ -985,6 +991,19 @@ export class MobileSyncService {
           this.database,
           this.now,
         ).listPending(storeId, undefined, this.options.copilotOwnerId);
+        // The request limit is not the cycle limit: an import can enqueue
+        // thousands of distinct products/codes before its publication packet.
+        // Drain work present at entry without chasing edits made during a push.
+        if (
+          next.some(
+            (item) =>
+              item.localSequence <= (initialQueue?.sequence ?? 0) &&
+              !commands.some((prior) => prior.commandId === item.commandId),
+          )
+        ) {
+          retry -= 1;
+          continue;
+        }
         if (next.some((c) => c.entityType === "mercalys_publication")) {
           retry -= 1;
           continue;

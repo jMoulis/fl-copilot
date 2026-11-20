@@ -1,5 +1,12 @@
 # Backlog produit — point du 20 novembre 2026
 
+**20 novembre — reprise de synchronisation du référentiel en correction.**
+Retour build 89 : arrêt apparent après chaque centaine de commandes et erreur
+EMAIL_INTAKE_ORIGINAL_CHANGED. Le cycle doit enchaîner les requêtes bornées de
+produits/codes sans nouvel appui. Diagnostic email séparé en attente du fichier
+concerné ; aucun archivage du catalogue pendant la synchronisation partielle.
+[Suivi et régression](../qa/SYNC_CATALOGUE_DRAIN_2026_11_20.md).
+
 **20 novembre — référentiel et scan disponibles sur TestFlight 89.**
 PR 554/555 fusionnées, CI push/PR/master vertes ; API compatible déployée et
 santé/base vérifiées avant l’archive. Référentiel PA HT/PV TTC/TVA à confirmation
