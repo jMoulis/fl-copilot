@@ -760,6 +760,7 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       principal.role !== "MANAGER" &&
       input.commands.some(
         (c) =>
+          c.entityType === "procurement_link_review" ||
           c.entityType === "procurement_catalogue_snapshot" ||
           c.type === "PROCUREMENT_CATALOGUE_PUBLISH",
       )

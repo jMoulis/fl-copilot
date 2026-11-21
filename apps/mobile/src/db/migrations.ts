@@ -1010,6 +1010,16 @@ CREATE INDEX copilot_layout_illustration_generation_scope ON copilot_layout_illu
     );
     CREATE INDEX procurement_snapshot_date ON procurement_catalogue_snapshots(store_id,as_of DESC);`,
   },
+  {
+    version: 70,
+    name: "procurement-product-links",
+    sql: `CREATE TABLE procurement_product_links (
+      id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,generic_id TEXT NOT NULL,
+      payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,
+      sync_state TEXT NOT NULL,dirty INTEGER NOT NULL,UNIQUE(store_id,generic_id));
+      CREATE TABLE procurement_link_reviews(id TEXT PRIMARY KEY NOT NULL,
+        store_id TEXT NOT NULL,actor_id TEXT NOT NULL,payload_json TEXT NOT NULL,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

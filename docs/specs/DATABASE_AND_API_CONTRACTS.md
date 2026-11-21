@@ -5793,3 +5793,23 @@ Missing dependencies retry; changed immutable data/duplicate concurrent identiti
 conflict without replacing IDs or deleting files. Native production opt-in, mapping
 and conflict-review UI remain pending. See PROCUREMENT_CATALOGUE_FUNCTIONAL_SPEC.md
 and ../qa/PROCUREMENT_PUBLICATION_2026_11_21.md. No deployment or native release.
+
+
+### Procurement reviewed Product links — 22 November 2026
+
+SQLite 70: procurement_product_links holds one current full link payload per
+store/exact generic (stable UUIDv8), remote head/version and dirty/sync state.
+procurement_link_reviews holds immutable actor-scoped submission events and their
+sync state. Mongo 65: procurementProductLinks has a unique store/generic index;
+procurementLinkReviews retains full revisions, expected versions and source facts.
+`PROCUREMENT_LINK_REVIEW_PUBLISH` / `procurement_link_review` publishes one
+immutable version-1 event (<=1,000 decisions, <=750,000 UTF-8 bytes). Link revisions
+are versioned ACTIVE/WITHDRAWN; withdrawal preserves target/evidence. Both sides
+reuse shared schemas and identity checks. Manager-authorized server transactions
+verify all decisions against confirmed immutable reference originals and current
+ITM/EAN owners before writing. One syncChange per review; no Product or PA writes.
+Missing source/config/Product parents retry; changed versions/ownership conflict.
+`procurementLinks` opt-in on bootstrap/push/pull is separate from snapshot support;
+adoption restarts incremental history at zero. Older clients skip review events,
+new clients preserve pending writes when server support disappears. Overlapping
+Outbox reviews serialize by contained link ID even though event IDs differ.

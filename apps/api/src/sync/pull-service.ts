@@ -1,4 +1,8 @@
 import {
+  serializeProcurementReview,
+  type ProcurementReviewDocument,
+} from "../imports/procurement-link-review-sync";
+import {
   serializeProcurementSnapshot,
   type ProcurementSnapshotDocument,
 } from "../imports/procurement-publication-sync";
@@ -187,9 +191,15 @@ export function createMongoSyncPullService(
         .toArray();
       let selected = page.slice(0, query.limit);
       // Avoid loading hundreds of full snapshots before applying the byte budget.
-      if (query.procurementCatalogues === "true") {
-        const firstSnapshot = selected.findIndex(
-          (c) => c.entityType === "procurement_catalogue_snapshot",
+      if (
+        query.procurementCatalogues === "true" ||
+        query.procurementLinks === "true"
+      ) {
+        const firstSnapshot = selected.findIndex((c) =>
+          [
+            "procurement_catalogue_snapshot",
+            "procurement_link_review",
+          ].includes(c.entityType),
         );
         if (firstSnapshot >= 0)
           selected = selected.slice(0, firstSnapshot || 1);
@@ -306,6 +316,8 @@ export function createMongoSyncPullService(
                   change.payloadRevision === ownerId)) &&
               (query.visualLibrary === "true" ||
                 !isVisualEntityType(change.entityType)) &&
+              (query.procurementLinks === "true" ||
+                change.entityType !== "procurement_link_review") &&
               (query.procurementCatalogues === "true" ||
                 change.entityType !== "procurement_catalogue_snapshot") &&
               (query.mercalysPublications === "true" ||
@@ -798,6 +810,21 @@ export function createMongoSyncPullService(
                 changedAt: change.changedAt.toISOString(),
               };
             }
+            if (change.entityType === "procurement_link_review") {
+              const row = await mongoDatabase
+                .collection<ProcurementReviewDocument>("procurementLinkReviews")
+                .findOne({ _id: change.entityId, storeId });
+              if (!row) throw Error("PROCUREMENT_REVIEW_MISSING");
+              return {
+                sequence: change.sequence.toString(),
+                entityType: change.entityType,
+                entityId: change.entityId,
+                operation: change.operation,
+                entityVersion: 1,
+                entity: serializeProcurementReview(row),
+                changedAt: change.changedAt.toISOString(),
+              };
+            }
             if (change.entityType === "procurement_catalogue_snapshot") {
               const row = await mongoDatabase
                 .collection<ProcurementSnapshotDocument>(
@@ -920,6 +947,9 @@ export function createMongoSyncPullService(
           : {}),
         ...(query.procurementCatalogues === "true"
           ? { procurementCatalogues: true as const }
+          : {}),
+        ...(query.procurementLinks === "true"
+          ? { procurementLinks: true as const }
           : {}),
         changes: bounded,
         nextCursor: encodeSyncCursor(storeId, nextSequence),

@@ -1,4 +1,8 @@
 import {
+  applyProcurementLinkReview,
+  ProcurementLinkPendingError,
+} from "../imports/procurement-link-review-sync";
+import {
   applyProcurementPublicationCommand,
   ProcurementPublicationPendingError,
 } from "../imports/procurement-publication-sync";
@@ -130,6 +134,15 @@ export function createMongoSyncPushService(
 
   return {
     async push(input, requestId, ownerId) {
+      if (
+        !input.procurementLinks &&
+        input.commands.some((c) => c.entityType === "procurement_link_review")
+      )
+        throw new AuthError(
+          426,
+          "PROCUREMENT_LINKS_UPGRADE_REQUIRED",
+          "Le service doit être mis à jour pour synchroniser les correspondances. Les choix locaux sont conservés.",
+        );
       if (
         !input.procurementCatalogues &&
         input.commands.some(
@@ -288,6 +301,7 @@ export function createMongoSyncPushService(
               command.entityType === "store_layout" ||
               command.entityType === "document_archive" ||
               command.entityType === "procurement_catalogue_snapshot" ||
+              command.entityType === "procurement_link_review" ||
               isVisualEntityType(command.entityType)
                 ? { ownerId }
                 : {}),
@@ -342,41 +356,52 @@ export function createMongoSyncPushService(
           );
         } catch (error) {
           results.push(
-            error instanceof ProcurementPublicationPendingError
+            error instanceof ProcurementLinkPendingError
               ? {
                   ...retryableResult(command, requestId),
                   error: {
                     code: error.message,
                     messageFr:
-                      error.message === "PROCUREMENT_PDV_MISMATCH"
-                        ? "Le code PDV du fichier diffère de celui du magasin. Vérifie les réglages ; le fichier reste en attente."
-                        : "L’original ou le code PDV attend sa synchronisation. Les offres locales sont conservées.",
+                      "Le référentiel, les offres ou les fiches attendent leur synchronisation. Les choix locaux sont conservés.",
                     retryable: true,
                     requestId,
                   },
                 }
-              : error instanceof ProcessedCommandIdentityError
-                ? rejectedIdentityResult(command, requestId)
-                : error instanceof VisualParentPendingError ||
-                    error instanceof KnowledgeParentPendingError ||
-                    error instanceof ChatParentPendingError ||
-                    error instanceof NeedMembershipParentPendingError ||
-                    error instanceof ProductSubstitutionParentPendingError ||
-                    error instanceof StoreEventParentPendingError ||
-                    error instanceof JournalNoteParentPendingError
-                  ? {
-                      ...retryableResult(command, requestId),
-                      error: {
-                        code: error.message,
-                        messageFr:
-                          error instanceof KnowledgeParentPendingError
-                            ? "Synchronisez d’abord le message à l’origine de cette pratique."
-                            : "Synchronisez d’abord les produits et le besoin client.",
-                        retryable: true,
-                        requestId,
-                      },
-                    }
-                  : retryableResult(command, requestId),
+              : error instanceof ProcurementPublicationPendingError
+                ? {
+                    ...retryableResult(command, requestId),
+                    error: {
+                      code: error.message,
+                      messageFr:
+                        error.message === "PROCUREMENT_PDV_MISMATCH"
+                          ? "Le code PDV du fichier diffère de celui du magasin. Vérifie les réglages ; le fichier reste en attente."
+                          : "L’original ou le code PDV attend sa synchronisation. Les offres locales sont conservées.",
+                      retryable: true,
+                      requestId,
+                    },
+                  }
+                : error instanceof ProcessedCommandIdentityError
+                  ? rejectedIdentityResult(command, requestId)
+                  : error instanceof VisualParentPendingError ||
+                      error instanceof KnowledgeParentPendingError ||
+                      error instanceof ChatParentPendingError ||
+                      error instanceof NeedMembershipParentPendingError ||
+                      error instanceof ProductSubstitutionParentPendingError ||
+                      error instanceof StoreEventParentPendingError ||
+                      error instanceof JournalNoteParentPendingError
+                    ? {
+                        ...retryableResult(command, requestId),
+                        error: {
+                          code: error.message,
+                          messageFr:
+                            error instanceof KnowledgeParentPendingError
+                              ? "Synchronisez d’abord le message à l’origine de cette pratique."
+                              : "Synchronisez d’abord les produits et le besoin client.",
+                          retryable: true,
+                          requestId,
+                        },
+                      }
+                    : retryableResult(command, requestId),
           );
         }
       }
@@ -528,6 +553,16 @@ async function applyCommand(
       syncChanges,
       now,
       illustrationGeneration,
+    );
+  if (command.type === "PROCUREMENT_LINK_REVIEW_PUBLISH")
+    return applyProcurementLinkReview(
+      context,
+      storeId,
+      ownerId,
+      command,
+      requestId,
+      syncChanges,
+      mercalysReader,
     );
   if (command.type === "PROCUREMENT_CATALOGUE_PUBLISH")
     return applyProcurementPublicationCommand(

@@ -541,7 +541,8 @@ export function createMongoSyncBootstrapService(
               cursor: encodeSyncCursor(
                 store.storeId,
                 query.mercalysPublications === "true" ||
-                  query.procurementCatalogues === "true"
+                  query.procurementCatalogues === "true" ||
+                  query.procurementLinks === "true"
                   ? Long.ZERO
                   : sequence,
               ),
@@ -621,6 +622,9 @@ export function createMongoSyncBootstrapService(
                         ? { automaticMemory: true }
                         : {}),
                     }
+                  : {}),
+                ...(query.procurementLinks === "true"
+                  ? { procurementLinks: true as const }
                   : {}),
                 ...(query.procurementCatalogues === "true"
                   ? { procurementCatalogues: true as const }

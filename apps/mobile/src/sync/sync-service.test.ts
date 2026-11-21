@@ -93,6 +93,73 @@ it.each(["first-adoption", "server-rollback"])(
   },
 );
 
+it.each(["first-adoption", "server-rollback"])(
+  "keeps link reviews pending on an older API (%s)",
+  async (mode) => {
+    const { adapter, database } = temporaryDatabase();
+    try {
+      await runLocalMigrations(adapter);
+      const id = randomUUID();
+      await new OutboxRepository(adapter).enqueue({
+        commandId: id,
+        deviceId,
+        storeId,
+        entityType: "procurement_link_review",
+        entityId: randomUUID(),
+        commandType: "PROCUREMENT_LINK_REVIEW_PUBLISH",
+        payload: { actorId: deviceId },
+        expectedRemoteVersion: null,
+        createdAt: "2026-11-21T10:00:00Z",
+      });
+      if (mode === "server-rollback") {
+        await adapter.runAsync(
+          "INSERT INTO sync_inbox_state(store_id,cursor,protocol_version) VALUES(?,?,1)",
+          storeId,
+          "old-cursor",
+        );
+        await adapter.runAsync(
+          "INSERT INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+          `procurement-links:${storeId}`,
+          "1",
+          "2026-11-21T10:00:00Z",
+        );
+      }
+      const push = vi.fn(async () => ({
+        results: [],
+        serverTime: "2026-11-21T10:00:00Z",
+      }));
+      const service = new MobileSyncService(
+        adapter,
+        {
+          push,
+          bootstrap: async () => bootstrapResponse(),
+          pull: async () => emptyPull("old-cursor"),
+        },
+        {
+          appVersion: "test",
+          deviceId,
+          copilotOwnerId: deviceId,
+          procurementLinks: true,
+          maxRetries: 0,
+        },
+      );
+      await expect(service.sync(storeId)).rejects.toMatchObject({
+        response: { code: "PROCUREMENT_LINKS_UPGRADE_REQUIRED" },
+      });
+      expect(push).not.toHaveBeenCalled();
+      expect(
+        database
+          .prepare(
+            "SELECT status,attempt_count FROM sync_outbox WHERE command_id=?",
+          )
+          .get(id),
+      ).toEqual({ status: "PENDING", attempt_count: 0 });
+    } finally {
+      database.close();
+    }
+  },
+);
+
 class NodeSyncDatabase
   implements SQLiteMigrationDatabase, OutboxDatabase, AtomicMutationDatabase
 {

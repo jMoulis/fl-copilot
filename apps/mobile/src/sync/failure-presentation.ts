@@ -5,6 +5,7 @@ const labels: Record<string, string> = {
   product_alias: "Libellé produit",
   mercalys_publication: "Publication Mercalys",
   procurement_catalogue_snapshot: "Offres fournisseur",
+  procurement_link_review: "Correspondances des offres",
   waste_receipt_publication: "Publication de casse",
   copilot_conversation: "Conversation privée",
   copilot_message: "Message privé",

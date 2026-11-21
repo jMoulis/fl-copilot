@@ -78,15 +78,11 @@ export function detectMercalysSource(
   workbook: SpreadsheetWorkbook,
 ): MercalysSourceDetection {
   const rows = semanticRows(workbook);
-  const priceHeaders = rows.filter((row) =>
-    [
-      "ITM",
-      "EAN",
-      "LIBELLE",
-      "NOMENCLATURE",
-      "PRIX ACHAT PAR UNITE",
-      "ACTIF",
-    ].every((h) => row.cells.includes(h)),
+  const priceHeaders = rows.filter(
+    (row) =>
+      ["EAN", "LIBELLE", "NOMENCLATURE", "PRIX ACHAT PAR UNITE", "ACTIF"].every(
+        (h) => row.cells.includes(h),
+      ) && row.cells.filter((h) => h === "ITM" || h === "ITM8").length === 1,
   );
   if (priceHeaders.length) {
     const header = priceHeaders[0]!;

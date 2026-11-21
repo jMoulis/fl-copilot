@@ -1,3 +1,14 @@
+## Procurement Product links — 22 November 2026
+
+Step 3(a) adds a companion source identity parser and explicit bulk link reviews.
+SQLite 70 / Mongo 65 retain immutable review events and current versioned links.
+The server verifies confirmed reference originals, source PDV and current validated
+ITM/EAN owners; names never resolve identity. Native opt-in remains disabled.
+Real files rehearse 421 confirmed candidates in one event without Product/PA writes.
+Enrichment proposals, approved mockups/import/Product UI (including conflict review),
+empty-base reconstruction and final reset authorization remain open. No release.
+See `../qa/PROCUREMENT_LINKS_2026_11_22.md`.
+
 ## Procurement snapshot publication backend — 21 November 2026
 
 Step 2(b) adds the immutable canonical snapshot, one atomic Outbox command and an

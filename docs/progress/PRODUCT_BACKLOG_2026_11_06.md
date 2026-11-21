@@ -1,5 +1,17 @@
 # Backlog produit — point du 20 novembre 2026
 
+**22 novembre — rattachements des offres aux fiches existantes : code prêt, non activé.**
+Relecture partagée du PLU dans l’original référentiel (alias ITM8 accepté), sans
+changer la normalisation financière. Confirmation explicite d’un lot, historique
+immuable et retrait versionné ; le serveur vérifie l’original et les propriétaires
+ITM/EAN actuels. SQLite 70 / Mongo 65, canal de synchronisation distinct et désactivé
+au runtime. Essai isolé sur les vrais fichiers : 1 226 références, 421 propositions
+confirmées en une commande, 63 non retenues ; aucun produit créé, aucun PA écrit.
+Les 333 candidats ITM restent des propositions à confirmer, pas des équivalences
+automatiquement validées. Enrichissement et maquettes/écrans restent à faire, puis
+recette de reconstruction et accord final de reset. Aucun build/déploiement.
+[Preuves et limites](../qa/PROCUREMENT_LINKS_2026_11_22.md).
+
 **21 novembre — publication synchronisée des offres : code prêt, non activé.**
 Confirmation locale atomique (aperçu + original privé + une commande), vérification
 serveur du PDV configuré et du SHA-256, reprise et synchronisation sur un second

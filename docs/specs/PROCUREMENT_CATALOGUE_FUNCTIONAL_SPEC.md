@@ -81,11 +81,37 @@ the executable crosswalk intentionally upgrades it to REVIEW. Source dates are
 21 November 2026. Private full crosswalk and source hashes remain outside the repo
 under maintenance/full-payload-analysis-2026-11-21/canonical-crosswalk.json.
 
-Runtime mapping prerequisite: the current Mercalys reference parser does not retain
-the supplied explicit PLU column. The proof above used extracted workbook rows.
-The mapping increment must extend shared reference parsing/contracts, lineage and
-parity verification to retain that evidence before applying this preview in the app.
-Do not silently fall back to suffix-derived PLUs when it is missing from local data.
+Runtime identity parsing now rereads the retained immutable reference original with
+`mercalys-reference-identities.v1`, independent from PA availability/financial
+publication. Exact ITM and ITM8 header aliases are supported; both together are
+ambiguous. Text codes retain zeroes. Numeric PLU safe integers in General format
+retain their numeric source value; an explicit all-zero format retains its declared
+width. No lost zeroes or ITM suffixes are invented. Formula/fraction/invalid PLU
+rows are excluded with source-indexed issues. Financial normalization stays v1.
+
+Explicit confirmation creates one bounded immutable review event (up to 1,000
+unique generic decisions / 750,000 UTF-8 bytes), plus latest-link projections in
+SQLite and Mongo. Each link retains source checksums, snapshot/reference IDs,
+source row facts, method/reason, Product UUID, actor and expected version. Manual
+review requires a reason; every method requires one current, common, validated
+ITM/EAN owner. An unavailable PA does not prevent identity confirmation. Creation
+identity is immutable; withdrawal retains the target and evidence, with history.
+
+Link UUIDv8 is deterministic from SHA-256 of the namespaced store UUID/exact generic
+key, preserving generic zeroes; client IDs are never replaced. An entire review
+and its Outbox command commit locally together. Server transaction revalidates
+manager/store, confirmed upload metadata/key/hash, source parsing, configured PDV,
+source snapshot and current Product code ownership before all-or-nothing writes.
+No Product, identifier, purchase-price or observation writer is involved. Missing
+parents remain retryable, source forgery is rejected, stale versions/choices
+conflict. Overlapping local reviews wait in order; independent work can proceed.
+
+SQLite 70 / Mongo 65 store current links and immutable review events. Pull replays
+review events to rebuild the projection and retains pending newer local revisions.
+The distinct `procurementLinks` capability gates adoption/backfill/push/pull,
+including rollback to an API that supports snapshots but not Product links. It is
+not enabled in the native runtime. UI confirmation/withdrawal/conflict resolution,
+enrichment and owner-approved mockups remain next; code is not device acceptance.
 
 ## Units, packaging and enrichment batch
 

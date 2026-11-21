@@ -1301,6 +1301,21 @@ export const mongoMigrations: readonly MongoMigration[] = [
         );
     },
   },
+  {
+    version: 65,
+    name: "procurement-product-links",
+    async up(db) {
+      await db
+        .collection("procurementProductLinks")
+        .createIndex({ storeId: 1, genericId: 1 }, { unique: true });
+      await db
+        .collection("procurementLinkReviews")
+        .createIndex({ storeId: 1, createdAt: -1 });
+      await db
+        .collection("procurementLinkReviews")
+        .createIndex({ storeId: 1, "decisions.link.id": 1 });
+    },
+  },
 ];
 
 export async function runMongoMigrations(

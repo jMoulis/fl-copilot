@@ -1,3 +1,7 @@
+import {
+  applyProcurementLinkReview,
+  markProcurementReviewState,
+} from "../products/procurement-links";
 import { applyProcurementCatalogue } from "../documents/procurement-publication";
 import {
   readAutomaticMemory,
@@ -153,6 +157,7 @@ export interface MobileSyncServiceOptions {
   purchasePrices?: boolean;
   articleReferences?: boolean;
   procurementCatalogues?: boolean;
+  procurementLinks?: boolean;
   maxRetries?: number;
   baseRetryDelayMs?: number;
   now?: () => string;
@@ -354,6 +359,12 @@ export class MobileSyncService {
       !this.options.copilotOwnerId
     )
       throw Error("COPILOT_HISTORY_OWNER_REQUIRED");
+    const linksSupportAdopted =
+      !this.options.procurementLinks ||
+      !!(await this.database.getFirstAsync(
+        "SELECT value FROM app_metadata WHERE key=?",
+        `procurement-links:${storeId}`,
+      ));
     const procurementAdopted =
       !this.options.procurementCatalogues ||
       !!(await this.database.getFirstAsync(
@@ -526,6 +537,7 @@ export class MobileSyncService {
       !purchasePricesAdopted ||
       !articleReferencesAdopted ||
       !procurementAdopted ||
+      !linksSupportAdopted ||
       !mercalysUpdatesAdopted ||
       !executionAdopted ||
       !actualsAdopted ||
@@ -646,6 +658,16 @@ export class MobileSyncService {
         code: "PROCUREMENT_SERVER_UPGRADE_REQUIRED",
         messageFr:
           "Le service doit être mis à jour pour synchroniser les offres. Tes fichiers sont conservés.",
+        retryable: false,
+      });
+    if (
+      this.options.procurementLinks &&
+      snapshot.entities.procurementLinks !== true
+    )
+      throw new ApiClientError(426, {
+        code: "PROCUREMENT_LINKS_UPGRADE_REQUIRED",
+        messageFr:
+          "Le service doit être mis à jour. Les correspondances restent sur cet appareil.",
         retryable: false,
       });
     await applyBootstrap(
@@ -915,6 +937,22 @@ export class MobileSyncService {
 
   private async pushUnlocked(storeId: string): Promise<PushSummary> {
     if (
+      this.options.procurementLinks &&
+      (await this.database.getFirstAsync(
+        "SELECT command_id FROM sync_outbox WHERE store_id=? AND entity_type='procurement_link_review' AND status='PENDING' LIMIT 1",
+        storeId,
+      ))
+    ) {
+      if (
+        !(await this.database.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key=?",
+          `procurement-links:${storeId}`,
+        ))
+      )
+        await this.bootstrapUnlocked(storeId);
+      await this.pullUnlocked(storeId);
+    }
+    if (
       this.options.procurementCatalogues &&
       (await this.database.getFirstAsync(
         `SELECT command_id FROM sync_outbox WHERE store_id=? AND status='PENDING'
@@ -967,15 +1005,24 @@ export class MobileSyncService {
       const ownedCommands = commands
         .filter(
           (c) =>
+            c.entityType !== "procurement_link_review" ||
+            this.options.procurementLinks,
+        )
+        .filter(
+          (c) =>
             c.entityType !== "procurement_catalogue_snapshot" ||
             this.options.procurementCatalogues,
         )
         .filter((c) =>
-          isVisualEntityType(c.entityType)
+          isVisualEntityType(c.entityType) ||
+          c.entityType === "procurement_link_review"
             ? typeof c.payload === "object" &&
               c.payload !== null &&
-              "updatedBy" in c.payload &&
-              c.payload.updatedBy === this.options.copilotOwnerId
+              (c.entityType === "procurement_link_review"
+                ? "actorId" in c.payload &&
+                  c.payload.actorId === this.options.copilotOwnerId
+                : "updatedBy" in c.payload &&
+                  c.payload.updatedBy === this.options.copilotOwnerId)
             : (!c.entityType.startsWith("copilot_") &&
                 c.entityType !== "email_intake_decision" &&
                 c.entityType !== "document_archive" &&
@@ -1003,12 +1050,16 @@ export class MobileSyncService {
         const size = JSON.stringify(item).length * 3;
         if (
           bounded.length &&
-          (["mercalys_publication", "procurement_catalogue_snapshot"].includes(
-            item.entityType,
-          ) ||
-            ["mercalys_publication", "procurement_catalogue_snapshot"].includes(
-              bounded[0]?.entityType ?? "",
-            ) ||
+          ([
+            "mercalys_publication",
+            "procurement_catalogue_snapshot",
+            "procurement_link_review",
+          ].includes(item.entityType) ||
+            [
+              "mercalys_publication",
+              "procurement_catalogue_snapshot",
+              "procurement_link_review",
+            ].includes(bounded[0]?.entityType ?? "") ||
             bytes + size > 900_000)
         )
           break;
@@ -1023,9 +1074,11 @@ export class MobileSyncService {
         batch.retryable > 0 &&
         (deferred.size > 0 ||
           bounded.some((c) =>
-            ["mercalys_publication", "procurement_catalogue_snapshot"].includes(
-              c.entityType,
-            ),
+            [
+              "mercalys_publication",
+              "procurement_catalogue_snapshot",
+              "procurement_link_review",
+            ].includes(c.entityType),
           ))
       ) {
         const outbox = new OutboxRepository(this.database, this.now);
@@ -1246,6 +1299,22 @@ export class MobileSyncService {
               v,
             );
           }
+          if (command.entityType === "procurement_link_review") {
+            if (
+              !result.remoteEntity ||
+              typeof result.remoteEntity !== "object" ||
+              !("id" in result.remoteEntity) ||
+              result.remoteEntity.id !== command.entityId ||
+              result.remoteVersion !== 1
+            )
+              throw Error("PROCUREMENT_LINK_ACK_INVALID");
+            await applyProcurementLinkReview(
+              transaction,
+              storeId,
+              result.remoteEntity,
+              true,
+            );
+          }
           if (command.entityType === "procurement_catalogue_snapshot") {
             if (
               !result.remoteEntity ||
@@ -1430,6 +1499,13 @@ export class MobileSyncService {
           }
           pushed += 1;
         } else if (result.status === "CONFLICT") {
+          if (command.entityType === "procurement_link_review")
+            await markProcurementReviewState(
+              transaction,
+              storeId,
+              command.entityId,
+              "CONFLICT",
+            );
           if (command.entityType === "procurement_catalogue_snapshot")
             await transaction.runAsync(
               "UPDATE procurement_catalogue_snapshots SET sync_state='CONFLICT' WHERE id=? AND store_id=?",
@@ -1595,6 +1671,13 @@ export class MobileSyncService {
               command.entityId,
               command.localSequence,
             );
+          if (command.entityType === "procurement_link_review")
+            await markProcurementReviewState(
+              transaction,
+              storeId,
+              command.entityId,
+              "ERROR",
+            );
           if (command.entityType === "procurement_catalogue_snapshot")
             await transaction.runAsync(
               "UPDATE procurement_catalogue_snapshots SET sync_state='ERROR' WHERE id=? AND store_id=?",
@@ -1739,6 +1822,13 @@ export class MobileSyncService {
             "Le service doit être mis à jour. Tes offres locales sont conservées.",
           retryable: false,
         });
+      if (this.options.procurementLinks && !page.procurementLinks)
+        throw new ApiClientError(426, {
+          code: "PROCUREMENT_LINKS_UPGRADE_REQUIRED",
+          messageFr:
+            "Le service doit être mis à jour. Les choix locaux sont conservés.",
+          retryable: false,
+        });
       if (this.options.documentArchives && !page.documentArchives)
         throw Error("DOCUMENT_ARCHIVE_SERVICE_UNAVAILABLE");
       if (
@@ -1764,6 +1854,7 @@ export class MobileSyncService {
     commands: OutboxCommand[],
   ): SyncPushRequest {
     return {
+      ...(this.options.procurementLinks ? { procurementLinks: true } : {}),
       ...(this.options.procurementCatalogues
         ? { procurementCatalogues: true }
         : {}),
