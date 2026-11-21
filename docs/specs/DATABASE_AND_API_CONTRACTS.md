@@ -5769,3 +5769,27 @@ substep. Publication must add its original-owner/PDV authority, bulk command,
 capability-gated bidirectional sync, conflict/replay and original verification
 together. See `PROCUREMENT_CATALOGUE_FUNCTIONAL_SPEC.md` and
 `../qa/PROCUREMENT_STAGING_2026_11_21.md`; staging is not published catalogue data.
+
+
+# Procurement snapshot publication — 21 November 2026
+
+Supersedes the staging-only upload exclusion above. SQLite 69 adds immutable
+procurement_catalogue_snapshots (id/store/source/checksum/as-of/payload/sync state,
+remote version and dirty flag), unique by store/checksum and source. Mongo 64 adds
+procurementCatalogueSnapshots, unique by store/checksum and store/source as-of.
+One PROCUREMENT_CATALOGUE_PUBLISH command carries the normalized publication and
+source/record lineage; no per-offer Product or price commands. Confirmation writes
+the snapshot, source/record state, owner upload job and Outbox in one transaction.
+Remote publication reuses processedCommands and syncChanges atomically.
+
+StoreContextSettings.pdvCode is optional and manager-owned; omission by an older
+writer preserves it, explicit null clears it, older DTOs omit it. procurementCatalogues
+negotiates its transport and immutable snapshot pull. Bootstrap resets history to
+zero once on adoption; procurement pull pages contain at most one full snapshot.
+Original upload/recovery uses JSON + OWNER access, a 10 MiB original limit and a
+750,000-byte UTF-8 normalized publication limit. The API verifies the current store
+PDV, membership/owner, immutable source key and bytes, SHA-256 and shared parse.
+Missing dependencies retry; changed immutable data/duplicate concurrent identities
+conflict without replacing IDs or deleting files. Native production opt-in, mapping
+and conflict-review UI remain pending. See PROCUREMENT_CATALOGUE_FUNCTIONAL_SPEC.md
+and ../qa/PROCUREMENT_PUBLICATION_2026_11_21.md. No deployment or native release.

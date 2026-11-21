@@ -1,5 +1,18 @@
 import { z } from "zod";
 import { expect, it } from "vitest";
+
+it("preserves the PDV for older writers and strips it from older readers", () => {
+  const base = storeContextFixture();
+  const next = storeContextSettingsSchema.parse({ ...base, pdvCode: "09083" });
+  expect(preserveStoreContextExtensions(base, next).pdvCode).toBe("09083");
+  expect(
+    preserveStoreContextExtensions({ ...base, pdvCode: null }, next).pdvCode,
+  ).toBeNull();
+  expect(legacyStoreContext(next).pdvCode).toBeUndefined();
+  expect(legacyStoreContext(next, false, false, false, true).pdvCode).toBe(
+    "09083",
+  );
+});
 import {
   legacyStoreContext,
   preserveStoreContextExtensions,

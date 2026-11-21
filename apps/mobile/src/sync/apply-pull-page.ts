@@ -1,3 +1,4 @@
+import { applyProcurementCatalogue } from "../documents/procurement-publication";
 import { applyJournalNote } from "../journal/journal-note-repository";
 import { applyDocumentArchive } from "../documents/document-archive-repository";
 import { isVisualEntityType, visualEntitySchemas } from "@fl-copilot/domain";
@@ -391,6 +392,19 @@ export async function applyPullPage(
           change.entityType,
           change.entity,
         );
+        continue;
+      }
+      if (change.entityType === "procurement_catalogue_snapshot") {
+        if (
+          change.operation !== "UPSERT" ||
+          change.entityVersion !== 1 ||
+          !change.entity ||
+          typeof change.entity !== "object" ||
+          !("id" in change.entity) ||
+          change.entity.id !== change.entityId
+        )
+          throw Error("PROCUREMENT_PULL_ENVELOPE_INVALID");
+        await applyProcurementCatalogue(transaction, storeId, change.entity);
         continue;
       }
       if (change.entityType === "mercalys_publication") {

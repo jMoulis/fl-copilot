@@ -34,6 +34,7 @@ const supportedSources = [
   "MERCALYS_PURCHASE_PRICES",
   "WEEKLY_COMMERCIAL_PDF",
   "STORE_PHOTO",
+  "PROCUREMENT_CATALOGUE",
 ];
 interface DocumentRow {
   id: string;

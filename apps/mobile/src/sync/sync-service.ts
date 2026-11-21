@@ -1,3 +1,4 @@
+import { applyProcurementCatalogue } from "../documents/procurement-publication";
 import {
   readAutomaticMemory,
   captureAutomaticMemories,
@@ -151,6 +152,7 @@ export interface MobileSyncServiceOptions {
   mercalysRecordUpdates?: boolean;
   purchasePrices?: boolean;
   articleReferences?: boolean;
+  procurementCatalogues?: boolean;
   maxRetries?: number;
   baseRetryDelayMs?: number;
   now?: () => string;
@@ -352,6 +354,12 @@ export class MobileSyncService {
       !this.options.copilotOwnerId
     )
       throw Error("COPILOT_HISTORY_OWNER_REQUIRED");
+    const procurementAdopted =
+      !this.options.procurementCatalogues ||
+      !!(await this.database.getFirstAsync(
+        "SELECT value FROM app_metadata WHERE key=?",
+        `procurement-catalogues:${storeId}`,
+      ));
     const articleReferencesAdopted =
       !this.options.articleReferences ||
       !!(await this.database.getFirstAsync(
@@ -517,6 +525,7 @@ export class MobileSyncService {
       !mercalysAdopted ||
       !purchasePricesAdopted ||
       !articleReferencesAdopted ||
+      !procurementAdopted ||
       !mercalysUpdatesAdopted ||
       !executionAdopted ||
       !actualsAdopted ||
@@ -627,6 +636,16 @@ export class MobileSyncService {
         code: "ARTICLE_REFERENCES_SERVER_UPGRADE_REQUIRED",
         messageFr:
           "Le service doit être mis à jour pour synchroniser le référentiel. Tes imports locaux sont conservés.",
+        retryable: false,
+      });
+    if (
+      this.options.procurementCatalogues &&
+      snapshot.entities.procurementCatalogues !== true
+    )
+      throw new ApiClientError(426, {
+        code: "PROCUREMENT_SERVER_UPGRADE_REQUIRED",
+        messageFr:
+          "Le service doit être mis à jour pour synchroniser les offres. Tes fichiers sont conservés.",
         retryable: false,
       });
     await applyBootstrap(
@@ -895,6 +914,25 @@ export class MobileSyncService {
   }
 
   private async pushUnlocked(storeId: string): Promise<PushSummary> {
+    if (
+      this.options.procurementCatalogues &&
+      (await this.database.getFirstAsync(
+        `SELECT command_id FROM sync_outbox WHERE store_id=? AND status='PENDING'
+      AND (entity_type='procurement_catalogue_snapshot' OR (entity_type='store_context_settings' AND json_type(payload_json,'$.pdvCode') IS NOT NULL)) LIMIT 1`,
+        storeId,
+      ))
+    ) {
+      if (
+        !(await this.database.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key=?",
+          `procurement-catalogues:${storeId}`,
+        ))
+      )
+        await this.bootstrapUnlocked(storeId);
+      // Read/backfill before a new publication and recheck the server capability,
+      // including after a rollback. Ordinary legacy writes need no extra request.
+      await this.pullUnlocked(storeId);
+    }
     // Negotiate before sending a new plan, so an older API cannot permanently reject its Outbox command.
     if (
       this.options.qualitativeCommercialPlans &&
@@ -926,20 +964,27 @@ export class MobileSyncService {
         this.database,
         this.now,
       ).listPending(storeId, undefined, this.options.copilotOwnerId);
-      const ownedCommands = commands.filter((c) =>
-        isVisualEntityType(c.entityType)
-          ? typeof c.payload === "object" &&
-            c.payload !== null &&
-            "updatedBy" in c.payload &&
-            c.payload.updatedBy === this.options.copilotOwnerId
-          : (!c.entityType.startsWith("copilot_") &&
-              c.entityType !== "email_intake_decision" &&
-              c.entityType !== "document_archive") ||
-            (typeof c.payload === "object" &&
+      const ownedCommands = commands
+        .filter(
+          (c) =>
+            c.entityType !== "procurement_catalogue_snapshot" ||
+            this.options.procurementCatalogues,
+        )
+        .filter((c) =>
+          isVisualEntityType(c.entityType)
+            ? typeof c.payload === "object" &&
               c.payload !== null &&
-              "ownerId" in c.payload &&
-              c.payload.ownerId === this.options.copilotOwnerId),
-      );
+              "updatedBy" in c.payload &&
+              c.payload.updatedBy === this.options.copilotOwnerId
+            : (!c.entityType.startsWith("copilot_") &&
+                c.entityType !== "email_intake_decision" &&
+                c.entityType !== "document_archive" &&
+                c.entityType !== "procurement_catalogue_snapshot") ||
+              (typeof c.payload === "object" &&
+                c.payload !== null &&
+                "ownerId" in c.payload &&
+                c.payload.ownerId === this.options.copilotOwnerId),
+        );
       if (ownedCommands.length === 0) return summary;
       const ready = ownedCommands.filter((c) => !deferred.has(c.commandId));
       if (!ready.length) {
@@ -958,8 +1003,12 @@ export class MobileSyncService {
         const size = JSON.stringify(item).length * 3;
         if (
           bounded.length &&
-          (item.entityType === "mercalys_publication" ||
-            bounded[0]?.entityType === "mercalys_publication" ||
+          (["mercalys_publication", "procurement_catalogue_snapshot"].includes(
+            item.entityType,
+          ) ||
+            ["mercalys_publication", "procurement_catalogue_snapshot"].includes(
+              bounded[0]?.entityType ?? "",
+            ) ||
             bytes + size > 900_000)
         )
           break;
@@ -973,7 +1022,11 @@ export class MobileSyncService {
       if (
         batch.retryable > 0 &&
         (deferred.size > 0 ||
-          bounded.some((c) => c.entityType === "mercalys_publication"))
+          bounded.some((c) =>
+            ["mercalys_publication", "procurement_catalogue_snapshot"].includes(
+              c.entityType,
+            ),
+          ))
       ) {
         const outbox = new OutboxRepository(this.database, this.now);
         for (const c of bounded)
@@ -1193,6 +1246,22 @@ export class MobileSyncService {
               v,
             );
           }
+          if (command.entityType === "procurement_catalogue_snapshot") {
+            if (
+              !result.remoteEntity ||
+              typeof result.remoteEntity !== "object" ||
+              !("id" in result.remoteEntity) ||
+              result.remoteEntity.id !== command.entityId ||
+              result.remoteVersion !== 1
+            )
+              throw Error("PROCUREMENT_ACK_INVALID");
+            await applyProcurementCatalogue(
+              transaction,
+              storeId,
+              result.remoteEntity,
+              true,
+            );
+          }
           if (command.entityType === "mercalys_publication")
             await applyMercalysPublication(
               transaction,
@@ -1361,6 +1430,12 @@ export class MobileSyncService {
           }
           pushed += 1;
         } else if (result.status === "CONFLICT") {
+          if (command.entityType === "procurement_catalogue_snapshot")
+            await transaction.runAsync(
+              "UPDATE procurement_catalogue_snapshots SET sync_state='CONFLICT' WHERE id=? AND store_id=?",
+              command.entityId,
+              storeId,
+            );
           if (catalogueTable)
             await transaction.runAsync(
               `UPDATE ${catalogueTable} SET sync_state='CONFLICT' WHERE id=? AND store_id=?`,
@@ -1520,6 +1595,12 @@ export class MobileSyncService {
               command.entityId,
               command.localSequence,
             );
+          if (command.entityType === "procurement_catalogue_snapshot")
+            await transaction.runAsync(
+              "UPDATE procurement_catalogue_snapshots SET sync_state='ERROR' WHERE id=? AND store_id=?",
+              command.entityId,
+              storeId,
+            );
           if (command.entityType === "mercalys_publication")
             await transaction.runAsync(
               "UPDATE source_documents SET sync_state='ERROR' WHERE id=? AND store_id=?",
@@ -1648,6 +1729,16 @@ export class MobileSyncService {
       const page = await this.withRetry(() =>
         this.transport.pull(storeId, cursor as string),
       );
+      if (
+        this.options.procurementCatalogues &&
+        page.procurementCatalogues !== true
+      )
+        throw new ApiClientError(426, {
+          code: "PROCUREMENT_SERVER_UPGRADE_REQUIRED",
+          messageFr:
+            "Le service doit être mis à jour. Tes offres locales sont conservées.",
+          retryable: false,
+        });
       if (this.options.documentArchives && !page.documentArchives)
         throw Error("DOCUMENT_ARCHIVE_SERVICE_UNAVAILABLE");
       if (
@@ -1673,6 +1764,9 @@ export class MobileSyncService {
     commands: OutboxCommand[],
   ): SyncPushRequest {
     return {
+      ...(this.options.procurementCatalogues
+        ? { procurementCatalogues: true }
+        : {}),
       syncProtocolVersion: SYNC_PROTOCOL_VERSION,
       ...(this.options.storeMerchandising ? { storeMerchandising: true } : {}),
       ...(this.options.storeTransports ? { storeTransports: true } : {}),

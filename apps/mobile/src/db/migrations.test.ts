@@ -144,6 +144,7 @@ describe("local SQLite migrations", () => {
       "personal_task_reminders",
       "personal_tasks",
       "procurement_catalogue_drafts",
+      "procurement_catalogue_snapshots",
       "product_aliases",
       "product_daily_performance",
       "product_identifiers",

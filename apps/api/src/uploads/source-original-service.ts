@@ -1,3 +1,4 @@
+import { isOwnerPrivateSource } from "@fl-copilot/domain";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { Document } from "mongodb";
@@ -84,14 +85,14 @@ export function createSourceOriginalService(
       upload.status !== "CONFIRMED"
     )
       throw unavailable();
-    if (source.sourceType === "STORE_PHOTO" && upload.userId !== actorId)
+    if (isOwnerPrivateSource(source.sourceType) && upload.userId !== actorId)
       throw unavailable();
     const parsed = sourceOriginalMetadataSchema.safeParse({
       schemaVersion: 1,
       sourceDocumentId: sourceId,
       storeId,
-      access: source.sourceType === "STORE_PHOTO" ? "OWNER" : "STORE",
-      ownerId: source.sourceType === "STORE_PHOTO" ? upload.userId : null,
+      access: isOwnerPrivateSource(source.sourceType) ? "OWNER" : "STORE",
+      ownerId: isOwnerPrivateSource(source.sourceType) ? upload.userId : null,
       sourceType: source.sourceType,
       filename: source.originalFilename,
       mimeType: source.mimeType,

@@ -45,6 +45,7 @@ export const syncPushRequestSchema = z.object({
   transportAlertFilters: z.boolean().optional(),
   qualitativeCommercialPlans: z.boolean().optional(),
   tgPresentations: z.boolean().optional(),
+  procurementCatalogues: z.boolean().optional(),
 });
 export type SyncPushRequest = z.infer<typeof syncPushRequestSchema>;
 
@@ -118,6 +119,7 @@ export const syncPullQuerySchema = z.object({
   mercalysRecordUpdates: z.enum(["true", "false"]).optional(),
   purchasePrices: z.enum(["true", "false"]).optional(),
   articleReferences: z.enum(["true", "false"]).optional(),
+  procurementCatalogues: z.enum(["true", "false"]).optional(),
   copilotHistory: z.enum(["true", "false"]).optional(),
   layoutIllustrations: z.enum(["true", "false"]).optional(),
   layoutIllustrationGenerations: z.enum(["true", "false"]).optional(),
@@ -142,6 +144,7 @@ export const syncPullQuerySchema = z.object({
 export type SyncPullQuery = z.infer<typeof syncPullQuerySchema>;
 
 export const syncPullResponseSchema = z.object({
+  procurementCatalogues: z.literal(true).optional(),
   documentArchives: z.literal(true).optional(),
   changes: z.array(syncChangeEnvelopeSchema),
   nextCursor: nonEmptyStringSchema,
@@ -179,6 +182,7 @@ export const bootstrapQuerySchema = z.object({
   mercalysRecordUpdates: z.enum(["true", "false"]).optional(),
   purchasePrices: z.enum(["true", "false"]).optional(),
   articleReferences: z.enum(["true", "false"]).optional(),
+  procurementCatalogues: z.enum(["true", "false"]).optional(),
   copilotHistory: z.enum(["true", "false"]).optional(),
   layoutIllustrations: z.enum(["true", "false"]).optional(),
   layoutIllustrationGenerations: z.enum(["true", "false"]).optional(),
@@ -241,6 +245,7 @@ export const bootstrapEntitiesSchema = z.object({
   mercalysPublications: z.array(jsonObjectSchema).optional(),
   purchasePrices: z.literal(true).optional(),
   articleReferences: z.literal(true).optional(),
+  procurementCatalogues: z.literal(true).optional(),
   wasteReceiptPublications: z.array(jsonObjectSchema).optional(),
   commercialVisualReadings: z.array(jsonObjectSchema).optional(),
   commercialOfferChoices: z.array(jsonObjectSchema).optional(),

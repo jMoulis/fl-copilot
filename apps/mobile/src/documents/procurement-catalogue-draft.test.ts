@@ -199,7 +199,7 @@ it("rolls back the source, file and records on failed draft insertion or scope c
   );
 });
 
-it("rejects changed originals or a different PDV before any local write, and cannot upload a private draft through the legacy store-wide channel", async () => {
+it("rejects changed originals or a different PDV before any local write, without uploading or publishing the local draft", async () => {
   const f = await setup();
   await expect(
     f
@@ -224,5 +224,5 @@ it("rejects changed originals or a different PDV before any local write, and can
       sizeBytes: 100,
       checksum: f.input.checksum,
     }).success,
-  ).toBe(false);
+  ).toBe(true);
 });

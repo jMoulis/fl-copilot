@@ -1283,6 +1283,24 @@ export const mongoMigrations: readonly MongoMigration[] = [
         );
     },
   },
+  {
+    version: 64,
+    name: "procurement-catalogue-snapshots",
+    async up(db) {
+      await db
+        .collection("procurementCatalogueSnapshots")
+        .createIndex(
+          { storeId: 1, "publication.checksum": 1 },
+          { unique: true },
+        );
+      await db
+        .collection("procurementCatalogueSnapshots")
+        .createIndex(
+          { storeId: 1, "publication.catalogue.asOf": -1 },
+          { unique: true },
+        );
+    },
+  },
 ];
 
 export async function runMongoMigrations(
