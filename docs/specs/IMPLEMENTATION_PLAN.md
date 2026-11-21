@@ -1,3 +1,18 @@
+## Owner-approved catalogue and procurement offers — 21 November 2026
+
+Separate the existing commercial Product from ordering offers: exact provider
+_id + packaging identity, grouped by genericId, with source-dated optional tariffs.
+PLU is explicit only for some rows; 87 + six-digit-padded genericId is an empirical
+ITM proposal, never a global PLU rule or automatic link. Conflicting evidence and
+homonymous Mercalys references stay in review. Preserve canonical source/Outbox,
+Product IDs, unit distinctions and imported Mercalys margin. First increment is
+shared pure crosswalk contracts/tests and real-export preview only. Orders,
+receipts, weather/news and new AI behavior remain deferred. Native import behavior
+is unchanged; no reset until a successful rehearsal and concrete final owner scope.
+See `PROCUREMENT_CATALOGUE_FUNCTIONAL_SPEC.md` for the staged implementation and
+acceptance criteria. This supersedes equating procurement-offer IDs with Product
+IDs, not the existing source identity and history invariants.
+
 ## Owner-approved authoritative article reference — 20 November 2026
 
 The dated Mercalys article export (PA/PV TTC/TVA) supplies catalogue identities

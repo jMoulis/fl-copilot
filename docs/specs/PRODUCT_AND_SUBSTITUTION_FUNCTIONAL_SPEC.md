@@ -1,3 +1,11 @@
+## Owner-approved procurement catalogue model — 21 November 2026
+
+Keep the existing Product as the commercial fiche, with confirmed Mercalys codes
+and several provider procurement offers when linked through a validated generic.
+Ordering offer IDs do not create Products. Source unit, analytic unit, retail pack
+and procurement price basis stay distinct. No homonym merge or COGS inference.
+[Model, source evidence and acceptance](PROCUREMENT_CATALOGUE_FUNCTIONAL_SPEC.md).
+
 # Product & Substitution Functional Specification
 
 **Product:** Fruits & Vegetables Copilot  
