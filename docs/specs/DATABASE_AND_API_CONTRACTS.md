@@ -5754,3 +5754,18 @@ Device/account/store activation and handled-proposal markers use existing
 older declarations. Scope, source visibility/supersession and current opt-in are
 checked inside the local write transaction. See
 `../qa/COPILOT_AUTOMATIC_MEMORY_2026_11_14.md` for delivery and rollback boundaries.
+# Procurement catalogue local staging — 21 November 2026
+
+Local migration 68 adds `procurement_catalogue_drafts`: immutable draft ID,
+store/owner, source-document and source-record foreign keys, original SHA-256,
+normalized SHA-256 and import timestamp. Unique store/owner/original checksum;
+source document and record IDs are unique. The normalized catalogue lives once in
+the existing source_records row; the original remains a RETAINED local file.
+Document state is PROCUREMENT_CATALOGUE / TO_VALIDATE / LOCAL_ONLY. No Outbox or
+upload job is created for a local review draft. The current remote upload schema
+deliberately excludes this type, preventing private full JSON from entering a
+STORE-visible channel. No Mongo collection/API route is introduced in this
+substep. Publication must add its original-owner/PDV authority, bulk command,
+capability-gated bidirectional sync, conflict/replay and original verification
+together. See `PROCUREMENT_CATALOGUE_FUNCTIONAL_SPEC.md` and
+`../qa/PROCUREMENT_STAGING_2026_11_21.md`; staging is not published catalogue data.

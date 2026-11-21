@@ -196,3 +196,4 @@ export * from "./personal-task";
 
 export * from "./purchase-prices";
 export * from "./procurement-crosswalk";
+export * from "./procurement-catalogue";
