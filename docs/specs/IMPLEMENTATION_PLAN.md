@@ -1,5 +1,13 @@
 ## Owner-approved catalogue and procurement offers — 21 November 2026
 
+Parser/staging increment: shared catalogue projection and local migration 68 reuse
+source_documents/local_files/source_records for an owner/store/checksum review draft.
+Verify original bytes before the transaction; retain as-of and missing tariffs;
+reimport/reopen/rollback must preserve IDs and business data. No publication, Product
+link, upload/Outbox command, native entry point, build or deployment. Full server
+publication/private source authority and capability sync remain the next substep;
+see `../qa/PROCUREMENT_STAGING_2026_11_21.md`. Do not mark snapshot sync complete.
+
 Separate the existing commercial Product from ordering offers: exact provider
 _id + packaging identity, grouped by genericId, with source-dated optional tariffs.
 PLU is explicit only for some rows; 87 + six-digit-padded genericId is an empirical

@@ -143,6 +143,7 @@ describe("local SQLite migrations", () => {
       "personal_task_history",
       "personal_task_reminders",
       "personal_tasks",
+      "procurement_catalogue_drafts",
       "product_aliases",
       "product_daily_performance",
       "product_identifiers",

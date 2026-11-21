@@ -1,5 +1,13 @@
 # Backlog produit — point du 20 novembre 2026
 
+**21 novembre — offres datées : parseur et stockage local de l'aperçu.**
+Contrats partagés, migration 68 et brouillon privé durable. Le vrai JSON donne 691
+offres et 421 tarifs ; les offres sans tarif restent inconnues. Double import,
+reprise après fermeture et rollback contrôlés sans toucher aux produits ni aux PA.
+Publication serveur/synchro, autorité PDV et original privé restent à implémenter,
+puis maquette avant intégration des écrans. Aucun reset ni livraison native.
+[Détail du sous-lot](../qa/PROCUREMENT_STAGING_2026_11_21.md).
+
 **21 novembre — catalogue commercial et offres de commande : premier socle.**
 Le propriétaire approuve un lot référentiel Mercalys + JSON manuel des offres,
 enrichissement des unités/conditionnements et recette depuis une base vide. Le

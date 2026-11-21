@@ -977,6 +977,22 @@ CREATE INDEX copilot_layout_illustration_generation_scope ON copilot_layout_illu
     ALTER TABLE purchase_price_observations ADD COLUMN vat_rate TEXT;
     ALTER TABLE purchase_price_observations ADD COLUMN reference_status TEXT;`,
   },
+  {
+    version: 68,
+    name: "procurement-catalogue-local-review-drafts",
+    sql: `CREATE TABLE procurement_catalogue_drafts (
+      id TEXT PRIMARY KEY NOT NULL,
+      store_id TEXT NOT NULL,
+      owner_id TEXT NOT NULL,
+      source_document_id TEXT NOT NULL UNIQUE REFERENCES source_documents(id),
+      source_record_id TEXT NOT NULL UNIQUE REFERENCES source_records(id),
+      checksum TEXT NOT NULL,
+      normalized_checksum TEXT NOT NULL,
+      imported_at TEXT NOT NULL,
+      UNIQUE(store_id,owner_id,checksum)
+    );
+    CREATE INDEX procurement_draft_owner ON procurement_catalogue_drafts(store_id,owner_id,imported_at);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

@@ -9,3 +9,4 @@ export * from "./mercalys-zip";
 export * from "./mercalys-zip-reader";
 
 export * from "./mercalys-purchase-price-parser";
+export * from "./procurement-catalogue-parser";

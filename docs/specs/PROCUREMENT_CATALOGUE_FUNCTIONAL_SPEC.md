@@ -1,8 +1,9 @@
 # Product catalogue and procurement offers
 
-Owner-approved direction, 21 November 2026. This first increment defines the model
-and a deterministic identity preview; it does not change import behavior or persist
-new business entities. React Native/Expo, SQLite, Outbox, MongoDB, stable Product IDs
+Owner-approved direction, 21 November 2026. The first increment defines the model
+and deterministic identity preview. The next increment adds shared parsing and
+durable local review drafts, without publication or a native entry point.
+React Native/Expo, SQLite, Outbox, MongoDB, stable Product IDs
 and deterministic analytics remain canonical.
 
 ## Purpose and approved boundary
@@ -112,9 +113,35 @@ batch is applied through existing canonical writers; no silent historical rewrit
 
 ## Persistence and synchronization implementation contract
 
-No migration or runtime sync entity is introduced by this first increment.
-Before persistence work, extend shared Zod contracts, source types/access rules,
-SQLite/Mongo migrations, serializer, conflict and replay policies together.
+The model increment introduces no migration. The parser/staging increment adds
+SQLite migration 68 for private **local review drafts**, not a new syncable
+business entity. Each draft references one immutable source document/file and one
+projected normalized source_record. Its owner/store/checksum key is unique; original
+bytes and normalized bytes have separate SHA-256 checksums. Source status remains
+TO_VALIDATE / LOCAL_ONLY, the file remains RETAINED, and no upload job, Outbox command,
+Product, mapping or PA is written. A transaction rolls back all metadata together.
+Reimport returns the original draft IDs; a later import of an older as-of remains a
+separate draft instead of replacing newer data. Original copies are never removed
+by this repository, even after a failed or duplicate attempt.
+
+The shared parser requires the selected PDV, comparing its numeric store number
+(09083 and 9083), without stripping zeroes from commercial identifiers. Reject
+duplicate offer IDs, duplicate or orphan current quotes, invalid dates/formats and
+sources over 10 MiB before staging. This is a bounded-memory manual JSON path, not
+a provider connection. Ignore unrelated root branches and promotions; retain the
+source-local deadline without inventing its timezone. Financial/source quantities
+are decimal strings produced from parsed JSON numbers without rounding/conversion;
+the immutable source retains the original lexical representation. Current-quote
+absence and missing priceUnit/flags remain null, not zero or false.
+
+**Publication remains pending.** PROCUREMENT_CATALOGUE is deliberately excluded
+from the current upload contract, so its private original cannot enter a store-wide
+source channel. No draft has a remote collection/serializer yet because it is not
+syncable. Before enabling publication, extend shared Zod upload/access contracts,
+Mongo migration, bulk Outbox command, serializer, capability/backfill, conflict/replay
+and original verification together. Bind the source PDV to authenticated store
+authority; do not trust a client-provided expectedPdv as server authorization.
+This staging increment does not satisfy the full snapshot publication acceptance.
 
 Reuse immutable source documents and source_records for catalogue snapshots and
 normalized offer rows where their contracts fit. A snapshot retains the original
@@ -164,8 +191,10 @@ integration. Existing bottom-sheet gesture and navigation fixes remain intact.
 
 1. Model/crosswalk proof (this increment): shared identity contracts, pure preview,
    conflict regressions and real-export dry run. No runtime import changes.
-2. Snapshot/parser/persistence: shared source schema first, migrations, atomic
-   publication, original verification, private access, scoped sync and replay.
+2. Snapshot/parser/persistence: (a) shared parser and atomic private local staging;
+   (b) explicit publication with original verification, owner-private source access,
+   authenticated PDV authority, scoped sync/backfill and replay. Only (a) is implemented
+   by the staging increment; no production/native release follows from it.
 3. Enrichment proposals and short exception review, without conflating source units.
 4. Product/import mockup review, then implementation with offline/reopen behavior.
 5. Empty-base rehearsal: reference -> JSON -> sales/waste ZIPs, repeat/interruption,
