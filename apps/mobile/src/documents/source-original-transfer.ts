@@ -1,3 +1,4 @@
+import { isOwnerPrivateSource } from "@fl-copilot/domain";
 import { z } from "zod";
 import {
   sourceOriginalMetadataSchema,
@@ -189,12 +190,17 @@ export class SourceOriginalTransfer {
       );
       if (!source || retained.length !== 1) return null;
       const file = retained[0]!;
-      if (source.source_type === "STORE_PHOTO") {
+      if (isOwnerPrivateSource(source.source_type)) {
         const owner = await this.db.getFirstAsync<{ id: string }>(
-          "SELECT id FROM local_jobs WHERE type='SOURCE_UPLOAD_AND_REGISTER' AND json_extract(payload_json,'$.storeId')=? AND json_extract(payload_json,'$.ownerId')=? AND json_extract(payload_json,'$.sourceDocumentId')=? LIMIT 1",
+          source.source_type === "PROCUREMENT_CATALOGUE"
+            ? "SELECT id FROM procurement_catalogue_drafts WHERE store_id=? AND owner_id=? AND source_document_id=? UNION ALL SELECT id FROM procurement_catalogue_snapshots WHERE store_id=? AND json_extract(payload_json,'$.ownerId')=? AND source_document_id=? LIMIT 1"
+            : "SELECT id FROM local_jobs WHERE type='SOURCE_UPLOAD_AND_REGISTER' AND json_extract(payload_json,'$.storeId')=? AND json_extract(payload_json,'$.ownerId')=? AND json_extract(payload_json,'$.sourceDocumentId')=? LIMIT 1",
           scope.storeId,
           scope.userId,
           sourceId,
+          ...(source.source_type === "PROCUREMENT_CATALOGUE"
+            ? [scope.storeId, scope.userId, sourceId]
+            : []),
         );
         this.check(scope);
         if (!owner) return null;
@@ -203,8 +209,8 @@ export class SourceOriginalTransfer {
         schemaVersion: 1,
         sourceDocumentId: sourceId,
         storeId: scope.storeId,
-        access: source.source_type === "STORE_PHOTO" ? "OWNER" : "STORE",
-        ownerId: source.source_type === "STORE_PHOTO" ? scope.userId : null,
+        access: isOwnerPrivateSource(source.source_type) ? "OWNER" : "STORE",
+        ownerId: isOwnerPrivateSource(source.source_type) ? scope.userId : null,
         sourceType: source.source_type,
         filename: source.original_filename,
         mimeType: file.mime_type,

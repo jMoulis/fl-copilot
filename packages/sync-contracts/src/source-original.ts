@@ -4,6 +4,8 @@ import {
   MAX_STORE_PHOTO_BYTES,
   RECEIPT_PHOTO_BUNDLE_MIME,
   storePhotoMimeSchema,
+  isOwnerPrivateSource,
+  MAX_PROCUREMENT_SOURCE_BYTES,
 } from "@fl-copilot/domain";
 import {
   uploadSourceTypeSchema,
@@ -33,7 +35,7 @@ export const sourceOriginalMetadataSchema = z
   })
   .superRefine((value, ctx) => {
     if (
-      value.sourceType === "STORE_PHOTO"
+      isOwnerPrivateSource(value.sourceType)
         ? value.access !== "OWNER" || value.ownerId === null
         : value.access !== "STORE" || value.ownerId !== null
     )
@@ -44,20 +46,23 @@ export const sourceOriginalMetadataSchema = z
       });
     const image = storePhotoMimeSchema.safeParse(value.mimeType).success;
     const valid =
-      value.sourceType === "WEEKLY_COMMERCIAL_PDF"
-        ? value.mimeType === "application/pdf"
-        : value.sourceType === "MERCALYS_SALES" ||
-            value.sourceType === "MERCALYS_WASTE" ||
-            value.sourceType === "MERCALYS_PURCHASE_PRICES"
-          ? value.mimeType ===
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-          : value.sourceType === "STORE_PHOTO"
-            ? image &&
-              value.sizeBytes <= MAX_STORE_PHOTO_BYTES &&
-              value.filename.length <= 240
-            : image ||
-              (value.mimeType === RECEIPT_PHOTO_BUNDLE_MIME &&
-                value.sizeBytes <= MAX_RECEIPT_BUNDLE_BYTES);
+      value.sourceType === "PROCUREMENT_CATALOGUE"
+        ? value.mimeType === "application/json" &&
+          value.sizeBytes <= MAX_PROCUREMENT_SOURCE_BYTES
+        : value.sourceType === "WEEKLY_COMMERCIAL_PDF"
+          ? value.mimeType === "application/pdf"
+          : value.sourceType === "MERCALYS_SALES" ||
+              value.sourceType === "MERCALYS_WASTE" ||
+              value.sourceType === "MERCALYS_PURCHASE_PRICES"
+            ? value.mimeType ===
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            : value.sourceType === "STORE_PHOTO"
+              ? image &&
+                value.sizeBytes <= MAX_STORE_PHOTO_BYTES &&
+                value.filename.length <= 240
+              : image ||
+                (value.mimeType === RECEIPT_PHOTO_BUNDLE_MIME &&
+                  value.sizeBytes <= MAX_RECEIPT_BUNDLE_BYTES);
     if (!valid)
       ctx.addIssue({
         code: "custom",

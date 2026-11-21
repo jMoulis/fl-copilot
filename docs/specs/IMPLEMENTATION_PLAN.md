@@ -1,3 +1,14 @@
+## Procurement snapshot publication backend — 21 November 2026
+
+Step 2(b) adds the immutable canonical snapshot, one atomic Outbox command and an
+owner-private original upload. Shared Zod contracts, SQLite 69/Mongo 64, source-owner
+checks, authenticated store PDV, original checksum/reparse, capability negotiation,
+historical backfill and conflict/retry behavior are implemented together. Preserve
+all Product identities and Mercalys prices. Native runtime opt-in remains disabled;
+no production activation, build or reset. Mapping/enrichment and approved import/
+product mockups remain next, including explicit immutable-conflict review UX.
+See `../qa/PROCUREMENT_PUBLICATION_2026_11_21.md` for isolated evidence and limits.
+
 ## Owner-approved catalogue and procurement offers — 21 November 2026
 
 Parser/staging increment: shared catalogue projection and local migration 68 reuse

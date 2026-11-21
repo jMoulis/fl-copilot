@@ -1,3 +1,4 @@
+import { isOwnerPrivateSource } from "@fl-copilot/domain";
 import { RECEIPT_PHOTO_BUNDLE_MIME } from "@fl-copilot/domain";
 import { randomUUID } from "node:crypto";
 import {
@@ -370,7 +371,7 @@ async function processReceiptIfNeeded(
 
 function assertPrivatePhotoOwner(upload: UploadRecord, userId?: string) {
   if (
-    upload.sourceType === "STORE_PHOTO" &&
+    isOwnerPrivateSource(upload.sourceType) &&
     (!userId || upload.userId !== userId)
   )
     throw new AuthError(

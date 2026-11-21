@@ -2,6 +2,9 @@
 
 21 November 2026. Code-only substep 2(a), after the identity model/crosswalk in
 PR 558. No native entry point, server publication, build, deployment or reset.
+This records the historical staging-only boundary. The following publication
+backend increment supersedes its upload exclusion with owner-private JSON support;
+see `PROCUREMENT_PUBLICATION_2026_11_21.md`. Native activation remains pending.
 
 ## Behavior
 

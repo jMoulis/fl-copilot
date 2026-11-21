@@ -147,6 +147,16 @@ it("shares business documents within the authenticated store but keeps conversat
   expect(photo.head).not.toHaveBeenCalled();
   expect(photo.sign).not.toHaveBeenCalled();
 });
+it("keeps the full ordering JSON private to its uploader", async () => {
+  const f = fixture("PROCUREMENT_CATALOGUE", "application/json");
+  expect(
+    await f.service.manifest(f.storeId, f.actorId, f.sourceId),
+  ).toMatchObject({ access: "OWNER", ownerId: f.actorId });
+  await expect(
+    f.service.download(f.storeId, randomUUID(), f.sourceId),
+  ).rejects.toMatchObject({ statusCode: 404 });
+  expect(f.sign).not.toHaveBeenCalled();
+});
 it.each([
   "store",
   "source",

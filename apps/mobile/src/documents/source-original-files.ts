@@ -31,6 +31,7 @@ function extension(mime: string) {
         "image/heic": "heic",
         "image/heif": "heif",
         "application/pdf": "pdf",
+        "application/json": "json",
         [RECEIPT_PHOTO_BUNDLE_MIME]: "json",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
           "xlsx",
@@ -63,6 +64,9 @@ type ExpectedOriginal = {
 function verifyType(header: Uint8Array, mimeType: string) {
   if (mimeType.startsWith("image/")) {
     if (detectVisualImageMime(header) !== mimeType) throw invalid();
+  } else if (mimeType === "application/json") {
+    // Full JSON structure is checked after the verified file has been read.
+    return;
   } else if (mimeType === "application/pdf") {
     try {
       assertPdfHeader(header);
@@ -94,6 +98,13 @@ async function inspect(
   actorId: string,
 ): Promise<SourceOriginalProof> {
   await verifyFile(file, manifest);
+  if (manifest.sourceType === "PROCUREMENT_CATALOGUE") {
+    try {
+      JSON.parse(await file.text());
+    } catch {
+      throw invalid();
+    }
+  }
   if (manifest.sourceType === "STORE_PHOTO") {
     const { readNativeImageSize } = await import("../media/image-size");
     let dimensions;
@@ -167,13 +178,15 @@ export const nativeSourceOriginalFiles: SourceOriginalFiles = {
     if (!file.exists && !uri.includes("/source-originals/")) {
       const { Paths } = await import("expo-file-system");
       const ordinary =
-        manifest.sourceType === "WEEKLY_COMMERCIAL_PDF"
-          ? "commercial-pdfs"
-          : manifest.sourceType === "STORE_PHOTO"
-            ? "store-photos"
-            : manifest.sourceType === "WASTE_RECEIPT"
-              ? "waste-receipts"
-              : "mercalys-imports";
+        manifest.sourceType === "PROCUREMENT_CATALOGUE"
+          ? "procurement-catalogues"
+          : manifest.sourceType === "WEEKLY_COMMERCIAL_PDF"
+            ? "commercial-pdfs"
+            : manifest.sourceType === "STORE_PHOTO"
+              ? "store-photos"
+              : manifest.sourceType === "WASTE_RECEIPT"
+                ? "waste-receipts"
+                : "mercalys-imports";
       const name = uri.split("/").at(-1);
       if (name)
         file = new File(

@@ -1,3 +1,7 @@
+import {
+  applyProcurementPublicationCommand,
+  ProcurementPublicationPendingError,
+} from "../imports/procurement-publication-sync";
 import { knowledgeForClient } from "../copilot/knowledge-store";
 import { copilotKnowledgeSchema } from "@fl-copilot/domain";
 import {
@@ -126,6 +130,22 @@ export function createMongoSyncPushService(
 
   return {
     async push(input, requestId, ownerId) {
+      if (
+        !input.procurementCatalogues &&
+        input.commands.some(
+          (c) =>
+            c.entityType === "procurement_catalogue_snapshot" ||
+            (c.entityType === "store_context_settings" &&
+              typeof c.payload === "object" &&
+              c.payload !== null &&
+              "pdvCode" in c.payload),
+        )
+      )
+        throw new AuthError(
+          426,
+          "PROCUREMENT_SERVER_UPGRADE_REQUIRED",
+          "Mets l’application à jour pour synchroniser les offres. Les données locales sont conservées.",
+        );
       if (!input.tgPresentations) {
         if (
           input.commands.some(
@@ -267,6 +287,7 @@ export function createMongoSyncPushService(
               ...(isChatType(command.entityType) ||
               command.entityType === "store_layout" ||
               command.entityType === "document_archive" ||
+              command.entityType === "procurement_catalogue_snapshot" ||
               isVisualEntityType(command.entityType)
                 ? { ownerId }
                 : {}),
@@ -321,28 +342,41 @@ export function createMongoSyncPushService(
           );
         } catch (error) {
           results.push(
-            error instanceof ProcessedCommandIdentityError
-              ? rejectedIdentityResult(command, requestId)
-              : error instanceof VisualParentPendingError ||
-                  error instanceof KnowledgeParentPendingError ||
-                  error instanceof ChatParentPendingError ||
-                  error instanceof NeedMembershipParentPendingError ||
-                  error instanceof ProductSubstitutionParentPendingError ||
-                  error instanceof StoreEventParentPendingError ||
-                  error instanceof JournalNoteParentPendingError
-                ? {
-                    ...retryableResult(command, requestId),
-                    error: {
-                      code: error.message,
-                      messageFr:
-                        error instanceof KnowledgeParentPendingError
-                          ? "Synchronisez d’abord le message à l’origine de cette pratique."
-                          : "Synchronisez d’abord les produits et le besoin client.",
-                      retryable: true,
-                      requestId,
-                    },
-                  }
-                : retryableResult(command, requestId),
+            error instanceof ProcurementPublicationPendingError
+              ? {
+                  ...retryableResult(command, requestId),
+                  error: {
+                    code: error.message,
+                    messageFr:
+                      error.message === "PROCUREMENT_PDV_MISMATCH"
+                        ? "Le code PDV du fichier diffère de celui du magasin. Vérifie les réglages ; le fichier reste en attente."
+                        : "L’original ou le code PDV attend sa synchronisation. Les offres locales sont conservées.",
+                    retryable: true,
+                    requestId,
+                  },
+                }
+              : error instanceof ProcessedCommandIdentityError
+                ? rejectedIdentityResult(command, requestId)
+                : error instanceof VisualParentPendingError ||
+                    error instanceof KnowledgeParentPendingError ||
+                    error instanceof ChatParentPendingError ||
+                    error instanceof NeedMembershipParentPendingError ||
+                    error instanceof ProductSubstitutionParentPendingError ||
+                    error instanceof StoreEventParentPendingError ||
+                    error instanceof JournalNoteParentPendingError
+                  ? {
+                      ...retryableResult(command, requestId),
+                      error: {
+                        code: error.message,
+                        messageFr:
+                          error instanceof KnowledgeParentPendingError
+                            ? "Synchronisez d’abord le message à l’origine de cette pratique."
+                            : "Synchronisez d’abord les produits et le besoin client.",
+                        retryable: true,
+                        requestId,
+                      },
+                    }
+                  : retryableResult(command, requestId),
           );
         }
       }
@@ -405,6 +439,7 @@ export function createMongoSyncPushService(
               input.storeMerchandising === true,
               input.storeTransports === true,
               input.transportAlertFilters === true,
+              input.procurementCatalogues === true,
             );
       if (!input.physicalAllocations)
         for (const result of results)
@@ -493,6 +528,16 @@ async function applyCommand(
       syncChanges,
       now,
       illustrationGeneration,
+    );
+  if (command.type === "PROCUREMENT_CATALOGUE_PUBLISH")
+    return applyProcurementPublicationCommand(
+      context,
+      storeId,
+      ownerId,
+      command,
+      requestId,
+      syncChanges,
+      mercalysReader,
     );
   if (command.type === "MERCALYS_PUBLISH")
     return applyMercalysPublicationCommand(

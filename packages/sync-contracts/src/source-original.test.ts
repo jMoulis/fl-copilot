@@ -1,4 +1,28 @@
 import { expect, it } from "vitest";
+
+it("requires owner-only access and JSON for an ordering catalogue", () => {
+  const json = {
+    ...source,
+    sourceType: "PROCUREMENT_CATALOGUE",
+    mimeType: "application/json",
+    access: "OWNER",
+    ownerId: source.storeId,
+  };
+  expect(sourceOriginalMetadataSchema.safeParse(json).success).toBe(true);
+  expect(
+    sourceOriginalMetadataSchema.safeParse({
+      ...json,
+      access: "STORE",
+      ownerId: null,
+    }).success,
+  ).toBe(false);
+  expect(
+    sourceOriginalMetadataSchema.safeParse({
+      ...json,
+      mimeType: "application/pdf",
+    }).success,
+  ).toBe(false);
+});
 import {
   sourceOriginalMetadataSchema,
   sourceOriginalManifestSchema,

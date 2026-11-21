@@ -63,6 +63,11 @@ export const storeContextSettingsSchema = z
       .regex(/^\d{5}$/, "Saisissez un code postal français à cinq chiffres."),
     country: z.literal("FR"),
     timezone: z.literal("Europe/Paris"),
+    pdvCode: z
+      .string()
+      .regex(/^\d{1,12}$/)
+      .nullable()
+      .optional(),
     schoolZone: z.enum(["A", "B", "C"]).nullable(),
     locationMode: z.enum(["CITY", "POINT"]),
     position: z
@@ -106,6 +111,9 @@ export function preserveStoreContextExtensions(
 ): StoreContextSettings {
   return {
     ...next,
+    ...(next.pdvCode === undefined && previous?.pdvCode !== undefined
+      ? { pdvCode: previous.pdvCode }
+      : {}),
     ...(next.transportAlertTypes === undefined &&
     previous?.transportAlertTypes !== undefined
       ? { transportAlertTypes: previous.transportAlertTypes }
@@ -125,11 +133,13 @@ export function legacyStoreContext(
   merchandisingSupported = false,
   transportsSupported = false,
   alertFiltersSupported = false,
+  procurementSupported = false,
 ): StoreContextSettings {
-  const { merchandising, transports, transportAlertTypes, ...legacy } =
+  const { merchandising, transports, transportAlertTypes, pdvCode, ...legacy } =
     settings;
   return {
     ...legacy,
+    ...(procurementSupported && pdvCode !== undefined ? { pdvCode } : {}),
     ...(alertFiltersSupported && transportAlertTypes !== undefined
       ? { transportAlertTypes }
       : {}),

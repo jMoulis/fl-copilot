@@ -993,6 +993,23 @@ CREATE INDEX copilot_layout_illustration_generation_scope ON copilot_layout_illu
     );
     CREATE INDEX procurement_draft_owner ON procurement_catalogue_drafts(store_id,owner_id,imported_at);`,
   },
+  {
+    version: 69,
+    name: "procurement-catalogue-publications",
+    sql: `CREATE TABLE procurement_catalogue_snapshots (
+      id TEXT PRIMARY KEY NOT NULL,
+      store_id TEXT NOT NULL,
+      source_document_id TEXT NOT NULL UNIQUE REFERENCES source_documents(id),
+      checksum TEXT NOT NULL,
+      as_of TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      sync_state TEXT NOT NULL,
+      remote_version INTEGER,
+      dirty INTEGER NOT NULL,
+      UNIQUE(store_id,checksum)
+    );
+    CREATE INDEX procurement_snapshot_date ON procurement_catalogue_snapshots(store_id,as_of DESC);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

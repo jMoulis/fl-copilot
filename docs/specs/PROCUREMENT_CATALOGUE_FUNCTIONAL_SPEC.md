@@ -3,6 +3,8 @@
 Owner-approved direction, 21 November 2026. The first increment defines the model
 and deterministic identity preview. The next increment adds shared parsing and
 durable local review drafts, without publication or a native entry point.
+The following backend increment implements verified immutable publication/sync;
+native runtime activation and reviewed screens remain pending.
 React Native/Expo, SQLite, Outbox, MongoDB, stable Product IDs
 and deterministic analytics remain canonical.
 
@@ -79,6 +81,12 @@ the executable crosswalk intentionally upgrades it to REVIEW. Source dates are
 21 November 2026. Private full crosswalk and source hashes remain outside the repo
 under maintenance/full-payload-analysis-2026-11-21/canonical-crosswalk.json.
 
+Runtime mapping prerequisite: the current Mercalys reference parser does not retain
+the supplied explicit PLU column. The proof above used extracted workbook rows.
+The mapping increment must extend shared reference parsing/contracts, lineage and
+parity verification to retain that evidence before applying this preview in the app.
+Do not silently fall back to suffix-derived PLUs when it is missing from local data.
+
 ## Units, packaging and enrichment batch
 
 Keep the following independent:
@@ -134,14 +142,44 @@ are decimal strings produced from parsed JSON numbers without rounding/conversio
 the immutable source retains the original lexical representation. Current-quote
 absence and missing priceUnit/flags remain null, not zero or false.
 
-**Publication remains pending.** PROCUREMENT_CATALOGUE is deliberately excluded
-from the current upload contract, so its private original cannot enter a store-wide
-source channel. No draft has a remote collection/serializer yet because it is not
-syncable. Before enabling publication, extend shared Zod upload/access contracts,
-Mongo migration, bulk Outbox command, serializer, capability/backfill, conflict/replay
-and original verification together. Bind the source PDV to authenticated store
-authority; do not trust a client-provided expectedPdv as server authorization.
-This staging increment does not satisfy the full snapshot publication acceptance.
+**Snapshot publication backend is implemented in the following increment.** A local
+draft remains private/local until explicit publication commits one immutable snapshot,
+its owner-scoped upload job and one PROCUREMENT_CATALOGUE_PUBLISH Outbox command
+together. SQLite migration 69 adds procurement_catalogue_snapshots; Mongo migration
+64 adds procurementCatalogueSnapshots. No Product link or Mercalys price is created.
+Publication has stable IDs, actor, confirmation time, normalized SHA-256 and original
+source/record lineage. The normalized packet is bounded to 750,000 UTF-8 bytes,
+independently of the original's 10 MiB limit.
+
+The optional manager-owned StoreContextSettings.pdvCode supplies authenticated store
+authority. Older writers preserve it when omitted; older readers receive a DTO that
+omits it. The API checks manager membership, source/upload owner, exact source key,
+original SHA-256 and shared parsing against that configured PDV. It never trusts a
+client expectedPdv to authorize a store. Missing source/configuration stays retryable;
+wrong PDV, changed original or forged normalized data cannot publish.
+
+PROCUREMENT_CATALOGUE uploads and original recovery use application/json with OWNER
+visibility. Other store members can receive the normalized business snapshot, not
+the full original containing private orders. Existing private upload/recovery/file
+paths are reused. Local drafts still do not auto-upload. Original files remain
+RETAINED after publication, failure, conflict or retry.
+
+The procurementCatalogues capability gates PDV DTOs and snapshot synchronization.
+Bootstrap restarts canonical history at sequence zero once on adoption; pull loads
+at most one full procurement snapshot at a time without shrinking ordinary product
+pages. Older clients skip this entity and can backfill after upgrading. Before any
+new publication push, the native service negotiates support and verifies the pull
+capability, including after a server rollback. An old API leaves the command pending.
+The production native sync provider does not enable this capability yet: compatible
+API release and reviewed import screens precede activation.
+
+One canonical server snapshot exists per store/checksum and per source as-of.
+Unrelated JSON branch changes with identical normalized dated offers reuse the local
+known publication, retaining the second draft/original. Changed offers for an already
+known as-of require review. Cross-device concurrent duplicates become immutable
+conflicts with the remote snapshot attached; a pending local identity/source is
+never overwritten and does not block unrelated pull changes. Review/resolution UX
+remains part of the upcoming screen work, not an automatic merge.
 
 Reuse immutable source documents and source_records for catalogue snapshots and
 normalized offer rows where their contracts fit. A snapshot retains the original
@@ -193,8 +231,10 @@ integration. Existing bottom-sheet gesture and navigation fixes remain intact.
    conflict regressions and real-export dry run. No runtime import changes.
 2. Snapshot/parser/persistence: (a) shared parser and atomic private local staging;
    (b) explicit publication with original verification, owner-private source access,
-   authenticated PDV authority, scoped sync/backfill and replay. Only (a) is implemented
-   by the staging increment; no production/native release follows from it.
+   authenticated PDV authority, scoped sync/backfill and replay. Both backend substeps
+   are implemented and tested in isolation. Production activation, native screens,
+   generic-to-Product review and conflict resolution UX remain open; no build/reset
+   follows from these backend proofs.
 3. Enrichment proposals and short exception review, without conflating source units.
 4. Product/import mockup review, then implementation with offline/reopen behavior.
 5. Empty-base rehearsal: reference -> JSON -> sales/waste ZIPs, repeat/interruption,

@@ -1,5 +1,6 @@
 import {
   RECEIPT_PHOTO_BUNDLE_MIME,
+  isOwnerPrivateSource,
   receiptMultiViewBlockingCodes,
 } from "@fl-copilot/domain";
 import { sourceFileDirectory } from "./source-file-directory";
@@ -137,7 +138,7 @@ export class SourceUploadQueue {
           AND d.deleted_at IS NULL AND f.store_id = d.store_id
           AND f.source_document_id = d.id AND f.checksum = d.checksum
           AND f.retention_status = 'RETAINED'
-          AND (d.source_type!='STORE_PHOTO' OR json_extract(j.payload_json,'$.ownerId')=?)
+          AND (d.source_type NOT IN ('STORE_PHOTO','PROCUREMENT_CATALOGUE') OR json_extract(j.payload_json,'$.ownerId')=?)
         ORDER BY j.created_at, j.id
       `,
       this.now().toISOString(),
@@ -189,10 +190,9 @@ export class SourceUploadQueue {
         sizeBytes: row.size_bytes,
         checksum: row.checksum,
       };
-      const init =
-        row.source_type === "STORE_PHOTO"
-          ? await this.transport.init(storeId, initInput, payload.ownerId)
-          : await this.transport.init(storeId, initInput);
+      const init = isOwnerPrivateSource(row.source_type)
+        ? await this.transport.init(storeId, initInput, payload.ownerId)
+        : await this.transport.init(storeId, initInput);
       if (init.status === "UPLOAD_REQUIRED") {
         if (!init.uploadUrl) throw new Error("SOURCE_UPLOAD_URL_MISSING");
         const uploadedFile = await this.uploader.upload({
@@ -221,19 +221,14 @@ export class SourceUploadQueue {
         checksum: row.checksum,
         sizeBytes: row.size_bytes,
       };
-      const result =
-        row.source_type === "STORE_PHOTO"
-          ? await this.transport.complete(
-              storeId,
-              init.uploadId,
-              completeInput,
-              payload.ownerId,
-            )
-          : await this.transport.complete(
-              storeId,
-              init.uploadId,
-              completeInput,
-            );
+      const result = isOwnerPrivateSource(row.source_type)
+        ? await this.transport.complete(
+            storeId,
+            init.uploadId,
+            completeInput,
+            payload.ownerId,
+          )
+        : await this.transport.complete(storeId, init.uploadId, completeInput);
       if (result.remoteUploadStatus !== "CONFIRMED") {
         await this.markInvalid(row.job_id, payload, storeId);
         return false;
@@ -689,13 +684,15 @@ const nativeBinaryUploader: SourceBinaryUploader = {
         Paths.document,
         sourceFileDirectory(
           input.localUri,
-          input.sourceType === "WASTE_RECEIPT"
-            ? "waste-receipts"
-            : input.sourceType === "STORE_PHOTO"
-              ? "store-photos"
-              : input.sourceType === "WEEKLY_COMMERCIAL_PDF"
-                ? "commercial-pdfs"
-                : "mercalys-imports",
+          input.sourceType === "PROCUREMENT_CATALOGUE"
+            ? "procurement-catalogues"
+            : input.sourceType === "WASTE_RECEIPT"
+              ? "waste-receipts"
+              : input.sourceType === "STORE_PHOTO"
+                ? "store-photos"
+                : input.sourceType === "WEEKLY_COMMERCIAL_PDF"
+                  ? "commercial-pdfs"
+                  : "mercalys-imports",
         ),
         filename,
       );

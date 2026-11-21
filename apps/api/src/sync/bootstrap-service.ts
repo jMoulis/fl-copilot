@@ -540,7 +540,10 @@ export function createMongoSyncBootstrapService(
               // New canonical channel is replayed through bounded pull pages, including historical imports.
               cursor: encodeSyncCursor(
                 store.storeId,
-                query.mercalysPublications === "true" ? Long.ZERO : sequence,
+                query.mercalysPublications === "true" ||
+                  query.procurementCatalogues === "true"
+                  ? Long.ZERO
+                  : sequence,
               ),
               historyPolicy: {
                 rawObservationDays: query.rawObservationDays,
@@ -618,6 +621,9 @@ export function createMongoSyncBootstrapService(
                         ? { automaticMemory: true }
                         : {}),
                     }
+                  : {}),
+                ...(query.procurementCatalogues === "true"
+                  ? { procurementCatalogues: true as const }
                   : {}),
                 ...(query.articleReferences === "true"
                   ? { articleReferences: true as const }
@@ -743,6 +749,7 @@ export function createMongoSyncBootstrapService(
                           query.storeMerchandising === "true",
                           query.storeTransports === "true",
                           query.transportAlertFilters === "true",
+                          query.procurementCatalogues === "true",
                         ),
                       ),
                     }

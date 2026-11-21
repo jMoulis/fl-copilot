@@ -107,6 +107,56 @@ import { nativeSourceOriginalFiles as files } from "./source-original-files";
 import { nativeOriginalRestorationStorage } from "./restore-source-original";
 const checksum = (bytes: Uint8Array) =>
   `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+
+it("restores a JSON original only for its owner and verifies its JSON structure", async () => {
+  const bytes = new TextEncoder().encode(
+    '{"articles":[],"orders":[{"username":"private"}]}',
+  );
+  const l = lease(bytes, "application/json");
+  Object.assign(l.manifest, {
+    sourceType: "PROCUREMENT_CATALOGUE",
+    filename: "offers.json",
+    access: "OWNER",
+    ownerId: scope.ownerId,
+  });
+  state.fetch.mockResolvedValue(
+    new Response(bytes, {
+      headers: {
+        "content-type": "application/json",
+        "content-length": String(bytes.length),
+      },
+    }),
+  );
+  await expect(
+    files.receive(l, randomUUID(), () => undefined),
+  ).rejects.toThrow();
+  expect(state.fetch).not.toHaveBeenCalled();
+  const proof = await files.receive(l, scope.ownerId, () => undefined);
+  expect(state.files.get(proof.localUri)).toEqual(bytes);
+  expect(
+    await files.existing(l.manifest, proof.localUri, scope.ownerId),
+  ).toEqual(proof);
+  const malformed = new TextEncoder().encode('{"broken":');
+  const bad = lease(malformed, "application/json");
+  Object.assign(bad.manifest, {
+    sourceType: "PROCUREMENT_CATALOGUE",
+    filename: "bad.json",
+    access: "OWNER",
+    ownerId: scope.ownerId,
+  });
+  state.fetch.mockResolvedValue(
+    new Response(malformed, {
+      headers: {
+        "content-type": "application/json",
+        "content-length": String(malformed.length),
+      },
+    }),
+  );
+  await expect(
+    files.receive(bad, scope.ownerId, () => undefined),
+  ).rejects.toThrow("SOURCE_ORIGINAL_FILE_INVALID");
+  expect(state.files.get(proof.localUri)).toEqual(bytes);
+});
 const scope = {
   storeId: "11111111-1111-4111-8111-111111111111",
   ownerId: "22222222-2222-4222-8222-222222222222",

@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+export function isOwnerPrivateSource(sourceType: string) {
+  return sourceType === "STORE_PHOTO" || sourceType === "PROCUREMENT_CATALOGUE";
+}
+
 const idSchema = z.string().uuid();
 const timestampSchema = z.string().datetime({ offset: true });
 const dateSchema = z.string().date();

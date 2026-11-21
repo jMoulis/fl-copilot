@@ -5,18 +5,21 @@ import {
   MAX_RECEIPT_BUNDLE_BYTES,
   MAX_STORE_PHOTO_BYTES,
   storePhotoMimeSchema,
+  MAX_PROCUREMENT_SOURCE_BYTES,
 } from "@fl-copilot/domain";
 
 export const uploadSourceTypeSchema = sourceTypeSchema.extract([
   "MERCALYS_SALES",
   "MERCALYS_WASTE",
   "MERCALYS_PURCHASE_PRICES",
+  "PROCUREMENT_CATALOGUE",
   "WASTE_RECEIPT",
   "STORE_PHOTO",
   "WEEKLY_COMMERCIAL_PDF",
 ]);
 
 export const sourceUploadMimeTypeSchema = z.enum([
+  "application/json",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "application/pdf",
   "image/heic",
@@ -44,6 +47,17 @@ export const initSourceUploadRequestSchema = z
     checksum: sourceUploadChecksumSchema,
   })
   .superRefine((input, context) => {
+    if (
+      input.sourceType === "PROCUREMENT_CATALOGUE"
+        ? input.mimeType !== "application/json" ||
+          input.sizeBytes > MAX_PROCUREMENT_SOURCE_BYTES
+        : input.mimeType === "application/json"
+    )
+      context.addIssue({
+        code: "custom",
+        path: ["mimeType"],
+        message: "Invalid procurement catalogue upload",
+      });
     if (
       input.sourceType === "STORE_PHOTO" &&
       (!storePhotoMimeSchema.safeParse(input.mimeType).success ||

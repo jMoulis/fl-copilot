@@ -1,4 +1,8 @@
 import {
+  serializeProcurementSnapshot,
+  type ProcurementSnapshotDocument,
+} from "../imports/procurement-publication-sync";
+import {
   serializeJournalNote,
   type JournalNoteDocument,
 } from "../journal-note-sync";
@@ -181,8 +185,16 @@ export function createMongoSyncPullService(
         .sort({ sequence: 1 })
         .limit(query.limit + 1)
         .toArray();
-      const hasMore = page.length > query.limit;
-      const selected = hasMore ? page.slice(0, query.limit) : page;
+      let selected = page.slice(0, query.limit);
+      // Avoid loading hundreds of full snapshots before applying the byte budget.
+      if (query.procurementCatalogues === "true") {
+        const firstSnapshot = selected.findIndex(
+          (c) => c.entityType === "procurement_catalogue_snapshot",
+        );
+        if (firstSnapshot >= 0)
+          selected = selected.slice(0, firstSnapshot || 1);
+      }
+      const hasMore = page.length > selected.length;
       const entities = await loadSyncTestEntities(
         mongoDatabase,
         storeId,
@@ -294,6 +306,8 @@ export function createMongoSyncPullService(
                   change.payloadRevision === ownerId)) &&
               (query.visualLibrary === "true" ||
                 !isVisualEntityType(change.entityType)) &&
+              (query.procurementCatalogues === "true" ||
+                change.entityType !== "procurement_catalogue_snapshot") &&
               (query.mercalysPublications === "true" ||
                 change.entityType !== "mercalys_publication") &&
               (!legacyMercalysFrozen ||
@@ -546,6 +560,7 @@ export function createMongoSyncPullService(
                   query.storeMerchandising === "true",
                   query.storeTransports === "true",
                   query.transportAlertFilters === "true",
+                  query.procurementCatalogues === "true",
                 ),
                 changedAt: change.changedAt.toISOString(),
               };
@@ -783,6 +798,23 @@ export function createMongoSyncPullService(
                 changedAt: change.changedAt.toISOString(),
               };
             }
+            if (change.entityType === "procurement_catalogue_snapshot") {
+              const row = await mongoDatabase
+                .collection<ProcurementSnapshotDocument>(
+                  "procurementCatalogueSnapshots",
+                )
+                .findOne({ _id: change.entityId, storeId });
+              if (!row) throw Error("PROCUREMENT_SNAPSHOT_MISSING");
+              return {
+                sequence: change.sequence.toString(),
+                entityType: change.entityType,
+                entityId: change.entityId,
+                operation: change.operation,
+                entityVersion: 1,
+                entity: serializeProcurementSnapshot(row),
+                changedAt: change.changedAt.toISOString(),
+              };
+            }
             if (change.entityType === "mercalys_publication") {
               const entity = await mongoDatabase
                 .collection<MercalysPublicationDocument>("mercalysPublications")
@@ -885,6 +917,9 @@ export function createMongoSyncPullService(
       return {
         ...(query.documentArchives === "true"
           ? { documentArchives: true as const }
+          : {}),
+        ...(query.procurementCatalogues === "true"
+          ? { procurementCatalogues: true as const }
           : {}),
         changes: bounded,
         nextCursor: encodeSyncCursor(storeId, nextSequence),
