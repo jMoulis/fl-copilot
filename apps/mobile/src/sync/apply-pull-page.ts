@@ -1,3 +1,4 @@
+import { applyProcurementLinkReview } from "../products/procurement-links";
 import { applyProcurementCatalogue } from "../documents/procurement-publication";
 import { applyJournalNote } from "../journal/journal-note-repository";
 import { applyDocumentArchive } from "../documents/document-archive-repository";
@@ -392,6 +393,19 @@ export async function applyPullPage(
           change.entityType,
           change.entity,
         );
+        continue;
+      }
+      if (change.entityType === "procurement_link_review") {
+        if (
+          change.operation !== "UPSERT" ||
+          change.entityVersion !== 1 ||
+          !change.entity ||
+          typeof change.entity !== "object" ||
+          !("id" in change.entity) ||
+          change.entity.id !== change.entityId
+        )
+          throw Error("PROCUREMENT_LINK_ENVELOPE_INVALID");
+        await applyProcurementLinkReview(transaction, storeId, change.entity);
         continue;
       }
       if (change.entityType === "procurement_catalogue_snapshot") {

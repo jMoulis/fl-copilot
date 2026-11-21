@@ -12,11 +12,12 @@ reserves. Journal v1, descriptive study, automatic memory, private daily tasks
 and optional reminders are accepted in their stated scopes. Settings polish
 (build 74) and INSEE produce indices (build 75 plus API PR 534) are closed.
 
-No implementation lot is currently open. National news relevant to the Journal
-is the proposed next discussion: first agree useful events, sources, dates,
-scope and low-noise retention. Source activation, spending and implementation
-are not approved merely by listing this proposal. Preserve existing Journal
-archives, deterministic analytics and scoped uncertainty.
+The active owner-approved lot is the catalogue/reference + procurement-offer
+import. Shared staging, snapshot publication and reviewed Product-link backend
+are implemented, with runtime opt-in disabled. Enrichment, approved mockups and
+native import/Product integration, isolated reconstruction and final reset scope
+remain open. See the current handoff and procurement spec. National Journal news
+remains a separate proposed discussion, without source/spending activation.
 
 The dated delivery/pending statuses below are historical. Product requirements
 remain subject to later owner arbitrations; these notes do not reopen accepted

@@ -35,7 +35,11 @@ export function parseMercalysPurchasePrices(
     "NOMENCLATURE",
     "PRIX ACHAT PAR UNITE",
     "ACTIF",
-  ].map((h) => headers.indexOf(h));
+  ].map((h) =>
+    h === "ITM" && !headers.includes("ITM")
+      ? headers.indexOf("ITM8")
+      : headers.indexOf(h),
+  );
   const records: ParsedMercalysArticleRecord[] = [];
   const pvColumn = headers.indexOf("PV TTC"),
     vatColumn = headers.indexOf("CODE TVA");

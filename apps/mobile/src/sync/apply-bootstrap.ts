@@ -518,6 +518,13 @@ export async function applyBootstrap(
         "1",
         bootstrap.serverTime,
       );
+    if (bootstrap.entities.procurementLinks)
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+        `procurement-links:${storeId}`,
+        "1",
+        bootstrap.serverTime,
+      );
     if (bootstrap.entities.procurementCatalogues)
       await transaction.runAsync(
         "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
@@ -664,6 +671,7 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
     "purchasePrices",
     "articleReferences",
     "procurementCatalogues",
+    "procurementLinks",
   ]);
   if (
     Object.entries(bootstrap.entities).some(
