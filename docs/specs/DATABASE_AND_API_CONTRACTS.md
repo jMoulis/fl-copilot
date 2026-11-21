@@ -1,3 +1,11 @@
+## Procurement identity preview — 21 November 2026
+
+Shared Zod identity contracts and pure crosswalk only; no migration, persisted
+entity, new command or source access change in this increment. Before runtime
+publication, define owner-private originals, scoped snapshot/link persistence,
+atomic Outbox, source verification, replay/conflicts and capability gating together.
+[Full contract and delivery boundary](PROCUREMENT_CATALOGUE_FUNCTIONAL_SPEC.md).
+
 ## Authoritative article references — 20 November 2026
 
 Reuse Product/ProductIdentifier and MERCALYS_PUBLISH rather than introducing a

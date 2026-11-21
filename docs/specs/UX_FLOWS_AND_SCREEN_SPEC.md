@@ -1,3 +1,11 @@
+## Catalogue and procurement offers — 21 November 2026
+
+Prototype one commercial fiche with associated dated offers and explicit price
+basis; reference PA stays separate from procurement tariffs. Imports presents the
+source preview and unresolved links before confirmation. Prototype review precedes
+integration; current native imports/navigation remain unchanged in this increment.
+[Scope and acceptance](PROCUREMENT_CATALOGUE_FUNCTIONAL_SPEC.md).
+
 ## Owner-approved article reference import — 20 November 2026
 
 Recognize PV TTC and Code TVA alongside PA fields. Show a read-only preview of

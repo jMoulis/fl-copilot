@@ -1,5 +1,15 @@
 # Backlog produit — point du 20 novembre 2026
 
+**21 novembre — catalogue commercial et offres de commande : premier socle.**
+Le propriétaire approuve un lot référentiel Mercalys + JSON manuel des offres,
+enrichissement des unités/conditionnements et recette depuis une base vide. Le
+reset bêta sera soumis à un périmètre concret et à une confirmation finale ; aucun
+effacement ni réassociation production. Product reste la fiche commerciale ; les
+offres ne créent pas chacune une fiche. Premier incrément : contrats d’identité et
+correspondance partagée pure, 88 PLU, 333 candidats ITM, un conflit et 62 absents
+sur les vrais exports. Import natif inchangé. Commandes/réceptions et nouvelles
+fonctions IA hors lot initial. [Modèle et étapes](../specs/PROCUREMENT_CATALOGUE_FUNCTIONAL_SPEC.md).
+
 **20 novembre — reprise de synchronisation du référentiel en correction.**
 Retour build 89 : arrêt apparent après chaque centaine de commandes et erreur
 EMAIL_INTAKE_ORIGINAL_CHANGED. Le cycle doit enchaîner les requêtes bornées de
