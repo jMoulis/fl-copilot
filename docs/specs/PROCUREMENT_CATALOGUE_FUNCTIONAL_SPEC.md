@@ -4,7 +4,11 @@ Owner-approved direction, 21 November 2026. The first increment defines the mode
 and deterministic identity preview. The next increment adds shared parsing and
 durable local review drafts, without publication or a native entry point.
 The following backend increment implements verified immutable publication/sync;
-native runtime activation and reviewed screens remain pending.
+native screens are now implemented after owner mockup approval (22 November).
+The capability-enabled native code is unreleased: deploy the compatible API first,
+complete the dedicated conflict resolver and isolated financial reconstruction,
+then perform grouped physical iPhone acceptance before any reset.
+See `../qa/PROCUREMENT_NATIVE_2026_11_22.md`.
 React Native/Expo, SQLite, Outbox, MongoDB, stable Product IDs
 and deterministic analytics remain canonical.
 

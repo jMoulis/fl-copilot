@@ -1,3 +1,14 @@
+## Native catalogue integration — 22 November 2026
+
+Owner-approved mockup is integrated into native Imports/Product code. One explicit
+confirmation joins immutable snapshot publication and ready/manual link review;
+optional enrichment uses the canonical Product writer, preserving historical units.
+PDV configuration, retained originals, private review drafts, dated offers and
+background capability sync reuse existing infrastructure. No new schema migration.
+Compatible API release, procurement-specific conflict resolver, full empty-base
+financial rehearsal, grouped iPhone acceptance and final reset approval remain open.
+No build/deployment/reset in this increment. See `../qa/PROCUREMENT_NATIVE_2026_11_22.md`.
+
 ## Procurement enrichment preview — 22 November 2026
 
 Step 3(b) adds shared read-only proposals for retail nature/content/Petit Prix from

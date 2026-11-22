@@ -77,6 +77,7 @@ function StoreSettingsEditor({
   const [saved, setSaved] = useState<LocalStoreContext | null>(),
     [city, setCity] = useState("Asnières-sur-Seine"),
     [postalCode, setPostalCode] = useState("92600"),
+    [pdvCode, setPdvCode] = useState(""),
     [schoolZone, setZone] = useState<StoreContextSettings["schoolZone"]>("C"),
     [pointMode, setPointMode] = useState(false),
     [position, setPosition] = useState<StoreContextSettings["position"]>(null),
@@ -96,6 +97,7 @@ function StoreSettingsEditor({
   const draft = JSON.stringify([
     city,
     postalCode,
+    pdvCode,
     schoolZone,
     pointMode,
     position,
@@ -115,6 +117,7 @@ function StoreSettingsEditor({
     const values = {
       city: c?.city ?? "Asnières-sur-Seine",
       postalCode: c?.postalCode ?? "92600",
+      pdvCode: c?.pdvCode ?? "",
       schoolZone: c?.schoolZone ?? (c ? null : ("C" as const)),
       pointMode: c?.locationMode === "POINT",
       position: c?.position ?? null,
@@ -123,6 +126,7 @@ function StoreSettingsEditor({
     baseline.current = JSON.stringify([
       values.city,
       values.postalCode,
+      values.pdvCode,
       values.schoolZone,
       values.pointMode,
       values.position,
@@ -132,6 +136,7 @@ function StoreSettingsEditor({
     setSaved(s);
     setCity(values.city);
     setPostalCode(values.postalCode);
+    setPdvCode(values.pdvCode);
     setZone(values.schoolZone);
     setPointMode(values.pointMode);
     setPosition(values.position);
@@ -266,6 +271,7 @@ function StoreSettingsEditor({
         storeId,
         city,
         postalCode,
+        pdvCode: pdvCode.trim() || null,
         country: "FR",
         timezone: "Europe/Paris",
         schoolZone,
@@ -293,6 +299,8 @@ function StoreSettingsEditor({
             : ((
                 {
                   city: "Saisissez la commune du magasin.",
+                  pdvCode:
+                    "Indique un code PDV de 1 à 12 chiffres, sans espace.",
                   postalCode:
                     "Saisissez un code postal français à cinq chiffres.",
                   position:
@@ -366,6 +374,49 @@ function StoreSettingsEditor({
         </>
       ) : null}
       {notice ? <InlineAlert title="Magasin" message={notice} /> : null}
+      <SectionCard title="Code point de vente">
+        {editing === "location" ? (
+          <TextInput
+            accessibilityLabel="Code PDV du magasin"
+            value={pdvCode}
+            onChangeText={(v) => {
+              dirtyRef.current = true;
+              setPdvCode(v);
+            }}
+            keyboardType="number-pad"
+            maxLength={12}
+            placeholder="Ex. 09083"
+            editable={
+              canManage &&
+              !busy &&
+              saved !== undefined &&
+              saved?.syncState !== "CONFLICT"
+            }
+            className="min-h-12 rounded-xl border border-line bg-surface px-4 text-base text-ink"
+          />
+        ) : (
+          <Text className="text-lg font-semibold text-ink">
+            {pdvCode || "À renseigner"}
+          </Text>
+        )}
+        <Text className="text-sm text-muted">
+          Utilisé pour vérifier le magasin des catalogues importés.
+        </Text>
+        {issues.pdvCode ? (
+          <Text className="text-danger" accessibilityRole="alert">
+            {issues.pdvCode}
+          </Text>
+        ) : null}
+        {canManage && editing === null ? (
+          <SecondaryButton
+            label="Modifier le code PDV"
+            disabled={
+              busy || saved === undefined || saved?.syncState === "CONFLICT"
+            }
+            onPress={() => setEditing("location")}
+          />
+        ) : null}
+      </SectionCard>
       <View className="gap-3">
         <Text className="text-muted">
           {saved

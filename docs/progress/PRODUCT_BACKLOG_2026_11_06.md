@@ -1,5 +1,12 @@
 # Backlog produit — point du 20 novembre 2026
 
+**22 novembre — intégration native du parcours catalogue approuvé.**
+Code Imports/Product, confirmation atomique, offres datées et enrichissement choisi
+sont implémentés avec tests. Livraison native non effectuée. Prochaines portes :
+résolution des conflits dédiée, API compatible, reconstruction complète depuis le
+référentiel/JSON/ZIP ventes-casse, recette iPhone groupée et accord final de reset.
+Aucune purge. [Périmètre et limites](../qa/PROCUREMENT_NATIVE_2026_11_22.md).
+
 **22 novembre — propositions d’enrichissement prêtes, application native non activée.**
 Lecture déterministe des libellés du référentiel : nature vrac/conditionné, contenu
 explicite et marqueur Petit Prix. Les conditionnements fournisseur restent séparés,

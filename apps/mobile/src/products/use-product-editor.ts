@@ -261,6 +261,7 @@ export function useProductEditor(productId?: string): ProductEditorState {
     snapshot,
     conflictId,
     error,
+    refresh,
     save,
   };
 }

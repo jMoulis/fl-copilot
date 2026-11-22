@@ -1,3 +1,15 @@
+## Approved catalogue native flow — 22 November 2026
+
+Imports → Catalogue et offres opens the approved overview: retained files, published
+reference selection, proposed links, optional exceptions and one footer confirmation.
+Exceptions do not block keeping offers. A reason is mandatory for manual identity
+review; never create a Product per offer. Source details use the existing native
+BottomSheet; dismiss before pushing reference/Product routes. Product adds dated
+supplier offers and optional selected reference-label enrichments; keep Mercalys PA
+separate and historical quantity units unchanged. Review drafts are private/scoped.
+This supersedes the earlier prototype-only status below. Native visual/gesture
+acceptance awaits a grouped build; concurrency resolver remains a release gate.
+
 ## Catalogue and procurement offers — 21 November 2026
 
 Prototype one commercial fiche with associated dated offers and explicit price

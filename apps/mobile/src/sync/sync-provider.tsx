@@ -227,6 +227,8 @@ export function SyncProvider({ children }: PropsWithChildren) {
               true, // owner-private daily tasks
               true, // daily purchase prices
               true, // article references with dated selling prices
+              true, // immutable procurement snapshots
+              true, // reviewed generic-to-product links
             ),
           ),
         illustrationHistoryPage: (storeId, before) =>
@@ -306,6 +308,8 @@ export function SyncProvider({ children }: PropsWithChildren) {
               true, // owner-private daily tasks
               true, // daily purchase prices
               true, // article references with dated selling prices
+              true, // immutable procurement snapshots
+              true, // reviewed generic-to-product links
             ),
           ),
       },
@@ -369,6 +373,8 @@ export function SyncProvider({ children }: PropsWithChildren) {
         mercalysRecordUpdates: true,
         purchasePrices: true,
         articleReferences: true,
+        procurementCatalogues: true,
+        procurementLinks: true,
         copilotOwnerId: session?.user.id,
       },
     );
