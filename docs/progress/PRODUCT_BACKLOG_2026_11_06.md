@@ -1,5 +1,14 @@
 # Backlog produit — point du 20 novembre 2026
 
+**22 novembre — propositions d’enrichissement prêtes, application native non activée.**
+Lecture déterministe des libellés du référentiel : nature vrac/conditionné, contenu
+explicite et marqueur Petit Prix. Les conditionnements fournisseur restent séparés,
+les valeurs existantes sont conservées et l’unité des quantités historiques n’est
+pas déduite. Essai isolé sur 421 références : 194 natures, 82 contenus et 16 marqueurs
+proposés ; aucune écriture. Maquettes du parcours à valider avant intégration native,
+confirmation canonique avec revue des conflits, reconstruction et éventuel reset.
+[Preuves et limites](../qa/PROCUREMENT_ENRICHMENT_2026_11_22.md).
+
 **22 novembre — rattachements des offres aux fiches existantes : code prêt, non activé.**
 Relecture partagée du PLU dans l’original référentiel (alias ITM8 accepté), sans
 changer la normalisation financière. Confirmation explicite d’un lot, historique
