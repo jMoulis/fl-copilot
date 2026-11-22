@@ -1,3 +1,14 @@
+## Procurement enrichment preview — 22 November 2026
+
+Step 3(b) adds shared read-only proposals for retail nature/content/Petit Prix from
+explicit reference labels, with exact source evidence and version fences. Preserve
+existing values; contradictions/truncation/complex packs stay in review. Category
+and historical quantity unit remain explicit review, never inferred from supplier
+logistics. No mutation, migration, sync entity, AI call or runtime activation.
+Approve the import/Product mockups before integrating confirmation/review into the
+native application and its canonical writers. Rebuild rehearsal/reset remain open.
+See `../qa/PROCUREMENT_ENRICHMENT_2026_11_22.md`.
+
 ## Procurement Product links — 22 November 2026
 
 Step 3(a) adds a companion source identity parser and explicit bulk link reviews.

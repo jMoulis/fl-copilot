@@ -139,11 +139,32 @@ using receivedQuantity instead of quantity when the former is explicitly present
 to derive live stock, complete receipts or a realized COGS calculation. Orders
 remain outside the first importer.
 
-The enrichment batch proposes category, retail nature, analytic unit and packaging
-with source evidence and explicit unknowns. Source nomenclature and Nature Produit
-PNM/Autres do not automatically define our categories or BULK/PACKAGED. Mark Petit
-Prix only with appropriate source evidence. Owner reviews exceptions before the
-batch is applied through existing canonical writers; no silent historical rewrite.
+The read-only enrichment preview is implemented in
+`packages/domain/src/procurement-enrichment.ts` (`procurement-enrichment.v1`).
+It requires active, confirmed links to the target Product and matching snapshot
+identity/checksum, retaining original reference label/index/checksums and link/
+Product versions. It generates proposals only; no storage/mutation/AI path is added.
+
+Explicit Mercalys retail-reference label markers VRAC versus SACHET/FILET/
+BARQUETTE/RUBAN can propose nature. A single positive stated mass or fruit/piece
+count proposes retail content only alongside an unambiguous packaging marker.
+Multiple contents, multipacks, bonus quantities and VRAC/packaging contradictions
+remain REVIEW. Complete PETIT PRIX can propose true; truncated names need review,
+and absence never proposes false. All suggestions retain their exact source text.
+
+Supplier generic/offer names, packagingQuantity, weight, priceUnit, family/universe
+and source nomenclature do not set commercial attributes. Full dated offers remain
+separate read-only context. Category and historical analytic unit remain unknown
+when not already recorded: they require independent explicit review. A PIECE label
+does not establish the meaning of historical decimal movement quantities.
+
+Known Product values are preserved. Equal suggestions remain KEEP; conflicting
+values remain REVIEW, without selecting a replacement. Multiple confirmed generics
+for one Product combine evidence and expose disagreement. UNKNOWN, PROPOSED, KEEP
+and REVIEW are distinct. The future confirmation UI must recheck Product/link/source
+versions, retain reviewed evidence and apply selected changes through existing
+canonical writers. No silent unit/history rewrite, automatic application, new table,
+sync capability or native activation belongs to this preview-only increment.
 
 ## Persistence and synchronization implementation contract
 
