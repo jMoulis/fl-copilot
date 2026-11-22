@@ -14,9 +14,10 @@ and optional reminders are accepted in their stated scopes. Settings polish
 
 The active owner-approved lot is the catalogue/reference + procurement-offer
 import. Shared staging, snapshot publication and reviewed Product-link backend
-are implemented, with runtime opt-in disabled. Enrichment, approved mockups and
-native import/Product integration, isolated reconstruction and final reset scope
-remain open. See the current handoff and procurement spec. National Journal news
+are implemented. Shared enrichment and the owner-approved native import/Product
+flow are now implemented; capability-enabled native code is not released. Dedicated
+conflict resolution, compatible API release, isolated reconstruction, grouped iPhone
+acceptance and final reset scope remain open. See the current handoff and procurement spec. National Journal news
 remains a separate proposed discussion, without source/spending activation.
 
 The dated delivery/pending statuses below are historical. Product requirements

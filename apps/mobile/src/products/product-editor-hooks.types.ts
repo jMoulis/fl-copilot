@@ -20,6 +20,7 @@ export interface ProductListState {
 }
 
 export interface ProductEditorState {
+  refresh?(): Promise<void>;
   loading: boolean;
   missing: boolean;
   storeMissing: boolean;

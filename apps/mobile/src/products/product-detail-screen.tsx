@@ -1,3 +1,4 @@
+import { ProductProcurementOffers } from "./product-procurement-offers";
 import { ProductPurchasePrices } from "./product-purchase-prices";
 import { ProductPerformance } from "./product-performance";
 import { IconButton, DetailsDisclosure } from "../components/dashboard";
@@ -46,8 +47,15 @@ function ScopedProductDetailScreen({
   selection?: unknown;
 }) {
   const { session } = useAuth();
-  const { snapshot, conflictId, loading, storeMissing, missing, error } =
-    useProductEditor(id);
+  const {
+    snapshot,
+    conflictId,
+    loading,
+    storeMissing,
+    missing,
+    error,
+    refresh,
+  } = useProductEditor(id);
   const [relations, setRelations] = useState(false);
   const gallery = useVisualLibrary();
   const p = snapshot?.product.entity;
@@ -161,6 +169,12 @@ function ScopedProductDetailScreen({
               selection={selection}
             />
           ) : null}
+          <ProductProcurementOffers
+            key={`${p.storeId}:${id}`}
+            storeId={p.storeId}
+            productId={id}
+            onChanged={refresh}
+          />
           <ProductPurchasePrices
             key={`${p.storeId}:${id}`}
             storeId={p.storeId}

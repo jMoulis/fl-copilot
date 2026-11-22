@@ -12,8 +12,14 @@ export default function ImportsHub() {
   const [choosing, setChoosing] = useState(false);
   const [mercalysChoosing, setMercalysChoosing] = useState(false);
   const nextMercalys = useRef(false);
+  const nextCatalogue = useRef(false);
   const sync = useSync();
   function finishChoosing() {
+    if (nextCatalogue.current) {
+      nextCatalogue.current = false;
+      router.push("/procurement-catalogue");
+      return;
+    }
     if (!nextMercalys.current) return;
     nextMercalys.current = false;
     setMercalysChoosing(true);
@@ -57,6 +63,12 @@ export default function ImportsHub() {
                 </Text>
               </Pressable>
             </View>
+            <MenuRow
+              title="Catalogue et offres"
+              description="Référentiel Mercalys · offres de commande JSON"
+              icon="layers-outline"
+              onPress={() => router.push("/procurement-catalogue")}
+            />
             <View className="flex-row items-center justify-between gap-3 border-b border-line pb-3">
               <Pressable
                 accessibilityRole="button"
@@ -134,11 +146,11 @@ export default function ImportsHub() {
           }}
         />
         <MenuRow
-          title="Prix d’achat quotidiens"
-          description="Base articles Mercalys · Excel ou ZIP"
-          icon="pricetag-outline"
+          title="Catalogue et offres"
+          description="Référentiel Mercalys et JSON de commande"
+          icon="layers-outline"
           onPress={() => {
-            nextMercalys.current = true;
+            nextCatalogue.current = true;
             setChoosing(false);
           }}
         />
