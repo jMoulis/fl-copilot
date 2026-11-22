@@ -107,16 +107,18 @@ it("reads dated offers offline, reopens dismissed sheets and saves only chosen e
       ),
     );
   });
-  await act(async () => {
-    await vi.waitFor(() => expect(client.isFetching()).toBe(0));
-  });
   const rows = () =>
     tree!.root.findAll(
       (n) =>
         String(n.type) === "Pressable" &&
         n.props.accessibilityLabel?.startsWith("Détails de"),
     );
-  expect(rows()).toHaveLength(2);
+  await vi.waitFor(async () => {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(rows()).toHaveLength(2);
+  });
   const text = JSON.stringify(tree!.toJSON());
   expect(text).toContain("Tarif de commande");
   expect(text).not.toContain("€/kg");
