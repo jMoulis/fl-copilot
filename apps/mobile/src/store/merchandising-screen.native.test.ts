@@ -216,3 +216,15 @@ it.each(["Nombre de TG actives F&L", "Commune du magasin"])(
     read.mockRestore();
   },
 );
+
+it("edits the authoritative PDV through the existing settings form and returns to read-only consultation", async () => {
+  const f = await setup("MANAGER", "Modifier le code PDV");
+  await act(() => input("Code PDV du magasin").props.onChangeText("09083"));
+  await act(async () =>
+    button("Enregistrer les réglages du magasin").props.onPress(),
+  );
+  expect((await f.repo.get(f.settings.storeId))?.entity.pdvCode).toBe("09083");
+  expect(tree!.root.findAll((n) => String(n.type) === "Input")).toHaveLength(0);
+  await act(() => button("Modifier le code PDV").props.onPress());
+  expect(input("Code PDV du magasin").props.value).toBe("09083");
+});

@@ -42,7 +42,7 @@ in an isolated SQLite database, persisted/reopened and confirmed twice. Evidence
 private. This seeds Product identities from the reference for a bounded service
 rehearsal; it does not claim the complete empty-base financial reconstruction.
 
-Local result: **95 tests / 14 suites pass**, mobile TypeScript and repository ESLint
+Local result: **101 tests / 15 suites pass**, mobile TypeScript and repository ESLint
 pass. Real-file service rehearsal: 1,226 seeded reference Products, 691 offers,
 421 links, 63 exceptions, two Outbox commands, unchanged Product count and zero
 PA writes. Reopening SQLite and confirming again preserves the publication ID.

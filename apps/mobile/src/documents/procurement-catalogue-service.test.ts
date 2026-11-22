@@ -310,3 +310,22 @@ it("hides stale offer ownership and refuses metadata changes after source codes 
     productProcurementEnrichment(f.device, f.product.storeId, f.product.id),
   ).rejects.toThrow("PROCUREMENT_LINK_CHOICE_CHANGED");
 });
+
+it("distinguishes a missing store PDV from a catalogue for another point of sale", async () => {
+  const f = await fixture();
+  f.device.raw
+    .prepare(
+      "UPDATE store_context_settings SET payload_json=json_set(payload_json,'$.pdvCode','99999')",
+    )
+    .run();
+  await expect(f.preview()).rejects.toThrow("PROCUREMENT_PDV_MISMATCH");
+  f.device.raw
+    .prepare(
+      "UPDATE store_context_settings SET payload_json=json_set(payload_json,'$.pdvCode',NULL)",
+    )
+    .run();
+  await expect(f.preview()).rejects.toThrow("PROCUREMENT_STORE_PDV_REQUIRED");
+  expect(
+    f.device.raw.prepare("SELECT COUNT(*) n FROM sync_outbox").get(),
+  ).toEqual({ n: 0 });
+});

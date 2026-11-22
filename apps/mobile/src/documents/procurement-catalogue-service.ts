@@ -124,8 +124,9 @@ export async function procurementPreview(
   const pdv = config
     ? storeContextSettingsSchema.parse(JSON.parse(config.payload_json)).pdvCode
     : null;
-  if (!pdv || BigInt(pdv) !== BigInt(draft.catalogue.pdv))
-    throw Error("PROCUREMENT_STORE_PDV_REQUIRED");
+  if (!pdv) throw Error("PROCUREMENT_STORE_PDV_REQUIRED");
+  if (BigInt(pdv) !== BigInt(draft.catalogue.pdv))
+    throw Error("PROCUREMENT_PDV_MISMATCH");
   const repo = new ProcurementProductLinkRepository(db, originals),
     links = await repo.list(draft.storeId);
   const empty = {

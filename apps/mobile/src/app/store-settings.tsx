@@ -375,24 +375,30 @@ function StoreSettingsEditor({
       ) : null}
       {notice ? <InlineAlert title="Magasin" message={notice} /> : null}
       <SectionCard title="Code point de vente">
-        <TextInput
-          accessibilityLabel="Code PDV du magasin"
-          value={pdvCode}
-          onChangeText={(v) => {
-            dirtyRef.current = true;
-            setPdvCode(v);
-          }}
-          keyboardType="number-pad"
-          maxLength={12}
-          placeholder="Ex. 09083"
-          editable={
-            canManage &&
-            !busy &&
-            saved !== undefined &&
-            saved?.syncState !== "CONFLICT"
-          }
-          className="min-h-12 rounded-xl border border-line bg-surface px-4 text-base text-ink"
-        />
+        {editing === "location" ? (
+          <TextInput
+            accessibilityLabel="Code PDV du magasin"
+            value={pdvCode}
+            onChangeText={(v) => {
+              dirtyRef.current = true;
+              setPdvCode(v);
+            }}
+            keyboardType="number-pad"
+            maxLength={12}
+            placeholder="Ex. 09083"
+            editable={
+              canManage &&
+              !busy &&
+              saved !== undefined &&
+              saved?.syncState !== "CONFLICT"
+            }
+            className="min-h-12 rounded-xl border border-line bg-surface px-4 text-base text-ink"
+          />
+        ) : (
+          <Text className="text-lg font-semibold text-ink">
+            {pdvCode || "À renseigner"}
+          </Text>
+        )}
         <Text className="text-sm text-muted">
           Utilisé pour vérifier le magasin des catalogues importés.
         </Text>
@@ -401,13 +407,13 @@ function StoreSettingsEditor({
             {issues.pdvCode}
           </Text>
         ) : null}
-        {canManage && pdvCode.trim() !== (saved?.entity.pdvCode ?? "") ? (
-          <PrimaryButton
-            label="Enregistrer le code PDV"
+        {canManage && editing === null ? (
+          <SecondaryButton
+            label="Modifier le code PDV"
             disabled={
               busy || saved === undefined || saved?.syncState === "CONFLICT"
             }
-            onPress={() => void save()}
+            onPress={() => setEditing("location")}
           />
         ) : null}
       </SectionCard>
