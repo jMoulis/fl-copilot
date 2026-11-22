@@ -102,7 +102,9 @@ afterEach(async () => {
   vi.clearAllMocks();
 });
 const button = (label: string) =>
-  tree!.root.find((n) => n.type === "Button" && n.props.label === label);
+  tree!.root.find(
+    (n) => String(n.type) === "Button" && n.props.label === label,
+  );
 it("reopens a retained draft, defers navigation until sheet dismissal and confirms exactly once without Product creation", async () => {
   const f = await procurementLinksFixture();
   dispose = () => f.device.raw.close();
@@ -124,7 +126,7 @@ it("reopens a retained draft, defers navigation until sheet dismissal and confir
   });
   const reopen = async () => {
     await act(async () =>
-      tree!.root.find((n) => n.type === "Row").props.onPress(),
+      tree!.root.find((n) => String(n.type) === "Row").props.onPress(),
     );
   };
   await reopen();
@@ -132,7 +134,9 @@ it("reopens a retained draft, defers navigation until sheet dismissal and confir
   await act(() => button("Choisir le référentiel").props.onPress());
   await act(() => button("Importer un référentiel Mercalys").props.onPress());
   expect(state.push).not.toHaveBeenCalled();
-  await act(() => tree!.root.find((n) => n.type === "Sheet").props.onDismiss());
+  await act(() =>
+    tree!.root.find((n) => String(n.type) === "Sheet").props.onDismiss(),
+  );
   expect(state.push).toHaveBeenCalledWith("/mercalys-imports");
   await act(async () =>
     button("Confirmer les 1 correspondances").props.onPress(),
@@ -152,7 +156,9 @@ it("reopens a retained draft, defers navigation until sheet dismissal and confir
   expect(
     f.device.raw.prepare("SELECT COUNT(*) n FROM sync_outbox").get(),
   ).toEqual({ n: 2 });
-  await act(() => tree!.root.find((n) => n.type === "Header").props.onClose());
+  await act(() =>
+    tree!.root.find((n) => String(n.type) === "Header").props.onClose(),
+  );
   await reopen();
   expect(JSON.stringify(tree!.toJSON())).toContain("correspondance");
 });

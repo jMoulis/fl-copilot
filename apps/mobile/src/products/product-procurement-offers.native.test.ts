@@ -79,7 +79,9 @@ afterEach(async () => {
   vi.clearAllMocks();
 });
 const button = (label: string) =>
-  tree!.root.find((n) => n.type === "Button" && n.props.label === label);
+  tree!.root.find(
+    (n) => String(n.type) === "Button" && n.props.label === label,
+  );
 it("reads dated offers offline, reopens dismissed sheets and saves only chosen enrichment with historical unit preserved", async () => {
   const f = await procurementLinksFixture();
   dispose = () => f.device.raw.close();
@@ -111,7 +113,7 @@ it("reads dated offers offline, reopens dismissed sheets and saves only chosen e
   const rows = () =>
     tree!.root.findAll(
       (n) =>
-        n.type === "Pressable" &&
+        String(n.type) === "Pressable" &&
         n.props.accessibilityLabel?.startsWith("Détails de"),
     );
   expect(rows()).toHaveLength(2);
@@ -119,11 +121,19 @@ it("reads dated offers offline, reopens dismissed sheets and saves only chosen e
   expect(text).toContain("Tarif de commande");
   expect(text).not.toContain("€/kg");
   await act(() => rows()[0]!.props.onPress());
-  expect(tree!.root.find((n) => n.type === "Sheet").props.visible).toBe(true);
-  await act(() => tree!.root.find((n) => n.type === "Sheet").props.onClose());
+  expect(tree!.root.find((n) => String(n.type) === "Sheet").props.visible).toBe(
+    true,
+  );
+  await act(() =>
+    tree!.root.find((n) => String(n.type) === "Sheet").props.onClose(),
+  );
   await act(() => rows()[1]!.props.onPress());
-  expect(tree!.root.find((n) => n.type === "Sheet").props.visible).toBe(true);
-  await act(() => tree!.root.find((n) => n.type === "Sheet").props.onClose());
+  expect(tree!.root.find((n) => String(n.type) === "Sheet").props.visible).toBe(
+    true,
+  );
+  await act(() =>
+    tree!.root.find((n) => String(n.type) === "Sheet").props.onClose(),
+  );
   await act(() => button("Compléter cette fiche").props.onPress());
   await act(async () => {
     button("Confirmer ces attributs").props.onPress();
